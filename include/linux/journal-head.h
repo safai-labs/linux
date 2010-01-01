@@ -40,6 +40,16 @@ struct journal_head {
 	 */
 	unsigned b_modified;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+	/*
+	 * The last transcation id during which the buffer has been cowed.
+	 * if buffer was cowed during the currently running transaction,
+	 * the COW credits have already been acounted for -goldor.
+	 * [jbd_lock_bh_state()]
+	 */
+	tid_t b_cow_tid;
+#endif
+
 	/*
 	 * Copy of the buffer data frozen for writing to the log.
 	 * [jbd_lock_bh_state()]

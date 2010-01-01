@@ -21,6 +21,9 @@
 #include <linux/wait.h>
 #include <linux/blockgroup_lock.h>
 #include <linux/percpu_counter.h>
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#include <linux/mutex.h>
+#endif
 #endif
 #include <linux/rbtree.h>
 
@@ -72,6 +75,13 @@ struct next3_sb_info {
 	struct inode * s_journal_inode;
 	struct journal_s * s_journal;
 	struct list_head s_orphan;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	struct mutex s_snapshot_mutex; /* protect active snapshot and snapshot list */
+	struct inode * s_active_snapshot;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	struct list_head s_snapshot_list;
+#endif
+#endif
 	unsigned long s_commit_interval;
 	struct block_device *journal_bdev;
 #ifdef CONFIG_JBD_DEBUG

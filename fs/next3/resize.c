@@ -12,6 +12,7 @@
 #define NEXT3FS_DEBUG
 
 #include "next3_jbd.h"
+#include "snapshot.h"
 
 #include <linux/errno.h>
 #include <linux/slab.h>
@@ -163,7 +164,11 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh,
 {
 	int err;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	if (NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, thresh))
+#else
 	if (handle->h_buffer_credits >= thresh)
+#endif
 		return 0;
 
 	err = next3_journal_extend(handle, NEXT3_MAX_TRANS_DATA);
@@ -693,11 +698,25 @@ static void update_backups(struct super_block *sb,
 		struct buffer_head *bh;
 
 		/* Out of journal space, and can't get more - abort - so sad */
-		if (handle->h_buffer_credits == 0 &&
+		int buffer_credits = handle->h_buffer_credits;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+		if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1))
+			buffer_credits = 0;
+#endif
+		if (buffer_credits == 0 &&
 		    next3_journal_extend(handle, NEXT3_MAX_TRANS_DATA) &&
 		    (err = next3_journal_restart(handle, NEXT3_MAX_TRANS_DATA)))
 			break;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
+		if (next3_snapshot_get_active(sb))
+			/*
+			 * next3_snapshot_get_write_access() expects an uptodate buffer
+			 * do it here to supress "non uptodate buffer" warning. -goldor
+			 */
+			bh = sb_bread(sb, group * bpg + blk_off);
+		else
+#endif
 		bh = sb_getblk(sb, group * bpg + blk_off);
 		if (!bh) {
 			err = -EIO;

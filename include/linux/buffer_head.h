@@ -37,6 +37,13 @@ enum bh_state_bits {
 	BH_Unwritten,	/* Buffer is allocated on disk but not written */
 	BH_Quiet,	/* Buffer Error Prinks to be quiet */
 
+#ifdef CONFIG_BLOCK_TRACKED_READ
+	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
+						 * to serialize write I/O to block device.
+						 * that is, don't write over this block 
+						 * until I finished reading it -goldor */
+#endif
+
 	BH_PrivateStart,/* not a state bit, but the first bit available
 			 * for private allocation by other entities
 			 */
@@ -128,6 +135,9 @@ BUFFER_FNS(Write_EIO, write_io_error)
 BUFFER_FNS(Ordered, ordered)
 BUFFER_FNS(Eopnotsupp, eopnotsupp)
 BUFFER_FNS(Unwritten, unwritten)
+#ifdef CONFIG_BLOCK_TRACKED_READ
+BUFFER_FNS(Tracked_Read, tracked_read)
+#endif
 
 #define bh_offset(bh)		((unsigned long)(bh)->b_data & ~PAGE_MASK)
 #define touch_buffer(bh)	mark_page_accessed(bh->b_page)
@@ -259,6 +269,49 @@ static inline void put_bh(struct buffer_head *bh)
         smp_mb__before_atomic_dec();
         atomic_dec(&bh->b_count);
 }
+
+#ifdef CONFIG_BLOCK_TRACKED_READ
+int do_buffer_tracked_read(struct buffer_head *bh, int cmd);
+
+static inline int start_buffer_tracked_read(struct buffer_head *bh)
+{
+   	return do_buffer_tracked_read(bh, 1);
+}
+
+static inline int test_buffer_tracked_read(struct buffer_head *bh)
+{
+   	return do_buffer_tracked_read(bh, 0);
+}
+
+static inline int end_buffer_tracked_read(struct buffer_head *bh)
+{
+	return do_buffer_tracked_read(bh, -1);
+}
+
+/* 
+ * tracked readers take a track reader reference count
+ * on the block device buffer cache entry.
+ * using upper dword of b_count to count tracked readers 
+ * -goldor 
+ */
+#define BH_TRACKED_READERS_COUNT_SHIFT 16
+
+static inline void get_bh_tracked_reader(struct buffer_head *_bh)
+{
+	atomic_add(1<<BH_TRACKED_READERS_COUNT_SHIFT, &_bh->b_count);
+}
+
+static inline void put_bh_tracked_reader(struct buffer_head *_bh)
+{
+	smp_mb__before_atomic_dec();
+	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &_bh->b_count);
+}
+
+static inline int buffer_tracked_readers_count(struct buffer_head *_bh)
+{
+	return (atomic_read(&_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT);
+}
+#endif
 
 static inline void brelse(struct buffer_head *bh)
 {

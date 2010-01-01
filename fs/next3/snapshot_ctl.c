@@ -1,0 +1,1699 @@
+/*
+ * linux/fs/next3/snapshot_ctl.c
+ *
+ * Copyright (C) 2008 Amir Goldor <amir73il@users.sf.net>
+ *
+ * This file is part of the Linux kernel and is made available under
+ * the terms of the GNU General Public License, version 2, or at your
+ * option, any later version, incorporated herein by reference.
+ *
+ * Next3 snapshots control functions.
+ */
+
+#include <linux/statfs.h>
+#include "snapshot.h"
+
+/* helper functions for next3_snapshot_create() */
+extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode, 
+		next3_snapblk_t block, unsigned long maxblocks, next3_fsblk_t *mapped, int cmd);
+extern int next3_snapshot_zero_data_buffer(handle_t *handle, struct inode *inode, 
+		next3_snapblk_t blk, next3_fsblk_t blocknr);
+/* helper function for next3_snapshot_take() */ 
+extern int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh, 
+		struct buffer_head *bh);
+void next3_snapshot_reset_cow_bitmap(struct super_block *sb);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
+/* helper function for next3_snapshot_stabilize() */ 
+extern int next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot, 					
+		unsigned int block_group);
+/* helper function for next3_snapshot_verify() */ 
+extern int next3_snapshot_verify_cow_bitmap(handle_t *handle, struct inode *snapshot, 					
+		unsigned int block_group);
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+/* 
+ * flag to prevent freeing old snapshot blocks while snapshot_clean()
+ * is clearing snapshot blocks from COW bitmap.
+ * it may only be set/cleared by the owner of snapshot_mutex.
+ * snapshot_clean() sets it to snapshot ID to disable cleanup in snapshot_update().
+ * snapshot_take() sets it to -1 to abort a running snapshot_clean().
+ * snapshot_clean() sets it to 0 before returning success or failure.
+ */
+static int cleaning = 0;
+#endif
+
+/*
+ * next3_snapshot_set_active() sets the current active snapshot to inode
+ * and returns the deactivated snapshot inode.
+ * if inode is NULL, current active snapshot is deactivated.
+ * this function should be called under journal_lock_updates() 
+ * and snapshot mutex lock 
+ */
+static struct inode * 
+next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
+{
+	struct inode *old = NEXT3_SB(sb)->s_active_snapshot;
+
+	if (inode && NEXT3_BLOCK_SIZE(sb) != SNAPSHOT_BLOCK_SIZE) {
+		snapshot_debug(1, "failed to activate snapshot (%u)"
+				"because file system block size (%lu) != page size (%lu)\n",
+				inode->i_generation, NEXT3_BLOCK_SIZE(sb), SNAPSHOT_BLOCK_SIZE);
+		return NULL;
+	}
+
+	if (old == inode)
+		return NULL; /* no snapshot was deactivated */
+	
+	if (old) {
+		NEXT3_I(old)->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
+		/* remove active snapshot reference */
+		iput(old);
+		snapshot_debug(1, "snapshot (%u) deactivated\n", old->i_generation);
+	}
+	if (inode) {
+		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
+		/* add active snapshot reference */
+		__iget(inode);
+		snapshot_debug(1, "snapshot (%u) activated\n", inode->i_generation);
+	}
+	NEXT3_SB(sb)->s_active_snapshot = inode;
+	
+	return old;
+}
+
+
+/*
+ * Snapshots control functions
+ */
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+/*
+ * next3_snapshot_get_flags() check snapshot state
+ * called from next3_ioctl() under i_mutex lock 
+ */
+void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
+{
+	int open_count = atomic_read(&filp->f_path.dentry->d_count);
+	/* 
+	 * 1 count for ioctl (lsattr)
+	 * greater count means the snapshot is open by user (mounted?)
+	 */
+	if (open_count > 1)
+		ei->i_flags |= NEXT3_SNAPFILE_OPEN_FL;
+	else
+		ei->i_flags &= ~NEXT3_SNAPFILE_OPEN_FL;
+}
+
+/*
+ * next3_snapshot_set_flags() monitors snapshot state changes
+ * called from next3_ioctl() under i_mutex lock and during transaction 
+ */
+int next3_snapshot_set_flags(handle_t *handle, struct inode *inode, unsigned int flags)
+{
+	unsigned int oldflags = NEXT3_I(inode)->i_flags;
+	int err = 0;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+	if (flags & NEXT3_SNAPFILE_DUMP_FL) {
+		int debug = snapshot_enable_debug;
+		snapshot_enable_debug = 5;
+		next3_snapshot_dump(inode);
+		snapshot_enable_debug = debug;
+		flags &= ~NEXT3_SNAPFILE_DUMP_FL;
+	}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+	if ((flags & NEXT3_SNAPFILE_CLEAN_FL) &&
+		!(oldflags & NEXT3_SNAPFILE_CLEAN_FL))
+		err = next3_snapshot_clean(handle, inode);
+	if (err)
+		goto out;
+#endif
+
+	if ((flags ^ oldflags) & NEXT3_SNAPFILE_ENABLED_FL) {
+		/* enabled/disabled the snapshot during transaction -goldor */
+		if (flags & NEXT3_SNAPFILE_ENABLED_FL)
+			err = next3_snapshot_enable(inode);
+		else
+			err = next3_snapshot_disable(inode);
+	}
+	if (err)
+		goto out;
+
+	if ((flags ^ oldflags) & NEXT3_SNAPFILE_FL) {
+		/* add/delete to snapshots list during transaction -goldor */
+		if (flags & NEXT3_SNAPFILE_FL)
+			err = next3_snapshot_create(inode);
+		else
+			err = next3_snapshot_delete(inode);
+	}
+	if (err)
+		goto out;
+
+	flags &= ~NEXT3_FL_SNAPSHOT_MASK;
+	flags |= (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK);
+	NEXT3_I(inode)->i_flags = flags;
+
+out:
+	/* retake reserve inode write from next3_ioctl() and mark inode dirty */
+	next3_mark_inode_dirty(handle, inode); 
+	return err;
+}
+
+/*
+ * If we have fewer than nblocks credits, 
+ * extend transaction by a minimum of NEXT3_MAX_TRANS_DATA.
+ * If that fails, restart the transaction & 
+ * regain write access for the inode block.
+ */
+static int __extend_or_restart_transaction(const char *where,
+		handle_t *handle, struct inode *inode, int nblocks)
+{
+	int err;
+
+	if (NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, nblocks))
+		return 0;
+
+	if (nblocks < NEXT3_MAX_TRANS_DATA)
+		nblocks = NEXT3_MAX_TRANS_DATA;
+
+	err = __next3_journal_extend(where, handle, nblocks);
+	if (err < 0)
+		return err;
+	if (err) {
+		if (inode)
+			/* lazy way to do mark_iloc_dirty() */
+			next3_mark_inode_dirty(handle, inode); 
+		err = __next3_journal_restart(where, handle, nblocks);
+		if (err)
+			return err;
+		if (inode)
+			/* lazy way to do reserve_inode_write() */
+			next3_mark_inode_dirty(handle, inode); 
+	}
+
+	return 0;
+}
+
+#define extend_or_restart_transaction(handle, nblocks) \
+	__extend_or_restart_transaction(__func__, (handle), NULL, (nblocks))
+#define extend_or_restart_transaction_inode(handle, inode, nblocks) \
+	__extend_or_restart_transaction(__func__, (handle), (inode), (nblocks))
+
+/* 
+ * next3_snapshot_create() initilizes a snapshot file 
+ * and adds it to the list of snapshots
+ */
+int next3_snapshot_create(struct inode *inode)
+{
+	handle_t *handle;
+	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	int i, count, err = -EPERM;
+	struct next3_group_desc *desc;
+	unsigned long ino;
+	struct next3_iloc iloc;
+	next3_fsblk_t bmap_blk = 0, imap_blk = 0, inode_blk = 0, prev_inode_blk = 0;
+	loff_t snapshot_blocks = le32_to_cpu(NEXT3_SB(inode->i_sb)->s_es->s_blocks_count);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	struct list_head *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
+	struct list_head *l = list->next;
+
+	if (!list_empty(list)) {
+		struct inode *last_snapshot = 
+			&list_first_entry(list, struct next3_inode_info, i_orphan)->vfs_inode;
+		if (snapshot != last_snapshot) {
+			snapshot_debug(1, "failed to add snapshot "
+					"because last snapshot (%u) is not active\n", 
+					last_snapshot->i_generation);
+			goto out_err;
+		}
+	}
+#else
+	if (snapshot) {
+		snapshot_debug(1, "failed to add snapshot "
+				"because active snapshot (%u) has to be deleted first\n", 
+				snapshot->i_generation);
+		goto out_err;
+	}
+#endif
+
+	/* verfiy that all inode's direct blocks are not allocated */
+	for (i = 0; i <= NEXT3_TIND_BLOCK; i++) {
+		if (NEXT3_I(inode)->i_data[i])
+			break;
+	}
+	if (i <= NEXT3_TIND_BLOCK || inode->i_size > 0 || NEXT3_I(inode)->i_disksize > 0) {
+		snapshot_debug(1, "failed to create snapshot file (ino=%lu) "
+				"because it is not empty (i_data[%d], i_size=%lld, i_disksize=%lld\n", 
+				inode->i_ino, i, inode->i_size, NEXT3_I(inode)->i_disksize);
+		goto out_err;
+	}
+
+	/* 
+	 * take a reference to the small transaction that started in next3_ioctl() 
+	 * we will extend or restart this transaction as we go along.
+	 * journal_start(n > 1) would not have increase the buffer credits.
+	 */
+	handle = next3_journal_start(inode, 1);
+
+	/* record the new snapshot ID in the snapshot inode generation field */
+	inode->i_generation = le32_to_cpu(NEXT3_SB(inode->i_sb)->s_es->s_last_snapshot_id) + 1;
+	if (inode->i_generation == 0)
+		/* 0 is not a valid snapshot id */
+		inode->i_generation = 1;
+
+	err = extend_or_restart_transaction_inode(handle, inode,
+			SNAPSHOT_META_BLOCKS * NEXT3_DATA_TRANS_BLOCKS(inode->i_sb));
+	if (err)
+		goto out_handle;
+	/* allocate and zero out snapshot meta blocks */
+	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
+		struct buffer_head *bh;
+		/* meta blocks are journalled as dirty meta data */
+		bh = next3_getblk(handle, inode, i, SNAPSHOT_WRITE, &err);
+		if (bh) {
+			err = next3_journal_get_write_access(handle, bh);
+			if (!err) {
+				/* zero out meta block */
+				lock_buffer(bh);
+				memset(bh->b_data, 0, bh->b_size);
+				set_buffer_uptodate(bh);
+				unlock_buffer(bh);
+				err = next3_journal_dirty_metadata(handle, bh);
+			}
+			brelse(bh);
+		}
+		if (!bh || err) {
+			snapshot_debug(1, "failed to initiate meta block (%d) for snapshot (%u)\n",
+					i, inode->i_generation);
+			if (err >= 0)
+				err = -EIO;
+			goto out_handle;
+		}
+	}
+	/* place pre-allocated [d,t]ind blocks in position */
+	next3_snapshot_unhide(NEXT3_I(inode));
+
+	/* allocate super block group descriptors and COW bitmap #0 for snapshot */
+	desc = next3_get_group_desc(inode->i_sb, 0, NULL);
+	err = count = NEXT3_SB(inode->i_sb)->s_gdb_count + 1;
+	if (desc)
+		bmap_blk = le32_to_cpu(desc->bg_block_bitmap);
+	if (!bmap_blk)
+		err = -EIO; 
+	for (i = 0; err > 0 && i <= count; i += err) {
+		next3_fsblk_t blk = ((i < count) ? i : bmap_blk);
+		int num = ((i < count) ? count - i : 1);
+		err = extend_or_restart_transaction_inode(handle, inode, 
+				NEXT3_DATA_TRANS_BLOCKS(inode->i_sb));
+		if (err)
+			goto out_handle;
+		err = next3_snapshot_map_blocks(handle, inode, blk, num, NULL, SNAPSHOT_WRITE);
+	}
+	if (err <= 0) {
+		snapshot_debug(1, "failed to allocate super block "
+				"%d group descriptor blocks "
+				"and COW bitmap #0 (%lu) for snapshot (%u)\n", 
+				count - 1, bmap_blk, inode->i_generation);
+		if (err) err = -EIO;
+		goto out_handle;
+	}
+
+	snapshot = inode;
+	ino = snapshot->i_ino;
+alloc_self_inode:
+	/* 
+	 * pre-allocate for every snapshot inode including this one:
+	 * - inode's own block
+	 * - inode's group block and inode bitmap blocks
+	 * - inode's direct blocks (HEADER, ZERO, DIND, TIND)
+	 */
+	err = extend_or_restart_transaction_inode(handle, inode,
+			7 * NEXT3_DATA_TRANS_BLOCKS(inode->i_sb));
+	if (err)
+		goto out_handle;
+	iloc.block_group = 0;
+	inode_blk = next3_get_inode_block(inode->i_sb, ino, &iloc);
+	if (!prev_inode_blk || inode_blk != prev_inode_blk) {
+		/* not same inode and bitmap blocks as prev snapshot */
+		err = -EIO;
+		bmap_blk = 0;
+		imap_blk = 0;
+		desc = NULL;
+		if (inode_blk)
+			desc = next3_get_group_desc(inode->i_sb, iloc.block_group, NULL);
+		if (desc) {
+			bmap_blk = le32_to_cpu(desc->bg_block_bitmap);
+			imap_blk = le32_to_cpu(desc->bg_inode_bitmap);
+		}
+		if (bmap_blk && imap_blk) {
+			count = 1;
+			if (imap_blk == bmap_blk + 1)
+				count++;
+			if (inode_blk == imap_blk + 1)
+				count++;
+			err = next3_snapshot_map_blocks(handle, inode, bmap_blk, count, NULL, SNAPSHOT_WRITE);
+			count = err;
+			if (err > 0 && count < 2)
+				err = next3_snapshot_map_blocks(handle, inode, imap_blk, 1, NULL, SNAPSHOT_WRITE);
+			if (err > 0 && count < 3)
+				err = next3_snapshot_map_blocks(handle, inode, inode_blk, 1, NULL, SNAPSHOT_WRITE);
+		}
+		if (err < 0) {
+			next3_fsblk_t blk0 = iloc.block_group * NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
+			snapshot_debug(1, "failed to allocate self inode and bitmap blocks of snapshot (%u) "
+					"(%lu,%lu,%lu/%lu) for snapshot (%u)\n", snapshot->i_generation,
+					bmap_blk - blk0, imap_blk - blk0, inode_blk - blk0, iloc.block_group, 
+					inode->i_generation);
+			goto out_handle;
+		}
+	}
+	/* alloc and zero out all inode's direct blocks */
+	for (i = 0; err >= 0 && i <= NEXT3_TIND_BLOCK; i++) {
+		next3_fsblk_t blocknr, blk = le32_to_cpu(NEXT3_I(snapshot)->i_data[i]);
+		if (blk) {
+			err = next3_snapshot_map_blocks(handle, inode, blk, 1, &blocknr, SNAPSHOT_WRITE);
+			if (err < 0)
+				break;
+			err = next3_snapshot_zero_data_buffer(handle, inode, blk, blocknr);
+		}
+		if (err) {
+			snapshot_debug(1, "failed to allocate direct block #%d (%lu) of snapshot (%u) "
+					"for snapshot (%u)\n", i, blk,
+					snapshot->i_generation, inode->i_generation);
+			goto out_handle;
+		}
+	}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	if (l != list) {
+		snapshot = &list_entry(l, struct next3_inode_info, i_orphan)->vfs_inode;
+		ino = snapshot->i_ino;
+		prev_inode_blk = inode_blk;
+		l = l->next;
+		goto alloc_self_inode;
+	}
+#endif
+
+	err = extend_or_restart_transaction_inode(handle, inode, 2);
+	if (err)
+		goto out_handle;
+
+	/* mark 'take' and finish the job outside the transaction */
+	NEXT3_I(inode)->i_flags |= (NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
+	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
+	/* record the file system size in the snapshot inode disksize field */
+	SNAPSHOT_SET_SIZE(inode, snapshot_blocks << SNAPSHOT_BLOCK_SIZE_BITS);
+	SNAPSHOT_SET_DISABLED(inode);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	err = next3_inode_list_add(handle, inode, list,
+			&NEXT3_SB(inode->i_sb)->s_es->s_last_snapshot, "snapshot");
+
+	if (err) {
+		snapshot_debug(1, "failed to add snapshot (%u) to list\n", inode->i_generation);
+		goto out_handle;
+	}
+	/* add snapshot list reference */
+	__iget(inode);
+#endif
+
+	err = next3_mark_inode_dirty(handle, inode);
+	if (err)
+		goto out_handle;
+
+	snapshot_debug(1, "snapshot (%u) created\n", inode->i_generation);
+	err = 0;
+out_handle:
+	next3_journal_stop(handle);
+out_err:
+	if (err)
+		NEXT3_I(inode)->i_flags &= ~(NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
+	return err;
+}
+
+/* 
+ * next3_snapshot_take() makes a new snapshot file
+ * into the active snapshot 
+ *
+ * this function calls journal_lock_updates() 
+ * and should not be called during a journal transaction
+ */
+int next3_snapshot_take(struct inode *inode)
+{
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	struct list_head *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
+	struct list_head *l = list->next;
+#endif
+	next3_fsblk_t prev_inode_blk = 0;
+	struct inode *snapshot;
+	struct super_block *sb = inode->i_sb;
+	struct next3_sb_info *sbi = NEXT3_SB(sb);
+	struct buffer_head *sbh = NULL;
+	struct buffer_head *bhs[3];
+	const char *strs[3];
+	int nbhs = 0;
+	struct next3_super_block *es = NULL;
+	struct next3_iloc iloc;
+	struct next3_group_desc *desc;
+	int i, err = -EIO;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	next3_fsblk_t snapshot_r_blocks;
+	struct kstatfs statfs;
+#endif
+
+	if (!sbi->s_sbh)
+		goto out_err;
+	else if (sbi->s_sbh->b_blocknr != 0) {
+		snapshot_debug(1, "warning: unexpected super block at block (%lld:%d)!\n",
+				sbi->s_sbh->b_blocknr, (char *)sbi->s_es - (char *)sbi->s_sbh->b_data); 
+	} else if (sbi->s_es->s_magic != cpu_to_le16(NEXT3_SUPER_MAGIC)) {
+		snapshot_debug(1, "warning: super block of snapshot (%u) is broken!\n", 
+				inode->i_generation);
+	}
+	else
+		sbh = next3_getblk(NULL, inode, SNAPSHOT_IBLOCK(0), SNAPSHOT_READ, &err);
+
+	if (!sbh || sbh->b_blocknr == 0) {
+		snapshot_debug(1, "warning: super block of snapshot (%u) not allocated\n", 
+				inode->i_generation);
+		goto out_err;
+	}
+	else {
+		snapshot_debug(4, "super block of snapshot (%u) mapped to block (%lld)\n", 
+				inode->i_generation, sbh->b_blocknr);
+	   	es = (struct next3_super_block *)(sbh->b_data + ((char *)sbi->s_es - sbi->s_sbh->b_data));
+	}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	/* update fs statistics to calculate snapshot reserved space */
+	if (next3_statfs_sb(sb, &statfs)) {
+		snapshot_debug(1, "failed to statfs before snapshot (%u) take\n",
+				inode->i_generation); 
+		goto out_err;
+	}
+	/* calculate disk space for potential snapshot file growth based on: 
+	 * 1 indirect block per 1K fs blocks (to map moved data blocks)
+	 * +1 data block per 1K fs blocks (to copy indirect blocks)
+	 * +1 data block per fs meta block (to copy meta blocks)
+	 * +1 data block per directory (to copy small directory index blocks)
+	 * +1 data block per 64 inodes (to copy large directory index blocks)
+	 */
+	snapshot_r_blocks = 2*(statfs.f_blocks >> SNAPSHOT_ADDR_PER_BLOCK_BITS) +
+		statfs.f_spare[0] + statfs.f_spare[1] + 
+		(statfs.f_files - statfs.f_ffree) / 64;
+
+	/* verify enough free space before taking the snapshot */
+	if (statfs.f_bfree < snapshot_r_blocks) {
+		err = -ENOSPC;
+		goto out_err;
+	}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+	/* 
+	 * abort running clean of active snapshot
+	 * freeze_fs() below will wait until snapshot_clean()
+	 * has aborted and closed it's transaction
+	 */
+	if (cleaning > 0)
+		cleaning = -1;
+#endif
+
+	/* 
+	 * flush journal to disk and clear the RECOVER flag 
+	 * before taking the snapshot
+	 */
+	sb->s_op->freeze_fs(sb);
+	lock_super(sb);
+	
+	/*
+	 * copy super block to snapshot and fix it
+	 */
+	lock_buffer(sbh);
+	memcpy(sbh->b_data, sbi->s_sbh->b_data, sb->s_blocksize);
+	/* convert from Next3 to Ext2 super block */
+	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
+	es->s_journal_inum = 0;
+	es->s_feature_ro_compat &= ~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+	set_buffer_uptodate(sbh);
+	unlock_buffer(sbh);
+	mark_buffer_dirty(sbh);
+	sync_dirty_buffer(sbh);
+	/*
+	 * copy super block group descriptors and bitmap block #0 to snapshot 
+	 */
+	strs[nbhs] = "super";
+	bhs[nbhs] = sb_bread(sb, 0);
+	nbhs++;
+	desc = next3_get_group_desc(sb, 0, NULL);
+	if (desc) {
+		strs[nbhs] = "super block bitmap";
+		bhs[nbhs] = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
+		nbhs++;
+	}
+	for (i = 0; i < sbi->s_gdb_count + nbhs; i++) {
+		struct buffer_head *bh = (i < sbi->s_gdb_count ? sbi->s_group_desc[i] : 
+								bhs[i - sbi->s_gdb_count]);
+		long iblock = (bh->b_blocknr ? SNAPSHOT_IBLOCK(bh->b_blocknr) : 
+				SNAPSHOT_META_HEADER); /* copy super block to snapshot header */
+
+		brelse(sbh);
+		sbh = next3_getblk(NULL, inode, iblock, SNAPSHOT_READ, &err);
+		if (!sbh || sbh->b_blocknr == bh->b_blocknr) {
+			const char * str = (i < sbi->s_gdb_count ? "group descriptors" :
+								strs[i - sbi->s_gdb_count]);
+			snapshot_debug(1, "warning: %s block (%lld) of snapshot (%u) not allocated\n", 
+					str, bh->b_blocknr, inode->i_generation);
+			err = -EIO;
+			goto out_unlockfs;
+		}
+		err = next3_snapshot_copy_buffer_sync(sbh, bh);
+		if (err)
+			goto out_unlockfs;
+	}
+	/*
+	 * copy self inode and bitmap blocks to snapshot 
+	 */
+	snapshot = inode;
+copy_self_inode:
+	while (nbhs > 0)
+		brelse(bhs[--nbhs]);
+	err = next3_get_inode_loc(snapshot, &iloc);
+	if (!err)
+		desc = next3_get_group_desc(sb, iloc.block_group, NULL);
+	if (err || !iloc.bh || !iloc.bh->b_blocknr || !desc) {
+		snapshot_debug(1, "failed to get self inode and bitmap blocks of snapshot (%u)\n", 
+				snapshot->i_generation);
+		goto out_unlockfs;
+	}
+	if (iloc.bh->b_blocknr != prev_inode_blk) {
+		strs[nbhs] = "self inode";
+		bhs[nbhs] = iloc.bh;
+		nbhs++;
+		strs[nbhs] = "self block bitmap";
+		bhs[nbhs] = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
+		nbhs++;
+		strs[nbhs] = "self inode bitmap";
+		bhs[nbhs] = sb_bread(sb, le32_to_cpu(desc->bg_inode_bitmap));
+		nbhs++;
+		for (i = 0; i < nbhs; i++) {
+			struct buffer_head *bh = bhs[i];
+			if (bh) {
+				brelse(sbh);
+				sbh = next3_getblk(NULL, inode, SNAPSHOT_IBLOCK(bh->b_blocknr), SNAPSHOT_READ, &err);
+			}
+			if (!bh || err || !sbh || sbh->b_blocknr == bh->b_blocknr) {
+				snapshot_debug(1, "failed to copy snapshot (%u) %s block [%lld/%lld] to snapshot (%u)\n", 
+						snapshot->i_generation, strs[i], SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr), 
+						SNAPSHOT_BLOCK_GROUP(bh->b_blocknr), inode->i_generation);
+				if (!err) err = -EIO;
+				goto out_unlockfs;
+			}
+			err = next3_snapshot_copy_buffer_sync(sbh, bh);
+			if (err)
+				goto out_unlockfs;
+			snapshot_debug(4, "copied snapshot (%u) %s block [%lld/%lld] to snapshot (%u)\n", 
+					snapshot->i_generation, strs[i], SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr), 
+					SNAPSHOT_BLOCK_GROUP(bh->b_blocknr), inode->i_generation);
+		}
+	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	if (l != list) {
+		snapshot = &list_entry(l, struct next3_inode_info, i_orphan)->vfs_inode;
+		prev_inode_blk = iloc.bh->b_blocknr;
+		l = l->next;
+		goto copy_self_inode;
+	}
+#endif
+
+	if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+		NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		/* If this is the first snapshot
+		 * created, add a flag to the superblock.
+		 */
+		NEXT3_SET_RO_COMPAT_FEATURE(sb,
+			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+	}
+
+	/* set as active snapshot on-disk */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le32(snapshot_r_blocks);
+#endif
+	sbi->s_es->s_last_snapshot_id = cpu_to_le32(le32_to_cpu(sbi->s_es->s_last_snapshot_id)+1);
+	if (sbi->s_es->s_last_snapshot_id == 0)
+		/* 0 is not a valid snapshot id */
+		sbi->s_es->s_last_snapshot_id = cpu_to_le32(1);
+	sbi->s_es->s_last_snapshot = inode->i_ino;
+	/* set as active snapshot in-memory */
+	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_TAKE_FL;
+	next3_snapshot_set_active(sb, inode);
+	/* set snapshot file read-only aops */
+	next3_set_aops(inode);
+	/* reset COW bitmap cache */
+	next3_snapshot_reset_cow_bitmap(sb);
+
+	/* 
+	 * no need to sync the snapshot inode to disk 
+	 * because all that changed are the snapshot flags TAKE and ACTIVE
+	 * which are fixed on load by snapshot_update()
+	 */
+out_unlockfs:
+	unlock_super(sb);
+	sb->s_op->unfreeze_fs(sb);
+
+	if (err)
+		goto out_err;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+	if (snapshot_enable_debug >= 5)
+		next3_snapshot_dump(inode);
+#endif
+	snapshot_debug(1, "snapshot (%u) has been taken\n", 
+			inode->i_generation);
+
+out_err:
+	brelse(sbh);
+	while (nbhs > 0)
+		brelse(bhs[--nbhs]);
+	return err;
+}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+/* 
+ * next3_snapshot_clean() clears old snapshots blocks from the COW bitmap.
+ *
+ * Q: deleted snapshots blocks are cleared from the COW bitmap
+ * lazily on snapshot shrink, merge and cleanup, so what is this for?
+ *
+ * A: the following example explains the problem of merging non-clean snapshots:
+ * 1. create a 100M file 'foo' in the root directory - allocated from block group 0
+ * 2. take snapshot 1
+ * 3. remove 'foo' - snapshot 1 now contains all 'foo' blocks
+ * 4. take snapshot 2 and snaphsot 3
+ * 5. delete snapshot 1 - 'foo' blocks are excluded from snapshot 3 and freed
+ * 6. create a 100M file 'bar' in the root directory - 'foo' blocks are reallocated
+ * 7. take snapshot 4
+ * 8. remove 'bar' - snapshot 4 now contains all 'bar' blocks
+ * 9. take snapshot 5
+ * 10. delete snapshot 3
+ * 11. delete snapshot 4 - merge moves 'bar' blocks into snapshot 2
+ *
+ * at the end of this long example, snapshot 2 disk usage is ~100M,
+ * while it does not actully contain any reference to such a large file.
+ * it contains a reference to snapshot 1, which was 100M, but should have been
+ * excluded from snapshot 2, but it wasn't, because snapshot 1 was deleted
+ * when snapshot 3 was active.
+ *
+ * to solve this problem, we must clean snapshot 2 before taking snapshot 3.
+ * it is not mandatory to clean a snapshot after take,
+ * but merge will not move any blocks into a non-clean snapshot,
+ * so the disk space in the example above cannot be reclaimed until snapshot 2 is deleted
+ *
+ */
+int next3_snapshot_clean(handle_t *handle, struct inode *inode)
+{
+	struct list_head *l;
+	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	struct buffer_head *bh = NULL;
+	__le32 nr;
+	int i, dind, ndind, err;
+
+	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
+		snapshot_debug(1, "next3_snapshot_clean() called with non snapshot file (ino=%lu)\n", 
+				inode->i_ino);
+		return -EPERM;
+	}
+
+	if (snapshot != inode) {
+		snapshot_debug(1, "failed to clean non active snapshot (%u)\n", 
+				inode->i_generation);
+		return -EPERM;
+	}
+
+	if (cleaning) {
+		snapshot_debug(1, "failed to clean snapshot (%u)"
+				" because snapshot (%d) is being cleaned\n", 
+				inode->i_generation, cleaning);
+		return -EPERM;
+	}
+
+	/* set the 'cleaning' flag and release snapshot_mutex and inode_mutex */
+	cleaning = inode->i_generation;
+	mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+	mutex_unlock(&inode->i_mutex);
+
+	ndind = (NEXT3_SB(inode->i_sb)->s_groups_count /
+			SNAPSHOT_DIND_BLOCK_GROUPS) + 1;
+	if (ndind > SNAPSHOT_IND_BLOCKS)
+		ndind = SNAPSHOT_IND_BLOCKS;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
+	/* iterate on dind branches, then on snapshots (to reduce disk seek time) */
+	for (dind = 0; dind < ndind; dind++) {
+#endif
+	list_for_each_prev(l, &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
+		snapshot = &list_entry(l, struct next3_inode_info, i_orphan)->vfs_inode;
+		if (snapshot == inode)
+			/* no need to clear snapshot blocks from its own COW bitmap */
+			break;
+#ifndef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
+		/* iterate on old snapshots, then on dind branches */
+		for (dind = 0; dind < ndind; dind++) {
+#endif
+			/* 
+			 * other snapshot operations may be waiting
+			 * for this transaction to close, so unless we restart 
+			 * the transaction in the middle of a long clean
+			 * we would be blocking them until the clean is complete
+			 */
+			err = next3_journal_restart(handle, NEXT3_MAX_TRANS_DATA);
+			if (err)
+				goto out_err;
+
+			if (cleaning < 0)
+				/* clean of active snapshot aborted by snapshot_take() */
+				break;
+
+			if (dind == 0) {
+				/* clear all directs blocks first */
+				for (i = 0; i <= NEXT3_TIND_BLOCK; i++) {
+					nr = NEXT3_I(snapshot)->i_data[i];
+					if (nr)
+						next3_snapshot_get_clear_access(handle, snapshot, le32_to_cpu(nr), 1);
+				}
+				/* get the root block nr of the first dind branch */
+				nr = NEXT3_I(snapshot)->i_data[NEXT3_DIND_BLOCK];
+			}
+			else {
+				/* get the root block nr of the tind branch */
+				nr = NEXT3_I(snapshot)->i_data[NEXT3_TIND_BLOCK];
+				if (!nr)
+					continue;
+				brelse(bh);
+				bh = sb_bread(inode->i_sb, le32_to_cpu(nr));
+				if (!bh) {
+					err = -EIO;
+					goto out_err;
+				}
+				/* get the root block nr of the n-th dind branch */
+				nr = ((__le32 *)bh->b_data)[dind-1];
+			}
+			if (nr)
+				/* clear the the dind branch rooted at block 'nr' */
+				next3_free_branches_cow(handle, snapshot, NULL, &nr, &nr+1, 2, 1);
+	
+			snapshot_debug(2, "snapshot (%u) cleaned snapshot (%u) blocks (dind=%d/%d)\n", 
+					inode->i_generation, snapshot->i_generation, dind, ndind);
+			/* sleep 1/ndind tunable delay unit */
+			snapshot_test_delay_per_ticks(SNAPTEST_TAKE, ndind);
+		}
+	}
+
+out_err:
+	/* 
+	 * snapshot_mutex may be taken by snapshot_take(),
+	 * which is trying to abort this clean and is waiting
+	 * for this transaction to close, so unless we restart 
+	 * the transaction here we would be dead locked
+	 */
+	err = next3_journal_restart(handle, 1);
+	/* retake snapshot_mutex and inode_mutex and clear the 'cleaning' flag */
+	mutex_lock(&inode->i_mutex);
+	mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+	if (cleaning < 0) {
+		/* clean of active snapshot aborted by snapshot_take() */
+		snapshot_debug(1, "snapshot (%u) clean interrupted by snapshot take\n", 
+				inode->i_generation);
+		err = -EINTR;
+	}
+	else if (err) {
+		snapshot_debug(1, "failed to clean active snapshot (%u) (err=%d)\n", 
+				inode->i_generation, err);
+	}
+	else {
+		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_CLEAN_FL;
+		snapshot_debug(1, "snapshot (%u) is clean\n", inode->i_generation);
+	}
+	cleaning = 0;
+	brelse(bh);
+	return err;
+}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
+/* 
+ * next3_snapshot_stabilize() initializes the snapshot COW bitmap
+ * to prepare it to snapshot_verify() after reboot.
+ *
+ * in snapshot_take(), the COW bitmap is initialized 
+ * only for selected block groups.
+ * the rest of the COW bitmap is initialized lazily on the first
+ * block group access.
+ * deleted snapshots excluded blocks are cleared from the COW bitmap
+ * lazily on snapshot shrink, merge and cleanup.
+ *
+ * this function initializes the COW bitmap for all block groups
+ * and clears all the snapshot excluded blocks from the COW bitmap,
+ * so it will be safe to take another snapshot.
+ */
+int next3_snapshot_stabilize(handle_t *handle, struct inode *inode)
+{
+	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	unsigned long ngroups;
+	int bgi, err;
+
+	if (snapshot != inode) {
+		snapshot_debug(1, "failed to stabilize non active snapshot (%u)\n", 
+				inode->i_generation);
+		return -EPERM;
+	}
+
+	ngroups = NEXT3_SB(inode->i_sb)->s_groups_count;
+	for (bgi = 0; bgi < ngroups; bgi++) {
+		err = extend_or_restart_transaction_inode(handle, inode, 1);
+		if (err)
+			goto out_err;
+		err = next3_snapshot_init_cow_bitmap(handle, inode, bgi);
+		if (err)
+			goto out_err;
+	}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+	/* clear old snapshot files blocks from COW bitmap */
+	err = next3_snapshot_clean(handle, inode);
+	if (err)
+		goto out_err;
+#endif
+
+	snapshot_debug(1, "snapshot (%u) is stable\n", inode->i_generation);
+out_err:
+	if (err)
+		snapshot_debug(1, "failed to stabilize active snapshot (%u) (err=%d, bgi=%d)\n", 
+				inode->i_generation, err, bgi);
+	return err;
+}
+
+/* 
+ * next3_snapshot_verify() is used to verify the active snapshot
+ * after reboot in case fsck was run on the file system.
+ *
+ * this function compares the COW bitmap for all block groups
+ * with the file system block bitmap and checks for blocks
+ * that may have been deleted by fsck.
+ */
+int next3_snapshot_verify(handle_t *handle, struct inode *inode)
+{
+	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	unsigned long ngroups;
+	int bgi, err;
+
+	if (snapshot != inode) {
+		snapshot_debug(1, "failed to verify non active snapshot (%u)\n", 
+				inode->i_generation);
+		return -EPERM;
+	}
+
+	ngroups = NEXT3_SB(inode->i_sb)->s_groups_count;
+	for (bgi = 0; bgi < ngroups; bgi++) {
+		err = extend_or_restart_transaction_inode(handle, inode, 1);
+		if (err)
+			goto out_err;
+		err = next3_snapshot_verify_cow_bitmap(handle, inode, bgi);
+		if (err)
+			goto out_err;
+	}
+
+	snapshot_debug(1, "snapshot (%u) is verified\n", inode->i_generation);
+out_err:
+	if (err) {
+		snapshot_debug(1, "failed to verify active snapshot (%u) (err=%d, bgi=%d)\n", 
+				inode->i_generation, err, bgi);
+		if (err > 0)
+			err = -EIO;
+	}
+	return err;
+}
+#endif
+
+/* 
+ * next3_snapshot_enable() enables snapshot mount
+ * sets the in-use flag and the active snapshot
+ */
+int next3_snapshot_enable(struct inode *inode)
+{
+	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
+		snapshot_debug(1, "next3_snapshot_enable() called with non snapshot file (ino=%lu)\n", 
+				inode->i_ino);
+		return -EPERM;
+	}
+
+	if (NEXT3_I(inode)->i_flags & (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_TAKE_FL)) {
+		snapshot_debug(1, "failed to enable snapshot (%u) (deleted|take)\n", 
+				inode->i_generation);
+		return -EPERM;
+	}
+
+	/*
+	 * set i_size to block device size to enable loop device mount 
+	 */
+	SNAPSHOT_SET_ENABLED(inode);
+	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ENABLED_FL;
+
+	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
+			inode->i_generation, inode->i_size);
+	snapshot_debug(1, "snapshot (%u) enabled\n", inode->i_generation);
+	return 0;
+}
+
+
+/* 
+ * next3_snapshot_disable() disables snapshot mount
+ */
+int next3_snapshot_disable(struct inode *inode)
+{
+	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
+		snapshot_debug(1, "next3_snapshot_disable() called with non snapshot file (ino=%lu)\n", 
+				inode->i_ino);
+		return -EPERM;
+	}
+
+	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_OPEN_FL) {
+		snapshot_debug(1, "failed to disable mounted snapshot (%u)\n", 
+				inode->i_generation);
+		return -EPERM;
+	}
+
+	/*
+	 * set i_size to zero to disable loop device mount 
+	 */
+	SNAPSHOT_SET_DISABLED(inode);
+	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
+
+	/* invalidate page cache */
+	truncate_inode_pages(&inode->i_data, SNAPSHOT_BYTES_OFFSET);
+
+	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
+			inode->i_generation, inode->i_size);
+	snapshot_debug(1, "snapshot (%u) disabled\n", inode->i_generation);
+	return 0;
+}
+
+/*
+ * next3_snapshot_delete() marks snapshot for deletion
+ */
+int next3_snapshot_delete(struct inode *inode)
+{
+	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_ENABLED_FL) {
+		snapshot_debug(1, "failed to delete enabled snapshot (%u)\n", 
+				inode->i_generation);
+		return -EPERM;
+	}
+
+	/* mark deleted for later cleanup to finish the job */
+	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_DELETED_FL;
+	snapshot_debug(1, "snapshot (%u) marked for deletion\n", 
+			inode->i_generation);
+	return 0;
+}
+#endif
+
+/*
+ * next3_snapshot_cleanup() removes a snapshot inode from the list
+ * of snapshots stored on disk and truncates the snapshot inode
+ */
+static int next3_snapshot_cleanup(struct inode *inode)
+{
+	handle_t *handle;
+	struct next3_sb_info *sbi;
+	struct next3_inode_info *ei = NEXT3_I(inode);
+	__le32 nr = 0;
+	int err = 0;
+	
+	/* elevate ref count until final cleanup */
+	__iget(inode); 
+
+	if (ei->i_flags & 
+		(NEXT3_SNAPFILE_ENABLED_FL|NEXT3_SNAPFILE_INUSE_FL|NEXT3_SNAPFILE_ACTIVE_FL)) {
+		snapshot_debug(4, "deferred delete of snapshot (%u) (inuse|enabled|active)\n", 
+				inode->i_generation);
+		goto out_err;
+	}
+
+	/* start large truncate transaction that will be extended/restarted */
+	handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
+	if (IS_ERR(handle)) {
+		err = PTR_ERR(handle);
+		goto out_err;
+	}
+	sbi = NEXT3_SB(inode->i_sb);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+	/* 
+	 * a very simplified version of next3_truncate() 
+	 * we free the snapshot blocks here, to make sure
+	 * they are excluded from the active snapshot.
+	 * there is no need to use the orphan list because
+	 * snapshot is under the protection of the snapshot list 
+	 */
+	nr = ei->i_data[NEXT3_DIND_BLOCK];
+	if (nr) {
+		next3_free_branches_cow(handle, inode, NULL, &nr, &nr+1, 2, 0);
+		ei->i_data[NEXT3_DIND_BLOCK] = 0;
+	}
+	nr = ei->i_data[NEXT3_TIND_BLOCK];
+	if (nr) {
+		next3_free_branches_cow(handle, inode, NULL, &nr, &nr+1, 3, 0);
+		ei->i_data[NEXT3_TIND_BLOCK] = 0;
+	}
+	SNAPSHOT_SET_DISABLED(inode);
+	ei->i_disksize = inode->i_size;
+	err = next3_mark_inode_dirty(handle, inode);
+	if (err)
+		goto out_handle;
+#endif
+
+	err = extend_or_restart_transaction_inode(handle, inode, 2);
+	if (err)
+		goto out_err;
+
+	/* 
+	 * at this point, this snapshot is empty
+	 * but still on the snapshots list.
+	 * after it is removed from the list,
+	 * it must not have the SNAPFILE flag set,
+	 * but it may have the SNAPSFILE_DELETED flag set.
+	 * inode will be marked dirty by next3_inode_list_del()
+	 */
+	ei->i_flags &= ~NEXT3_SNAPFILE_FL;
+	ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	err = next3_inode_list_del(handle, inode, &NEXT3_SB(inode->i_sb)->s_snapshot_list, 
+			&sbi->s_es->s_last_snapshot, "snapshot");
+	if (err)
+		goto out_handle;
+	/* remove snapshot list reference */
+	iput(inode); 
+#else
+	lock_super(inode->i_sb);
+	err = next3_journal_get_write_access(handle, sbi->s_sbh);
+	sbi->s_es->s_last_snapshot = 0;
+	if (!err)
+		err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
+	unlock_super(inode->i_sb);
+#endif
+
+out_handle:
+	next3_journal_stop(handle);
+	if (err)
+		goto out_err;
+
+	snapshot_debug(1, "snapshot (%u) deleted\n", inode->i_generation);
+	/* sleep 1 tunable delay unit */
+	snapshot_test_delay(SNAPTEST_DELETE);
+
+	err = 0;
+out_err:
+	/* drop final ref count */
+	iput(inode); 
+	if (err) {
+		snapshot_debug(1, "failed to delete snapshot (%u)\n", 
+				inode->i_generation);
+	}
+	return err;
+}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+/*
+ * next3_snapshot_shrink() frees unused blocks from
+ * deleted snapshot files.
+ * 'start' is the latest non-deleted snapshot before
+ * the deleted snapshots, which are due for shrinking.
+ * 'end' is the first non-deleted (or active) snapshot after
+ * the deleted snapshots, which are due for shrinking.
+ * 'need_shrink' is the number of deleted snapshot files
+ * between 'start' and 'end' which are due for shrinking.
+ */
+static int next3_snapshot_shrink(struct inode *start, struct inode *end, int need_shrink)
+{
+	struct list_head *l;
+	handle_t *handle;
+	struct buffer_head cow_bitmap;
+	next3_fsblk_t block = 0;
+	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
+	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
+	unsigned long count = le32_to_cpu(sbi->s_es->s_blocks_count);
+	unsigned long block_groups = sbi->s_groups_count;
+	long block_group = -1;
+	next3_fsblk_t bg_boundary = le32_to_cpu(sbi->s_es->s_first_data_block);
+	int err;
+
+	snapshot_debug(3, "snapshot (%u-%u) shrink: "
+			"count = 0x%lx, need_shrink = %d\n",
+			start->i_generation, end->i_generation, 
+			count, need_shrink);
+
+	/* start large truncate transaction that will be extended/restarted */
+	handle = next3_journal_start(start, NEXT3_MAX_TRANS_DATA);
+	if (IS_ERR(handle))
+		return PTR_ERR(handle);
+
+	while (count > 0) {
+		while (block >= bg_boundary) {
+			/* sleep 1/block_groups tunable delay unit */
+			snapshot_test_delay_per_ticks(SNAPTEST_DELETE, block_groups);
+			/* reset COW bitmap cache */
+			cow_bitmap.b_state = 0;
+			cow_bitmap.b_blocknr = -1000;
+			bg_boundary += NEXT3_BLOCKS_PER_GROUP(start->i_sb);
+			block_group++;
+			if (block >= snapshot_blocks) {
+				/* past last snapshot block group - map COW bitmap cache to zero block.
+				 * this will force snapshots after resize to shrink to start snapshot size. 
+				 * I know this is somewhat of a hack, but I prefer this simple hack
+				 * over more special code to handle resize and shrink. -goldor */
+				map_bh(&cow_bitmap, start->i_sb, le32_to_cpu(SNAPSHOT_ZERO_BLOCK(start)));
+				set_buffer_new(&cow_bitmap);
+				block_group = -1;
+			}
+		}
+
+		err = extend_or_restart_transaction(handle, NEXT3_MAX_TRANS_DATA);
+		if (err)
+			goto out_err;
+
+		err = next3_get_blocks_handle(handle, start, SNAPSHOT_IBLOCK(block), count,
+				&cow_bitmap, SNAPSHOT_SHRINK);
+
+		snapshot_debug(3, "snapshot (%u-%u) shrink: "
+				"block = 0x%lx, count = 0x%lx, err = 0x%x\n",
+				start->i_generation, end->i_generation, 
+				block, count, err);
+
+		if (buffer_mapped(&cow_bitmap) && buffer_new(&cow_bitmap)) {
+			snapshot_debug(2, "snapshot (%u-%u) shrink: "
+					"block group = %ld/%lu, COW bitmap = [%lld/%lld]\n",
+					start->i_generation, end->i_generation, 
+					block_group, block_groups,
+					SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bitmap.b_blocknr), 
+					SNAPSHOT_BLOCK_GROUP(cow_bitmap.b_blocknr));
+			clear_buffer_new(&cow_bitmap);
+		}
+
+		if (err <= 0)
+			goto out_err;
+
+		block += err;
+		count -= err;
+	}
+
+	/* marks need_shrink snapshots shrunk */
+	err = extend_or_restart_transaction(handle, need_shrink);
+	if (err)
+		goto out_err;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	/* iterate from 'start' to 'end' */
+	list_for_each_prev(l, &NEXT3_I(start)->i_orphan) {
+		struct next3_inode_info *ei;
+		struct next3_iloc iloc;
+		if (l == &sbi->s_snapshot_list)
+			break;
+		ei = list_entry(l, struct next3_inode_info, i_orphan);
+		if (&ei->vfs_inode == end)
+			break;
+		if (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL &&
+			!(ei->i_flags &
+			(NEXT3_SNAPFILE_SHRUNK_FL|NEXT3_SNAPFILE_ACTIVE_FL))) {
+			/* mark snapshot shrunk */
+			err = next3_reserve_inode_write(handle, &ei->vfs_inode, &iloc);
+			ei->i_flags |= NEXT3_SNAPFILE_SHRUNK_FL;
+			if (!err)
+				next3_mark_iloc_dirty(handle, &ei->vfs_inode, &iloc);
+			if (--need_shrink <= 0)
+				break;
+		}
+	}
+#endif
+
+	err = 0;
+out_err:
+	next3_journal_stop(handle);
+	if (need_shrink)
+		snapshot_debug(1, "snapshot (%u-%u) shrink: need_shrink=%d(>0!), err=%d\n",
+				start->i_generation, end->i_generation, need_shrink, err);
+	return err;
+}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+/*
+ * next3_snapshot_merge() moves blocks from shrunk snapshot files.
+ * 'start' is the latest non-deleted snapshot before
+ * the shrunk snapshots, which are due for merging.
+ * 'end' is the first non-deleted (or active) snapshot after
+ * the shrunk snapshots, which are due for merging.
+ * 'need_merge' is the number of shurnk snapshot files
+ * between 'start' and 'end' which are due for merging.
+ */
+static int next3_snapshot_merge(struct inode *start, struct inode *end, int need_merge)
+{
+	struct list_head *l, *n;
+	handle_t *handle = NULL;
+	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
+	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
+	int err;
+
+	snapshot_debug(3, "snapshot (%u-%u) merge: need_merge=%d\n",
+			start->i_generation, end->i_generation, need_merge);
+
+	/* iterate safe from 'start' to 'end' */
+	list_for_each_prev_safe(l, n, &NEXT3_I(start)->i_orphan) {
+		struct next3_inode_info *ei = list_entry(l, struct next3_inode_info, i_orphan);
+		struct inode *inode = &ei->vfs_inode;
+		next3_fsblk_t block = 0;
+		int count = snapshot_blocks;
+
+		if (n == &sbi->s_snapshot_list || inode == end ||
+			!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
+			break;
+
+		/* start large transaction that will be extended/restarted */
+		handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
+		if (IS_ERR(handle))
+			return PTR_ERR(handle);
+
+		while (count > 0) {
+			/* we modify one indirect block and the inode itself
+			 * for both the source and destination inodes */
+			err = extend_or_restart_transaction(handle, 4);
+			if (err)
+				goto out_err;
+
+			err = next3_merge_blocks(handle, inode, start, SNAPSHOT_IBLOCK(block), count);
+
+			snapshot_debug(3, "snapshot (%u) -> snapshot (%u) merge: "
+					"block = 0x%lx, count = 0x%x, err = 0x%x\n",
+					inode->i_generation, start->i_generation, block, count, err);
+
+			if (err <= 0)
+				goto out_err;
+
+			block += err;
+			count -= err;
+		}
+
+		next3_journal_stop(handle);
+		handle = NULL;
+
+		/* we finished moving all blocks of interest from 'inode' into 'start'
+		 * so it is now safe to remove 'inode' from the snapshots list forever */
+		next3_snapshot_cleanup(inode);
+
+		if (--need_merge <= 0)
+			break;
+	}
+
+	err = 0;
+out_err:
+	if (handle) 
+		next3_journal_stop(handle);
+	if (need_merge)
+		snapshot_debug(1, "snapshot (%u-%u) merge: need_merge=%d(>0!), err=%d\n",
+				start->i_generation, end->i_generation, need_merge, err);
+	return err;
+}
+#endif
+
+/*
+ * Snapshot constructor/destructor
+ */
+
+/*
+ * next3_snapshot_load() loads the in-memoery snapshot list from disk
+ */
+void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
+{
+	__le32 *ino_next = &es->s_last_snapshot;
+	
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	if (!list_empty(&NEXT3_SB(sb)->s_snapshot_list)) {
+		snapshot_debug(1, "warning: snaphots already loaded!\n");
+		return;
+	}
+#endif
+
+	/* COW bitmap is non-persistent -goldor */
+	next3_snapshot_reset_cow_bitmap(sb);
+
+	while (*ino_next) {
+		struct inode *inode;
+
+		inode = next3_orphan_get(sb, le32_to_cpu(*ino_next));
+		if (IS_ERR(inode)) {
+			snapshot_debug(1, "warning: found bad inode (%u) in snapshots list!\n",
+					le32_to_cpu(*ino_next));
+			*ino_next = 0;
+			break;
+		}
+
+		if (!(NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)) {
+			snapshot_debug(1, "warning: non snapshot file (%u) in snapshots list!\n",
+					le32_to_cpu(*ino_next));
+			*ino_next = 0;
+			iput(inode);
+			break;
+		}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+		if (snapshot_enable_debug >= 5)
+			next3_snapshot_dump(inode);
+#endif
+		snapshot_debug(1, "snapshot (%u) loaded\n", inode->i_generation);
+
+		if (!NEXT3_SB(sb)->s_active_snapshot)
+			next3_snapshot_set_active(sb, inode);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+		list_add_tail(&NEXT3_I(inode)->i_orphan, &NEXT3_SB(sb)->s_snapshot_list);
+		ino_next = &NEXT_ORPHAN(inode);
+		/* keep snapshot list reference */
+#else
+		iput(inode);
+		break;
+#endif
+	}
+
+	next3_snapshot_update(sb, 0);
+}
+
+/*
+ * next3_snapshot_destroy() releases the in-memoery snapshot list
+ */
+void next3_snapshot_destroy(struct super_block *sb)
+{
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	struct list_head *l, *n;
+	/* iterate safe because we are deleting from list and freeing the inodes */
+	list_for_each_safe(l, n, &NEXT3_SB(sb)->s_snapshot_list) {
+		struct inode *inode = &list_entry(l, struct next3_inode_info, i_orphan)->vfs_inode;
+		list_del_init(&NEXT3_I(inode)->i_orphan);
+		/* remove snapshot list reference */
+		iput(inode);
+	}
+#endif
+	next3_snapshot_set_active(sb, NULL);
+}
+
+/*
+ * next3_snapshot_update() updates snapshots status
+ * if 'cleanup' is true, shrink/merge/cleanup 
+ * all snapshots marked for deletion 
+ */
+void next3_snapshot_update(struct super_block *sb, int cleanup)
+{
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	struct list_head *l, *n;
+#endif
+	struct inode *snapshot;
+	struct inode *inode;
+	struct next3_inode_info *ei;
+	struct inode *used_by = NULL; /* last non-deleted snapshot found */ 
+	int found_active = 0;
+	int found_enabled = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+	int need_shrink = 0;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+	int need_merge = 0;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+	if (cleaning)
+		/* 
+		 * don't free old snapshot blocks while snapshot_clean()
+		 * is clearing snapshot blocks from COW bitmap
+		 */
+		cleanup = 0;
+#endif
+
+	/* we are outside a transaction so we must read active snapshot under mutex lock */
+	snapshot = next3_snapshot_get_active(sb);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	/* iterate safe from oldest snapshot backwards */
+	list_for_each_prev_safe(l, n, &NEXT3_SB(sb)->s_snapshot_list) {
+		ei = list_entry(l, struct next3_inode_info, i_orphan);
+#else
+	if (snapshot) {
+		ei = NEXT3_I(snapshot);
+#endif
+		inode = &ei->vfs_inode;
+		/* all snapshots on the list must have the SNAPSHOT flag and are not zombies */
+		ei->i_flags |= NEXT3_SNAPFILE_FL;
+		ei->i_flags &= ~NEXT3_SNAPFILE_ZOMBIE_FL;
+
+		/* snapshot later than active (failed take) should be deleted */
+		if (found_active) {
+			ei->i_flags |= NEXT3_SNAPFILE_TAKE_FL;
+			ei->i_flags |= NEXT3_SNAPFILE_DELETED_FL;
+		} 
+		else
+			ei->i_flags &= ~NEXT3_SNAPFILE_TAKE_FL;
+
+		/*
+		 * after completion of a snapshot management operation,
+		 * only the active snapshot can have the ACTIVE flag
+		 */
+		if (inode == snapshot) {
+			ei->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
+			found_active = 1;
+		}
+		else
+			ei->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
+
+		if (found_enabled && !(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
+			/* snapshot is in use by an older enabled snapshot */
+			ei->i_flags |= NEXT3_SNAPFILE_INUSE_FL;
+		else
+			/* snapshot is not in use by older enabled snapshots */
+			ei->i_flags &= ~NEXT3_SNAPFILE_INUSE_FL;
+
+		if ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) &&
+			!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL)) {
+			/* deleted (non-active) snapshot file */
+			if ((cleanup && !used_by) || (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
+				/* cleanup permanently unused deleted snapshot */
+				next3_snapshot_cleanup(inode);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+			else if (cleanup && 
+					!(NEXT3_I(used_by)->i_flags & NEXT3_SNAPFILE_CLEAN_FL)) {
+				/* don't shrink/merge into non-clean snapshot */
+				if (ei->i_flags & NEXT3_SNAPFILE_CLEAN_FL)
+					/* shrink/merge into the closet clean snapshot */
+					used_by = inode;
+			}
+#endif
+			else if (cleanup) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+				if (!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
+					/* deleted snapshot needs shrinking */
+					need_shrink++;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+				if (!found_enabled)
+					/* temporarily unused deleted snapshot needs merging */
+					need_merge++;
+#endif
+			}
+		}
+		else {
+			/* non-deleted (or active) snapshot file */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+			if (cleanup && need_shrink)
+				/* pass 1: shrink all deleted snapshots between 'used_by' and 'inode' */
+				next3_snapshot_shrink(used_by, inode, need_shrink);
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+			if (cleanup && need_merge)
+				/* pass 2: merge all shrunk snapshots between 'used_by' and 'inode' */
+				next3_snapshot_merge(used_by, inode, need_merge);
+#endif
+			need_shrink = 0;
+			need_merge = 0;
+			if (!found_active)
+				/* newer snapshot are potentialy used by this snapshot 
+				 * (when it is enabled) */
+				used_by = inode;
+			if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)
+				found_enabled = 1;
+		}
+	}
+
+	/* 
+	 * update active snapshot
+	 */
+	if (snapshot) {
+		ei = NEXT3_I(snapshot);
+	 	/* if active snapshot is permanently unused and deleted, deactivate it */
+		if (cleanup && !used_by && (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL)) {
+			/* keep the refcount above 0 */
+			__iget(snapshot); 
+			/* lock journal updates before deactivating snapshot */
+			journal_lock_updates(NEXT3_SB(sb)->s_journal);
+			snapshot = next3_snapshot_set_active(sb, NULL);
+			journal_unlock_updates(NEXT3_SB(sb)->s_journal);
+			/* cleanup unused deleted active snapshot */
+			next3_snapshot_cleanup(snapshot);
+			/* drop the refcount to 0 */
+			iput(snapshot);
+		}
+	}
+}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+typedef struct {
+	struct buffer_head *bh;
+	__le32	*p;
+	__le32	key;
+} Indirect;
+
+void next3_snapshot_dump(struct inode *inode)
+{
+	struct next3_inode_info *ei = NEXT3_I(inode);
+	Indirect chain[4] = {{NULL},{NULL}}, *ind = chain;
+	int nmeta = 0, nind = 0, ncopied = 0, nmoved = 0;
+	int n = 0, i, j, k, l = 0; 
+	/* print double indirect block map */
+	snapshot_debug(5, "snapshot (%u) block map:\n", inode->i_generation);
+	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
+		if (ei->i_data[i]) {
+			ind->key = le32_to_cpu(ei->i_data[i]);
+			nmeta++;
+			snapshot_debug_l(5, l, "meta[%d] = [%u/%u]\n", i,
+					SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key), 
+					SNAPSHOT_BLOCK_GROUP(ind->key)); 
+		}
+	}
+	ind->key = le32_to_cpu(ei->i_data[NEXT3_DIND_BLOCK]);
+	if (!ind->key)
+		goto ind_out;
+dump_dind:
+	brelse(ind->bh);
+	ind->bh = sb_bread(inode->i_sb, ind->key);
+	if (!ind->bh) 
+		goto ind_out;
+	snapshot_debug_l(5, l, "dind[%d] = [%u/%u]\n", n,
+			SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key), 
+			SNAPSHOT_BLOCK_GROUP(ind->key)); 
+	(ind+1)->p = (__le32 *)ind->bh->b_data;
+	ind++;
+	nind++;
+	snapshot_debug_l(5, l, "{\n"); 
+	l++;
+	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++, ind->p++) {
+		ind->key = le32_to_cpu(*(ind->p));
+		if (!ind->key)
+			continue;
+		brelse(ind->bh);
+		ind->bh = sb_bread(inode->i_sb, ind->key);
+		if (!ind->bh) 
+			goto ind_out;
+		snapshot_debug_l(5, l, "ind[%d] = [%u/%u]\n", i, 
+				SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key), 
+				SNAPSHOT_BLOCK_GROUP(ind->key)); 
+		(ind+1)->p = (__le32 *)ind->bh->b_data;
+		ind++;
+		nind++;
+		k = 0;
+		ind->key = 0;
+		snapshot_debug_l(5, l, "{\n"); 
+		l++;
+		for (j = 0; j <= SNAPSHOT_ADDR_PER_BLOCK; j++, ind->p++) {
+			__le32 prev_key = ind->key;
+			__le32 blk = (n << 2*SNAPSHOT_ADDR_PER_BLOCK_BITS) + (i << SNAPSHOT_ADDR_PER_BLOCK_BITS) + j;
+			ind->key = (j < SNAPSHOT_ADDR_PER_BLOCK) ? le32_to_cpu(*(ind->p)) : 0;
+			if (prev_key &&
+					(ind->key == prev_key || 
+					 ind->key == prev_key+1))
+				k++;
+			else
+				k = -k;
+
+			if (prev_key && k <= 0) {
+				int b = ((i % SNAPSHOT_IND_PER_BLOCK_GROUP) << SNAPSHOT_ADDR_PER_BLOCK_BITS) + j - 1;
+				if (prev_key == blk - 1)
+					snapshot_debug_l(5, l, "block[%d-%d/%d]\n", b+k, b,
+							n * SNAPSHOT_IND_PER_BLOCK_GROUP + 
+							i / SNAPSHOT_IND_PER_BLOCK_GROUP);
+				else if (k <= 0)
+					snapshot_debug_l(5, l, "block[%d-%d/%d] = [%u-%u/%u]\n", b+k, b,
+							n * SNAPSHOT_IND_PER_BLOCK_GROUP + 
+							i / SNAPSHOT_IND_PER_BLOCK_GROUP,
+							SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key)+k, 
+							SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key), 
+							SNAPSHOT_BLOCK_GROUP(prev_key)); 
+				k = 0;
+			}
+
+			if (!ind->key)
+				continue;
+
+			if (ind->key == blk)
+				nmoved++;
+			else
+				ncopied++;
+		}
+		l--;
+		snapshot_debug_l(5, l, "}\n"); 
+		ind--;
+	}
+	l--;
+	snapshot_debug_l(5, l, "}\n"); 
+	ind--;
+
+	if (ind == chain) {
+		/* print tripple indirect map */
+		ind->key = le32_to_cpu(ei->i_data[NEXT3_TIND_BLOCK]);
+		if (!ind->key)
+			goto ind_out;
+		brelse(ind->bh);
+		ind->bh = sb_bread(inode->i_sb, ind->key);
+		if (!ind->bh) 
+			goto ind_out;
+		snapshot_debug_l(5, l, "tind[0] = [%u/%u]\n", 
+				SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key), 
+				SNAPSHOT_BLOCK_GROUP(ind->key)); 
+		(ind+1)->p = (__le32 *)ind->bh->b_data;
+		ind++;
+		nind++;
+		snapshot_debug_l(5, l, "{\n"); 
+		l++;
+	}
+
+	if (ind > chain) {
+		while (n++ < SNAPSHOT_ADDR_PER_BLOCK) {
+			ind->key = le32_to_cpu(*(ind->p++));
+			if (ind->key)
+				goto dump_dind;
+		}
+	}
+
+	l--;
+	snapshot_debug_l(5, l, "}\n"); 
+	ind--;
+ind_out:
+	i = nmeta + nind + ncopied + nmoved;
+	snapshot_debug(5, "snapshot (%u) contains: %d (meta) + %d (indirect) + %d (data) = %d blocks = %dK = %dM\n", 
+			inode->i_generation, nmeta, nind, ncopied + nmoved,
+			i, i << (SNAPSHOT_BLOCK_SIZE_BITS - 10), i >> (20 - SNAPSHOT_BLOCK_SIZE_BITS));
+	snapshot_debug(5, "snapshot (%u) maps: %d (copied) + %d (moved) = %d blocks\n", 
+			inode->i_generation, ncopied, nmoved, ncopied + nmoved);
+	while (ind > chain) {
+		ind--;
+		brelse(ind->bh);
+	}
+}
+#endif
+

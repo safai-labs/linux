@@ -16,6 +16,7 @@
 #include <linux/time.h>
 #include <linux/compat.h>
 #include <asm/uaccess.h>
+#include "snapshot.h"
 
 long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -29,6 +30,9 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case NEXT3_IOC_GETFLAGS:
 		next3_get_inode_flags(ei);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		next3_snapshot_get_flags(ei, filp);
+#endif
 		flags = ei->i_flags & NEXT3_FL_USER_VISIBLE;
 		return put_user(flags, (int __user *) arg);
 	case NEXT3_IOC_SETFLAGS: {
@@ -95,7 +99,14 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		flags = flags & NEXT3_FL_USER_MODIFIABLE;
 		flags |= oldflags & ~NEXT3_FL_USER_MODIFIABLE;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+		err = next3_snapshot_set_flags(handle, inode, flags);
+		if (err)
+			goto flags_err;
+#else
 		ei->i_flags = flags;
+#endif
 
 		next3_set_inode_flags(inode);
 		inode->i_ctime = CURRENT_TIME_SEC;
@@ -108,7 +119,24 @@ flags_err:
 
 		if ((jflag ^ oldflags) & (NEXT3_JOURNAL_DATA_FL))
 			err = next3_change_inode_journal_flag(inode, jflag);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		if (err)
+			goto flags_out;
+
+		if ((flags & NEXT3_SNAPFILE_FL) &&
+			(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_TAKE_FL))
+			/* take snapshot outside transaction -goldor */
+			err = next3_snapshot_take(inode);
+
+		if ((flags | oldflags) & NEXT3_SNAPFILE_FL)
+			/* finally: update all snapshots status flags
+			 * and cleanup after delete command */
+			next3_snapshot_update(inode->i_sb, !(flags & NEXT3_SNAPFILE_FL));
+#endif
 flags_out:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+#endif
 		mutex_unlock(&inode->i_mutex);
 		mnt_drop_write(filp->f_path.mnt);
 		return err;

@@ -722,7 +722,13 @@ next3_xattr_block_set(handle_t *handle, struct inode *inode,
 			int offset = (char *)s->here - bs->bh->b_data;
 
 			unlock_buffer(bs->bh);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
+			error = next3_journal_release_buffer(handle, bs->bh);
+			if (error)
+				goto cleanup;
+#else
 			journal_release_buffer(handle, bs->bh);
+#endif
 
 			if (ce) {
 				mb_cache_entry_release(ce);

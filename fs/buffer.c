@@ -308,6 +308,11 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 
 	BUG_ON(!buffer_async_read(bh));
 
+#ifdef CONFIG_BLOCK_TRACKED_READ
+	if (buffer_tracked_read(bh))
+		end_buffer_tracked_read(bh);
+#endif
+
 	page = bh->b_page;
 	if (uptodate) {
 		set_buffer_uptodate(bh);
@@ -451,6 +456,58 @@ void mark_buffer_async_write(struct buffer_head *bh)
 }
 EXPORT_SYMBOL(mark_buffer_async_write);
 
+#ifdef CONFIG_BLOCK_TRACKED_READ
+/*
+ * start/end buffer tracked read
+ *
+ * cmd input values:
+ * 0: test tracked read
+ * > 0: start tracked read
+ * < 0: end tracked read
+ *
+ * return values:
+ * >= 0: current tracked read count
+ * < 0: tracked read cmd failed
+ */
+int do_buffer_tracked_read(struct buffer_head *bh, int cmd)
+{
+	struct buffer_head *_bh;
+	int count;
+
+	BUG_ON(!buffer_mapped(bh));
+
+	/* try to grab the buffer cache entry */
+	_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	if (!_bh && cmd > 0)
+		/* try to create the buffer cache entry for first tracked read */
+		_bh = __getblk(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	if (!_bh)
+		return -EIO;
+
+	if (cmd > 0) {
+		BUG_ON(buffer_tracked_read(bh));
+		set_buffer_tracked_read(bh);
+		get_bh_tracked_reader(_bh);
+	}
+	else if (cmd < 0) {
+		BUG_ON(!buffer_tracked_read(bh));
+		/* 
+		 * tracked reads start inside get_block()
+		 * we clear the buffer mapping to make
+		 * sure that get_block() will always be called -goldor
+		 */
+		clear_buffer_mapped(bh);
+		clear_buffer_tracked_read(bh);
+		put_bh_tracked_reader(_bh);
+	}
+
+	count = buffer_tracked_readers_count(_bh);
+	put_bh(_bh);
+	return count;
+}
+
+EXPORT_SYMBOL(do_buffer_tracked_read);
+#endif
 
 /*
  * fs/buffer.c contains helper functions for buffer-backed address space's

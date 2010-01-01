@@ -364,8 +364,33 @@ struct handle_s
 	/* Number of remaining buffers we are allowed to dirty: */
 	int			h_buffer_credits;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	/* Number of buffers requested by user: 
+	 * (before adding the COW credits factor -goldor) */
+	int			h_base_credits;
+
+	/* Number of remaining buffers we are allowed to COW: */
+	int			h_cow_credits;
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+	/* Statistic counters: */
+	int			h_cow_moved;	/* blocks moved to snapshot */
+	int			h_cow_copied;	/* blocks copied to snapshot */
+	int			h_cow_ok_jh;	/* blocks already COWed during current transaction */
+	int			h_cow_ok_clear;	/* blocks not set in COW bitmap */
+	int			h_cow_ok_mapped;/* blocks already mapped in snapshot */
+	int			h_cow_bitmaps;	/* COW bitmaps created */
+	int			h_cow_cleared;	/* blocks cleared from COW bitmap */
+#endif
+
 	/* Reference count on this handle */
 	int			h_ref;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	/* Level of recursion caused by snapshot file updates */
+	int			h_level;
+#endif
 
 	/* Field for caller's use to track errors through large fs */
 	/* operations */

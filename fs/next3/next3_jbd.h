@@ -18,6 +18,7 @@
 #include <linux/fs.h>
 #include <linux/jbd.h>
 #include "next3.h"
+#include "snapshot_debug.h"
 
 #define NEXT3_JOURNAL(inode)	(NEXT3_SB((inode)->i_sb)->s_journal)
 
@@ -67,6 +68,51 @@
  * one block, plus two quota updates.  Quota allocations are not
  * needed. */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+/* on block write we have to journal the block itself */
+#define NEXT3_WRITE_CREDITS 1 
+/* on snapshot block alloc we have to journal block group bitmap, exclude bitmap and gdb */
+#define NEXT3_ALLOC_CREDITS 3
+/* number of credits for COW bitmap operation (allocated blocks are not journalled):
+   alloc(dind+ind+cow) = 9 */ 
+#define NEXT3_COW_BITMAP_CREDITS	(3*NEXT3_ALLOC_CREDITS) 
+/* number of credits for other block COW operations:
+   alloc(ind+cow)+write(dind+ind) = 8 */
+#define NEXT3_COW_BLOCK_CREDITS	(2*NEXT3_ALLOC_CREDITS+2*NEXT3_WRITE_CREDITS) 
+/* number of credits for the first COW operation in the block group:
+   9+8 = 17 */
+#define NEXT3_COW_CREDITS		(NEXT3_COW_BLOCK_CREDITS+NEXT3_COW_BITMAP_CREDITS) 
+/* number of credits for snapshot operations counted once per transaction:
+   write(sb+inode+tind) = 3 */
+#define NEXT3_SNAPSHOT_CREDITS 	(3*NEXT3_WRITE_CREDITS) 
+/*
+ * in total, for N COW operations, we may have to journal 17N+3 blocks,
+ * and we also want to reserve 17+3 credits for the last COW opertation,
+ * so we add 17(N-1)+3+(17+3) to the requested N buffer credits 
+ * and request 18N+6 buffer credits. -goldor
+ * 
+ * we are going to need a bigger journal to accomodate the
+ * extra snapshot credits.
+ * mke2fs uses the following default formula for fs-size above 1G:
+ * journal-size = MIN(128M, fs-size/32)
+ * use the following formula and override the default (-J size=):
+ * journal-size = MIN(2G, fs-size/32)
+ */
+#define NEXT3_SNAPSHOT_TRANS_BLOCKS(n) \
+	((n)*(1+NEXT3_COW_CREDITS)+NEXT3_SNAPSHOT_CREDITS)
+#define NEXT3_SNAPSHOT_START_TRANS_BLOCKS(n) \
+	((n)*(1+NEXT3_COW_CREDITS)+2*NEXT3_SNAPSHOT_CREDITS)
+
+/* 
+ * check for sufficient buffer and COW credits
+ */
+#define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
+		((handle)->h_buffer_credits >= NEXT3_SNAPSHOT_TRANS_BLOCKS(n) && \
+		 (handle)->h_cow_credits >= (n))
+
+#define NEXT3_RESERVE_COW_CREDITS	(NEXT3_COW_CREDITS+NEXT3_SNAPSHOT_CREDITS)
+#endif
+
 #define NEXT3_RESERVE_TRANS_BLOCKS	12U
 
 #define NEXT3_INDEX_EXTRA_TRANS_BLOCKS	8
@@ -109,11 +155,20 @@ int next3_mark_inode_dirty(handle_t *handle, struct inode *inode);
  * been done yet.
  */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
+int __next3_journal_release_buffer(const char *where, handle_t *handle,
+				struct buffer_head *bh);
+
+#define next3_journal_release_buffer(handle, bh) \
+	__next3_journal_release_buffer(__func__, (handle), (bh))
+
+#else
 static inline void next3_journal_release_buffer(handle_t *handle,
 						struct buffer_head *bh)
 {
 	journal_release_buffer(handle, bh);
 }
+#endif
 
 void next3_journal_abort_handle(const char *caller, const char *err_fn,
 		struct buffer_head *bh, handle_t *handle, int err);
@@ -121,8 +176,13 @@ void next3_journal_abort_handle(const char *caller, const char *err_fn,
 int __next3_journal_get_undo_access(const char *where, handle_t *handle,
 				struct buffer_head *bh);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+int __next3_journal_get_write_access_inode(const char *where, handle_t *handle,
+				struct inode *inode, struct buffer_head *bh);
+#else
 int __next3_journal_get_write_access(const char *where, handle_t *handle,
 				struct buffer_head *bh);
+#endif
 
 int __next3_journal_forget(const char *where, handle_t *handle,
 				struct buffer_head *bh);
@@ -138,8 +198,15 @@ int __next3_journal_dirty_metadata(const char *where,
 
 #define next3_journal_get_undo_access(handle, bh) \
 	__next3_journal_get_undo_access(__func__, (handle), (bh))
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#define next3_journal_get_write_access(handle, bh) \
+	__next3_journal_get_write_access_inode(__func__, (handle), NULL, (bh))
+#define next3_journal_get_write_access_inode(handle, inode, bh) \
+	__next3_journal_get_write_access_inode(__func__, (handle), (inode), (bh))
+#else
 #define next3_journal_get_write_access(handle, bh) \
 	__next3_journal_get_write_access(__func__, (handle), (bh))
+#endif
 #define next3_journal_revoke(handle, blocknr, bh) \
 	__next3_journal_revoke(__func__, (handle), (blocknr), (bh))
 #define next3_journal_get_create_access(handle, bh) \
@@ -151,13 +218,42 @@ int __next3_journal_dirty_metadata(const char *where,
 
 int next3_journal_dirty_data(handle_t *handle, struct buffer_head *bh);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+void __next3_journal_trace(int debug, const char *fn, const char *caller, 
+		handle_t *handle, int nblocks);
+
+#define next3_journal_trace(n, caller, handle, nblocks) \
+	do {										\
+		if ((n) <= snapshot_enable_debug)				\
+			__next3_journal_trace((n), __func__, (caller), (handle), (nblocks)); \
+	} while (0)
+
+#else
+#define next3_journal_trace(n, caller, handle, nblocks)
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+handle_t *__next3_journal_start(const char *where, 
+		struct super_block *sb, int nblocks);
+
+#define next3_journal_start_sb(sb, nblocks) \
+	__next3_journal_start(__func__, 	\
+			(sb), (nblocks))
+
+#define next3_journal_start(inode, nblocks) \
+	__next3_journal_start(__func__, 	\
+			(inode)->i_sb, (nblocks))
+
+#else
 handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks);
-int __next3_journal_stop(const char *where, handle_t *handle);
 
 static inline handle_t *next3_journal_start(struct inode *inode, int nblocks)
 {
 	return next3_journal_start_sb(inode->i_sb, nblocks);
 }
+#endif
+
+int __next3_journal_stop(const char *where, handle_t *handle);
 
 #define next3_journal_stop(handle) \
 	__next3_journal_stop(__func__, (handle))
@@ -167,6 +263,46 @@ static inline handle_t *next3_journal_current_handle(void)
 	return journal_current_handle();
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+static inline int __next3_journal_extend(const char *where, 
+		handle_t *handle, int nblocks)
+{
+	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_cow_credits+nblocks);
+	int err = 0;
+	int missing = lower - handle->h_buffer_credits;
+	if (missing > 0)
+		/* extend transaction to keep buffer credits above lower limit */
+		err = journal_extend(handle, missing);
+	if (!err) {
+		handle->h_base_credits += nblocks;
+		handle->h_cow_credits += nblocks;
+		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return err;
+}
+
+static inline int __next3_journal_restart(const char *where, 
+		handle_t *handle, int nblocks)
+{
+	int err = journal_restart(handle, NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
+	if (!err) {
+		handle->h_base_credits = nblocks;
+		handle->h_cow_credits = nblocks;
+		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return err;
+}
+
+
+#define next3_journal_extend(handle, nblocks) \
+	__next3_journal_extend(__func__, 	\
+			(handle), (nblocks))
+
+#define next3_journal_restart(handle, nblocks) \
+	__next3_journal_restart(__func__, 	\
+			(handle), (nblocks))
+
+#else
 static inline int next3_journal_extend(handle_t *handle, int nblocks)
 {
 	return journal_extend(handle, nblocks);
@@ -176,6 +312,7 @@ static inline int next3_journal_restart(handle_t *handle, int nblocks)
 {
 	return journal_restart(handle, nblocks);
 }
+#endif
 
 static inline int next3_journal_blocks_per_page(struct inode *inode)
 {
@@ -222,5 +359,6 @@ static inline int next3_should_writeback_data(struct inode *inode)
 		return 1;
 	return 0;
 }
+
 
 #endif	/* _LINUX_NEXT3_JBD_H */

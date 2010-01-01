@@ -492,7 +492,13 @@ repeat_in_this_group:
 				goto got;
 			}
 			/* we lost it */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
+			err = next3_journal_release_buffer(handle, bitmap_bh);
+			if (err)
+				goto fail;
+#else
 			journal_release_buffer(handle, bitmap_bh);
+#endif
 
 			if (++ino < NEXT3_INODES_PER_GROUP(sb))
 				goto repeat_in_this_group;

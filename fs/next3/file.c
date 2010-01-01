@@ -26,6 +26,18 @@
 #include "xattr.h"
 #include "acl.h"
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
+static int next3_file_open(struct inode * inode, struct file * filp)
+{
+	if ((NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK) &&
+		(filp->f_flags & O_ACCMODE) != O_RDONLY)
+		/* allow only read-only access to live or zombie snapshots -goldor */
+		return -EPERM;
+
+	return generic_file_open(inode, filp);
+}
+#endif
+
 /*
  * Called when an inode is released. Note that this is different
  * from next3_file_open: open gets called at every open, but release
@@ -121,7 +133,11 @@ const struct file_operations next3_file_operations = {
 	.compat_ioctl	= next3_compat_ioctl,
 #endif
 	.mmap		= generic_file_mmap,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
+	.open		= next3_file_open,
+#else
 	.open		= generic_file_open,
+#endif
 	.release	= next3_release_file,
 	.fsync		= next3_sync_file,
 	.splice_read	= generic_file_splice_read,

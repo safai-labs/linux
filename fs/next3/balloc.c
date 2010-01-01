@@ -19,6 +19,7 @@
 #include "next3_jbd.h"
 #include <linux/quotaops.h>
 #include <linux/buffer_head.h>
+#include "snapshot.h"
 
 /*
  * balloc.c contains the blocks allocation and deallocation routines
@@ -171,6 +172,7 @@ read_block_bitmap(struct super_block *sb, unsigned int block_group)
 	 */
 	return bh;
 }
+
 /*
  * The reservation window structure operations
  * --------------------------------------------
@@ -473,9 +475,15 @@ void next3_discard_reservation(struct inode *inode)
  * @count:			number of blocks to free
  * @pdquot_freed_blocks:	pointer to quota
  */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+void __next3_free_blocks_sb_inode(const char *where, handle_t *handle, 
+			struct super_block *sb, struct inode *inode, next3_fsblk_t block, 
+			unsigned long count, unsigned long *pdquot_freed_blocks)
+#else
 void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 			 next3_fsblk_t block, unsigned long count,
 			 unsigned long *pdquot_freed_blocks)
+#endif
 {
 	struct buffer_head *bitmap_bh = NULL;
 	struct buffer_head *gd_bh;
@@ -488,6 +496,9 @@ void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 	struct next3_sb_info *sbi;
 	int err = 0, ret;
 	next3_grpblk_t group_freed;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	next3_grpblk_t group_skipped = 0;
+#endif
 
 	*pdquot_freed_blocks = 0;
 	sbi = NEXT3_SB(sb);
@@ -561,6 +572,22 @@ do_more:
 	jbd_lock_bh_state(bitmap_bh);
 
 	for (i = 0, group_freed = 0; i < count; i++) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+		ret = next3_snapshot_get_delete_access(handle, inode, block + i, count - i);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+		if (ret < 0) {
+			next3_journal_abort_handle(where, __func__, NULL, handle, ret);
+			err = ret;
+			break;
+		}
+#endif
+		if (ret > 0) {
+			/* 'ret' blocks were moved to snapshot - skip them */
+			group_skipped += ret;
+			i += ret - 1;
+			continue;
+		}
+#endif
 		/*
 		 * An HJ special.  This is expensive...
 		 */
@@ -633,10 +660,19 @@ do_more:
 	le16_add_cpu(&desc->bg_free_blocks_count, group_freed);
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 	percpu_counter_add(&sbi->s_freeblocks_counter, count);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	percpu_counter_add(&sbi->s_freeblocks_counter,-group_skipped);
+	group_skipped = 0;
+#endif
 
 	/* We dirtied the bitmap block */
 	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	ret = next3_journal_dirty_metadata(handle, bitmap_bh);
+	if (!err) err = ret;
+#else
 	err = next3_journal_dirty_metadata(handle, bitmap_bh);
+#endif
 
 	/* And the group descriptor block */
 	BUFFER_TRACE(gd_bh, "dirtied group descriptor block");
@@ -674,7 +710,11 @@ void next3_free_blocks(handle_t *handle, struct inode *inode,
 		printk ("next3_free_blocks: nonexistent device");
 		return;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	next3_free_blocks_sb_inode(handle, sb, inode, block, count, &dquot_freed_blocks);
+#else
 	next3_free_blocks_sb(handle, sb, block, count, &dquot_freed_blocks);
+#endif
 	if (dquot_freed_blocks)
 		vfs_dq_free_block(inode, dquot_freed_blocks);
 	return;
@@ -713,6 +753,15 @@ static int next3_test_allocatable(next3_grpblk_t nr, struct buffer_head *bh)
 		ret = 1;
 	else
 		ret = !next3_test_bit(nr, jh->b_committed_data);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
+	if (ret && jh->b_cowed && jh->b_snapshot_data) {
+		ret = !next3_test_bit(nr, jh->b_snapshot_data);
+		if (!ret)
+			snapshot_debug(1, "%s: tried to allocate snapshot "
+					"protected block [%d/%lld]\n", __func__, 
+					nr, SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
+	}
+#endif
 	jbd_unlock_bh_state(bh);
 	return ret;
 }
@@ -744,6 +793,18 @@ bitmap_search_next_usable_block(next3_grpblk_t start, struct buffer_head *bh,
 		if (jh->b_committed_data)
 			start = next3_find_next_zero_bit(jh->b_committed_data,
 							maxblocks, next);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
+		if (start < maxblocks &&
+			jh->b_cowed && jh->b_snapshot_data) {
+			next = next3_find_next_zero_bit(jh->b_snapshot_data,
+							maxblocks, start);
+			if (next > start)
+				snapshot_debug(1, "%s: tried to allocate snapshot "
+						"protected block [%d/%lld]\n", __func__, 
+						start, SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
+			start = next;
+		}
+#endif
 		jbd_unlock_bh_state(bh);
 	}
 	return -1;
@@ -830,6 +891,20 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 	if (jh->b_committed_data && next3_test_bit(block,jh->b_committed_data)) {
 		next3_clear_bit_atomic(lock, block, bh->b_data);
 		ret = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
+	} else if (jh->b_cowed && jh->b_snapshot_data && 
+			next3_test_bit(block,jh->b_snapshot_data)) {
+		/* 
+		 * we should never get here because COW bitmap bits 
+		 * should never become set in the middle of a transaction.
+		 * since the first block group access of the current snapshot, 
+		 * when the COW bitmap is copied from b_data or b_commited_data, 
+		 * bits are only cleared in the COW bitmap -goldor 
+		 */
+		WARN_ON(1);
+		next3_clear_bit_atomic(lock, block, bh->b_data);
+		ret = 0;
+#endif
 	} else {
 		ret = 1;
 	}
@@ -1418,9 +1493,25 @@ out:
 static int next3_has_free_blocks(struct next3_sb_info *sbi)
 {
 	next3_fsblk_t free_blocks, root_blocks;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	next3_fsblk_t snapshot_r_blocks;
+	struct inode *snapshot = sbi->s_active_snapshot;
+	handle_t *handle = journal_current_handle();
+#endif
 
 	free_blocks = percpu_counter_read_positive(&sbi->s_freeblocks_counter);
 	root_blocks = le32_to_cpu(sbi->s_es->s_r_blocks_count);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	if (snapshot && handle) {
+		snapshot_r_blocks = le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
+		/* only active snapshot (h_level > 0) can use snapshot reserved blocks */
+		if (free_blocks < snapshot_r_blocks + 1 && handle->h_level == 0) {
+			return 0;
+		}
+		/* mortal users must reserve blocks for both snapshot and root user */
+		root_blocks += snapshot_r_blocks;
+	}
+#endif
 	if (free_blocks < root_blocks + 1 && !capable(CAP_SYS_RESOURCE) &&
 		sbi->s_resuid != current_fsuid() &&
 		(sbi->s_resgid == 0 || !in_group_p (sbi->s_resgid))) {

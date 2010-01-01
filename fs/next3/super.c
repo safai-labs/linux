@@ -43,6 +43,7 @@
 #include "xattr.h"
 #include "acl.h"
 #include "namei.h"
+#include "snapshot.h"
 
 #ifdef CONFIG_NEXT3_DEFAULTS_TO_ORDERED
   #define NEXT3_MOUNT_DEFAULT_DATA_MODE NEXT3_MOUNT_ORDERED_DATA
@@ -77,8 +78,16 @@ static int next3_freeze(struct super_block *sb);
  * that sync() will call the filesystem's write_super callback if
  * appropriate.
  */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+handle_t *__next3_journal_start(const char *where, 
+		struct super_block *sb, int nblocks)
+{
+	handle_t *handle;
+#else
 handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 {
+	const char *where = __func__;
+#endif
 	journal_t *journal;
 
 	if (sb->s_flags & MS_RDONLY)
@@ -89,12 +98,24 @@ handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 	 * take the FS itself readonly cleanly. */
 	journal = NEXT3_SB(sb)->s_journal;
 	if (is_journal_aborted(journal)) {
-		next3_abort(sb, __func__,
+		next3_abort(sb, where,
 			   "Detected aborted journal");
 		return ERR_PTR(-EROFS);
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	handle = journal_start(journal, NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
+	if (!IS_ERR(handle)) {
+		if (handle->h_ref == 1) {
+			handle->h_base_credits = nblocks;
+			handle->h_cow_credits = nblocks;
+		}
+		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return handle;
+#else
 	return journal_start(journal, nblocks);
+#endif
 }
 
 /*
@@ -108,6 +129,10 @@ int __next3_journal_stop(const char *where, handle_t *handle)
 	struct super_block *sb;
 	int err;
 	int rc;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+	next3_journal_trace(SNAP_WARN, where, handle, 0);
+#endif
 
 	sb = handle->h_transaction->t_journal->j_private;
 	err = handle->h_err;
@@ -201,6 +226,9 @@ static const char *next3_decode_error(struct super_block * sb, int errno,
 				     char nbuf[16])
 {
 	char *errstr = NULL;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	handle_t *handle = journal_current_handle();
+#endif
 
 	switch (errno) {
 	case -EIO:
@@ -214,6 +242,13 @@ static const char *next3_decode_error(struct super_block * sb, int errno,
 			errstr = "Journal has aborted";
 		else
 			errstr = "Readonly filesystem";
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+		if (!handle || handle->h_err != -ENOSPC)
+			break;
+		/* fall through */
+	case -ENOSPC:
+		errstr = "Snapshot out of disk space";
+#endif
 		break;
 	default:
 		/* If the caller passed in an extra buffer for unknown
@@ -400,6 +435,9 @@ static void next3_put_super (struct super_block * sb)
 
 	lock_kernel();
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	next3_snapshot_destroy(sb);
+#endif
 	next3_xattr_put_super(sb);
 	err = journal_destroy(sbi->s_journal);
 	sbi->s_journal = NULL;
@@ -1888,6 +1926,13 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	sb->dq_op = &next3_quota_operations;
 #endif
 	INIT_LIST_HEAD(&sbi->s_orphan); /* unlinked but open files */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	mutex_init(&sbi->s_snapshot_mutex);
+	sbi->s_active_snapshot = NULL;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	INIT_LIST_HEAD(&sbi->s_snapshot_list); /* snapshot files */
+#endif
+#endif
 
 	sb->s_root = NULL;
 
@@ -1972,6 +2017,12 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	}
 
 	next3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb, NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		next3_snapshot_load(sb, es);
+		/* TODO: check for errors during snapshot load */
+	}
+#endif
 	/*
 	 * akpm: core read_super() calls in here with the superblock locked.
 	 * That deadlocks, because orphan cleanup needs to lock the superblock
@@ -2622,9 +2673,19 @@ restore_opts:
 	return err;
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+static int next3_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	return next3_statfs_sb(dentry->d_sb, buf);
+}
+
+int next3_statfs_sb(struct super_block *sb, struct kstatfs *buf)
+{
+#else
 static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 {
 	struct super_block *sb = dentry->d_sb;
+#endif
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	struct next3_super_block *es = sbi->s_es;
 	u64 fsid;
@@ -2677,6 +2738,17 @@ static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 	buf->f_bavail = buf->f_bfree - le32_to_cpu(es->s_r_blocks_count);
 	if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count))
 		buf->f_bavail = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	if (sbi->s_active_snapshot) {
+		if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count) + 
+				le32_to_cpu(es->s_snapshot_r_blocks_count))
+			buf->f_bavail = 0;
+		else
+		buf->f_bavail -= le32_to_cpu(es->s_snapshot_r_blocks_count);
+	}
+	buf->f_spare[0] = percpu_counter_sum_positive(&sbi->s_dirs_counter);
+	buf->f_spare[1] = sbi->s_overhead_last;
+#endif
 	buf->f_files = le32_to_cpu(es->s_inodes_count);
 	buf->f_ffree = percpu_counter_sum_positive(&sbi->s_freeinodes_counter);
 	es->s_free_inodes_count = cpu_to_le32(buf->f_ffree);
@@ -2989,6 +3061,9 @@ static int __init init_next3_fs(void)
         err = register_filesystem(&next3_fs_type);
 	if (err)
 		goto out;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	init_next3_snapshot();
+#endif
 	return 0;
 out:
 	destroy_inodecache();
@@ -2999,6 +3074,9 @@ out1:
 
 static void __exit exit_next3_fs(void)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	exit_next3_snapshot();
+#endif
 	unregister_filesystem(&next3_fs_type);
 	destroy_inodecache();
 	exit_next3_xattr();

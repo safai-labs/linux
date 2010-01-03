@@ -201,6 +201,17 @@ static inline int next3_snapshot_file(struct inode *inode)
 	return 0;
 }
 
+static inline int next3_snapshot_exclude_inode(struct inode *inode)
+{
+	if (!inode)
+		return 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (inode->i_ino == NEXT3_EXCLUDE_INO)
+		return 1;
+#endif
+	return 0;
+}
+
 /* 
  * excluded file blocks are not COWed to snapshot 
  * and they are marked deleted in the snapshot file.
@@ -283,5 +294,27 @@ static inline void next3_snapshot_unhide(struct next3_inode_info *ei)
 	ei->i_data[SNAPSHOT_META_TIND] = 0;
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+/*
+ * next3_snapshot_exclude_hide() hides exclude inode indirect blocks
+ */
+static inline void next3_snapshot_exclude_hide(struct next3_inode *raw_inode)
+{
+	raw_inode->i_block[NEXT3_IND_BLOCK] = 0;
+}
+
+/*
+ * next3_snapshot_exclude_expose() exposes exclude inode indirect blocks
+ */
+static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
+{
+	/* 
+	 * link DIND branches to as IND branches, 
+	 * so we can read exclude bitmap block addresses with next3_bread()
+	 * I'm so bad -goldor
+	 */
+	ei->i_data[NEXT3_IND_BLOCK] = ei->i_data[NEXT3_DIND_BLOCK];
+}
+#endif
 
 #endif	/* _LINUX_NEXT3_SNAPSHOT_H */

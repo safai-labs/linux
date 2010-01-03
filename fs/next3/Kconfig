@@ -98,6 +98,7 @@ config NEXT3_FS_SNAPSHOT
 	select NEXT3_FS_SNAPSHOT_LIST
 	select NEXT3_FS_SNAPSHOT_CTL
 	select NEXT3_FS_SNAPSHOT_RACE
+	select NEXT3_FS_SNAPSHOT_EXCLUDE
 	default y
 	help
 	  Next3 snapshot support
@@ -427,7 +428,6 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE
 	depends on NEXT3_FS_SNAPSHOT
 	select NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	select NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-	default n
 	help
 	  Exclude blocks for being COWed into snapshot.
 	  excluding snapshot file blocks is essential for efficient 

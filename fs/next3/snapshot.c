@@ -156,7 +156,7 @@ next3_snapshot_zero_data_buffer(handle_t *handle, struct inode *inode,
 
 /* 
  * next3_snapshot_get_inode_access() - called from next3_get_blocks_handle() 
- * on snapshot inode access.
+ * on snapshot file access.
  * return value <0 indicates access not granted
  * return value 0 indicates normal inode access
  * return value 1 indicates snapshot inode access (peep through)
@@ -185,17 +185,20 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		}
 	} 
 	else if (iblock < SNAPSHOT_BLOCK_OFFSET) {
-		/* snapshot reserved blocks access */
-		snapshot_debug(1, "snapshot (%u) reserved block (%d)"
-				" - access denied!\n", 
-				inode->i_generation, (int)iblock);
-		return -EPERM;
+		/* snapshot reserved blocks */
+		if (cmd != SNAPSHOT_READ) {
+			snapshot_debug(1, "snapshot (%u) reserved block (%d)"
+					" - %s access denied!\n", 
+					inode->i_generation, (int)iblock,
+					snapshot_cmd_str(cmd));
+			return -EPERM;
+		}
 	}
 	else if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
 		/* only copying blocks is allowed during snapshot take */
 		if (cmd != SNAPSHOT_READ && cmd != SNAPSHOT_COPY) {
 			snapshot_debug(1, "snapshot (%u) during 'take'"
-					" - %s block denied!\n", 
+					" - %s access denied!\n", 
 					inode->i_generation, snapshot_cmd_str(cmd));
 			return -EPERM;
 		}
@@ -401,24 +404,6 @@ update_cache:
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 
 	return cow_bh;
-}
-
-/*
- * next3_snapshot_reset_cow_bitmap() resets the COW bitmap cache for all block groups
- * helper function for next3_snapshot_take() and snapshot_load()
- * COW bitmap cache is non-persistent, so no need to mark the group desc blocks dirty
- * called under lock_super()
- */
-void next3_snapshot_reset_cow_bitmap(struct super_block *sb)
-{
-	struct next3_group_desc * desc;
-	int i;
-
-	for (i = 0; i < NEXT3_SB(sb)->s_groups_count; i++) {
-		desc = next3_get_group_desc(sb, i, NULL);
-		if (desc)
-			desc->bg_cow_bitmap = 0;
-	}
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
@@ -653,6 +638,9 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 
 	/* avoid recursion on active snapshot file updates */	
 	if (handle->h_level > 1 || 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+		next3_snapshot_exclude_inode(inode) ||
+#endif
 		(inode == snapshot && cmd != SNAPSHOT_DEL)) {
 		snapshot_debug_hl(4, "active snapshot file update - skip block cow!\n"); 
 		goto skip_cow;

@@ -1227,9 +1227,12 @@ retry:
 	prev_snapshot = NULL;
 #endif
 	if (next3_snapshot_file(inode)) {
+		/* snapshot file access */
 		peep = next3_snapshot_get_inode_access(handle, inode, iblock, maxblocks, create);
-		if (peep < 0)
+		if (peep < 0) {
+			err = peep;
 			goto out;
+		}
 		if (peep) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 			/*
@@ -3817,6 +3820,11 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 			SNAPSHOT_SET_DISABLED(inode);
 	}
 #endif	
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (next3_snapshot_exclude_inode(inode))
+		/* expose exclude inode indirect blocks */
+		next3_snapshot_exclude_expose(ei);
+#endif
 
 	INIT_LIST_HEAD(&ei->i_orphan);
 
@@ -4004,6 +4012,11 @@ static int next3_do_update_inode(handle_t *handle,
 		raw_inode->i_dtime = 0;
 		raw_inode->i_flags &= cpu_to_le32(~NEXT3_FL_SNAPSHOT_DYN_MASK);
 	}
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (next3_snapshot_exclude_inode(inode))
+		/* hide exclude inode indirect blocks */
+		next3_snapshot_exclude_hide(raw_inode);
 #endif
 
 	BUFFER_TRACE(bh, "call next3_journal_dirty_metadata");

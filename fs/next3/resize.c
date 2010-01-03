@@ -41,6 +41,16 @@ static int verify_group_input(struct super_block *sb,
 	input->free_blocks_count = free_blocks_count =
 		input->blocks_count - 2 - overhead - sbi->s_itb_per_group;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (NEXT3_HAS_COMPAT_FEATURE(sb,
+		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
+		/* reserve first free block for exclude bitmap */
+		itend++;
+		free_blocks_count--;
+		input->free_blocks_count = free_blocks_count;
+	}
+#endif
+
 	if (test_opt(sb, DEBUG))
 		printk(KERN_DEBUG "NEXT3-fs: adding %s group %u: %u blocks "
 		       "(%d free, %u reserved)\n",
@@ -198,6 +208,7 @@ static int setup_new_group_blocks(struct super_block *sb,
 {
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	next3_fsblk_t start = next3_group_first_block_no(sb, input->group);
+	next3_fsblk_t itend = input->inode_table + sbi->s_itb_per_group;
 	int reserved_gdb = next3_bg_has_super(sb, input->group) ?
 		le16_to_cpu(sbi->s_es->s_reserved_gdt_blocks) : 0;
 	unsigned long gdblocks = next3_bg_num_gdb(sb, input->group);
@@ -285,9 +296,17 @@ static int setup_new_group_blocks(struct super_block *sb,
 		   input->inode_bitmap - start);
 	next3_set_bit(input->inode_bitmap - start, bh->b_data);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (NEXT3_HAS_COMPAT_FEATURE(sb,
+		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
+		/* clear reserved exclude bitmap block */
+		itend++;
+	}
+#endif
+
 	/* Zero out all of the inode table blocks */
-	for (i = 0, block = input->inode_table, bit = block - start;
-	     i < sbi->s_itb_per_group; i++, bit++, block++) {
+	for (block = input->inode_table, bit = block - start;
+	     block < itend; bit++, block++) {
 		struct buffer_head *it;
 
 		next3_debug("clear inode block %#04lx (+%d)\n", block, bit);
@@ -781,6 +800,11 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	struct buffer_head *primary = NULL;
 	struct next3_group_desc *gdp;
 	struct inode *inode = NULL;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	struct inode *exclude_inode = NULL;
+	struct buffer_head *exclude_bh = NULL;
+	__le32 *exclude_bitmap = NULL;
+#endif
 	handle_t *handle;
 	int gdb_off, gdb_num;
 	int err, err2;
@@ -822,6 +846,31 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			return PTR_ERR(inode);
 		}
 	}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (NEXT3_HAS_COMPAT_FEATURE(sb,
+		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
+		int dind_offset = input->group/SNAPSHOT_ADDR_PER_BLOCK;
+		int ind_offset = input->group%SNAPSHOT_ADDR_PER_BLOCK;
+		int err;
+
+		exclude_inode = next3_iget(sb, NEXT3_EXCLUDE_INO);
+		if (IS_ERR(exclude_inode)) {
+			next3_warning(sb, __func__,
+				     "Error opening exclude inode");
+			return PTR_ERR(exclude_inode);
+		}
+
+		/* exclude bitmap blocks addresses are exposed on the IND branch */
+		exclude_bh = next3_bread(NULL, exclude_inode, NEXT3_IND_BLOCK+dind_offset, 0, &err);
+		if (!exclude_bh) {
+			snapshot_debug(1, "failed to read exclude inode indirect[%d] block\n",
+					dind_offset);
+			return err ? err : -EIO;
+		}
+		exclude_bitmap = ((__le32 *)exclude_bh->b_data) + ind_offset;
+	}
+#endif
 
 	if ((err = verify_group_input(sb, input)))
 		goto exit_put;
@@ -899,6 +948,45 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	gdp->bg_inode_table = cpu_to_le32(input->inode_table);
 	gdp->bg_free_blocks_count = cpu_to_le16(input->free_blocks_count);
 	gdp->bg_free_inodes_count = cpu_to_le16(NEXT3_INODES_PER_GROUP(sb));
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (exclude_bitmap) {
+		if (*exclude_bitmap) {
+			/* 
+			 * offline resize from a bigger size filesystem may leave
+			 * allocated exclude bitmap blocks of unused block groups 
+			 * -goldor 
+			 */
+			snapshot_debug(2, "reusing old exclude bitmap #%d block (%u)\n",
+					input->group, le32_to_cpu(*exclude_bitmap));
+		}
+		else {
+			/* set exclude bitmap block to first free block */
+			next3_fsblk_t first_free = input->inode_table + sbi->s_itb_per_group;
+			struct next3_iloc iloc;
+			/* 
+			 * the following 2 credits can be accounted from COW credits, 
+			 * since super uses no COW credits -goldor
+			 */
+			if ((err = next3_journal_get_write_access(handle, exclude_bh)))
+				goto exit_journal;
+			if ((err = next3_reserve_inode_write(handle, exclude_inode, &iloc)))
+				goto exit_journal;
+
+			*exclude_bitmap = cpu_to_le32(first_free);
+			snapshot_debug(2, "allocated new exclude bitmap #%d block ("E3FSBLK")\n",
+					input->group, first_free);
+			next3_journal_dirty_metadata(handle, exclude_bh);
+			
+			/* update exclude inode size and blocks */
+			i_size_write(exclude_inode, SNAPSHOT_IBLOCK(input->group) << SNAPSHOT_BLOCK_SIZE_BITS);
+			NEXT3_I(exclude_inode)->i_disksize = exclude_inode->i_size;
+			exclude_inode->i_blocks += sb->s_blocksize >> 9;
+			next3_mark_iloc_dirty(handle, exclude_inode, &iloc);
+		}
+		/* update exclude bitmap cache */
+		gdp->bg_exclude_bitmap = *exclude_bitmap;
+	}
+#endif
 
 	/*
 	 * Make the new blocks and inodes valid next.  We do this before
@@ -965,6 +1053,10 @@ exit_journal:
 			       primary->b_size);
 	}
 exit_put:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	brelse(exclude_bh);
+	iput(exclude_inode);
+#endif
 	iput(inode);
 	return err;
 } /* next3_group_add */

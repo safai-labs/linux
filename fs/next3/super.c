@@ -2018,10 +2018,8 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 
 	next3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb, NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
-		next3_snapshot_load(sb, es);
-		/* TODO: check for errors during snapshot load */
-	}
+	next3_snapshot_load(sb, es);
+	/* TODO: check for errors during snapshot load */
 #endif
 	/*
 	 * akpm: core read_super() calls in here with the superblock locked.

@@ -60,7 +60,7 @@
 #define NEXT3_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define NEXT3_JOURNAL_INO	 8	/* Journal inode */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-#define NEXT3_EXCLUDE_INO		 9	/* Snapshot exclude inode */
+#define NEXT3_EXCLUDE_INO		10	/* Snapshot exclude inode */
 #endif
 
 /* First non-reserved inode for old next3 filesystems */
@@ -700,15 +700,18 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL	0x1000 /* Snapshots - big journal */
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x1000 /* Snapshot exclude inode */
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000 /* Snapshots - exclude inode */
 #endif
 
 #define NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x1000
+#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x1000 /* Snapshots */
 #endif
 
 #define NEXT3_FEATURE_INCOMPAT_COMPRESSION	0x0001

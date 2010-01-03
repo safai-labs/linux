@@ -108,7 +108,7 @@ handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 	if (!IS_ERR(handle)) {
 		if (handle->h_ref == 1) {
 			handle->h_base_credits = nblocks;
-			handle->h_cow_credits = nblocks;
+			handle->h_user_credits = nblocks;
 		}
 		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
 	}

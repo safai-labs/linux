@@ -108,7 +108,7 @@
  */
 #define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
 		((handle)->h_buffer_credits >= NEXT3_SNAPSHOT_TRANS_BLOCKS(n) && \
-		 (handle)->h_cow_credits >= (n))
+		 (handle)->h_user_credits >= (n))
 
 #define NEXT3_RESERVE_COW_CREDITS	(NEXT3_COW_CREDITS+NEXT3_SNAPSHOT_CREDITS)
 #endif
@@ -267,7 +267,7 @@ static inline handle_t *next3_journal_current_handle(void)
 static inline int __next3_journal_extend(const char *where, 
 		handle_t *handle, int nblocks)
 {
-	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_cow_credits+nblocks);
+	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits+nblocks);
 	int err = 0;
 	int missing = lower - handle->h_buffer_credits;
 	if (missing > 0)
@@ -275,7 +275,7 @@ static inline int __next3_journal_extend(const char *where,
 		err = journal_extend(handle, missing);
 	if (!err) {
 		handle->h_base_credits += nblocks;
-		handle->h_cow_credits += nblocks;
+		handle->h_user_credits += nblocks;
 		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
 	}
 	return err;
@@ -287,7 +287,7 @@ static inline int __next3_journal_restart(const char *where,
 	int err = journal_restart(handle, NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
 	if (!err) {
 		handle->h_base_credits = nblocks;
-		handle->h_cow_credits = nblocks;
+		handle->h_user_credits = nblocks;
 		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
 	}
 	return err;

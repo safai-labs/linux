@@ -710,9 +710,9 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1)) {
-		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/COW credits (%d/%d) "
+		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/user credits (%d/%d) "
 				"for COW operation?\n", 
-				handle->h_buffer_credits, handle->h_cow_credits);
+				handle->h_buffer_credits, handle->h_user_credits);
 	}
 #endif
 
@@ -941,7 +941,7 @@ out:
 		 * and at most once per handle for each moved/copied block
 		 * and at most once per handle for each access block group (COW bitmap)
 		 */
-		handle->h_cow_credits--;
+		//handle->h_cow_credits--;
 	}
 #endif
 

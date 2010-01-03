@@ -369,8 +369,9 @@ struct handle_s
 	 * (before adding the COW credits factor -goldor) */
 	int			h_base_credits;
 
-	/* Number of remaining buffers we are allowed to COW: */
-	int			h_cow_credits;
+	/* Number of buffers the user is allowed to dirty: 
+	 * (counts only h_level 0 dirty buffers -goldor) */
+	int			h_user_credits;
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE

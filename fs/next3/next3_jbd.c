@@ -122,6 +122,10 @@ int __next3_journal_release_buffer(const char *where, handle_t *handle,
 		if (err > 0) {
 			/* well, we can't say we didn't try - 
 			 * now lets hope we have enough credits to spare */
+			snapshot_debug_l(1, handle->h_level, 
+					"%s: warning: couldn't extend transaction"
+					" from %s (credits=%d/%d)\n", __func__, where,
+					handle->h_buffer_credits, handle->h_cow_credits);
 			err = 0;
 		}
 		next3_journal_trace(SNAP_WARN, where, handle, -1);

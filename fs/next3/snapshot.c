@@ -747,14 +747,22 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	/* if move or delete were requested, try to map the block to snapshot */ 
 	if (cmd == SNAPSHOT_MOVE) {
+		if (inode == NULL) {
+			/* freeing blocks of newly added block group - don't move them to snapshot */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+			handle->h_cow_ok_clear++;
+#endif
+			err = 0;
+			goto out;
+		}
+		/* move block from inode to snapshot */ 
 		err = next3_snapshot_map_blocks(handle, snapshot, block, count, NULL, cmd);
 		if (err) {
 			if (err > 0) {
 				count = err;
 				if (pcount)
 					*pcount = count;
-				if (inode)
-					vfs_dq_free_block(inode, err);
+				vfs_dq_free_block(inode, err);
 				err = SNAPSHOT_MOVED;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
 				/* clear moved blocks from COW bitmap */

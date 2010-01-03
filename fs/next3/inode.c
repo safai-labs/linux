@@ -1613,7 +1613,7 @@ got_it:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	/* it's not a hole - cancel tracked read before we deadlock on pending COW */
 	if (buffer_tracked_read(bh_result))
-		end_buffer_tracked_read(bh_result);
+		cancel_buffer_tracked_read(bh_result);
 #endif
 	map_bh(bh_result, inode->i_sb, le32_to_cpu(chain[depth - 1].key));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
@@ -1653,7 +1653,7 @@ cleanup:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 		/* cancel tracked read */
 		if (buffer_tracked_read(bh_result))
-			end_buffer_tracked_read(bh_result);
+			cancel_buffer_tracked_read(bh_result);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 		/* cancel pending COW operetion */
@@ -2454,25 +2454,20 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 			"block = (%lld), err = %d\n", iblock,
 			buffer_mapped(bh_result) ? bh_result->b_blocknr : 0, err); 
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 	if (buffer_tracked_read(bh_result)) {
-		int count = test_buffer_tracked_read(bh_result);
-		snapshot_debug(3, "started tracked read: block = [%lld/%lld]"
-				", tracked_readers_count = %d\n",
+		snapshot_debug(3, "started tracked read: block = [%lld/%lld]\n",
 				SNAPSHOT_BLOCK_GROUP_OFFSET(bh_result->b_blocknr), 
-				SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr),
-				count);
+				SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr));
 		/* sleep 1 tunable delay unit */
 		snapshot_test_delay(SNAPTEST_READ);
 	}
-#endif
 
 	return err;
 }
 
 static int next3_snapshot_readpage(struct file *file, struct page *page)
 {
-	/* do tracked read I/O with buffer heads -goldor */
+	/* do read I/O with buffer heads to enable tracked reads -goldor */
 	return block_read_full_page(page, next3_snapshot_get_block);
 }
 #endif

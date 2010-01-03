@@ -294,6 +294,102 @@ static void free_more_memory(void)
 	}
 }
 
+#ifdef CONFIG_BLOCK_TRACKED_READ
+/*
+ * start buffer tracked read
+ * called from inside get_block()
+ * get tracked reader ref count on buffer cache entry
+ * and set buffer tracked read flag
+ */
+int start_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *_bh;
+
+	BUG_ON(buffer_tracked_read(bh));
+	BUG_ON(!buffer_mapped(bh));
+
+	/* grab the buffer cache entry */
+	_bh = __getblk(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	if (!_bh)
+		return -EIO;
+
+	BUG_ON(_bh == bh);
+	set_buffer_tracked_read(bh);
+	get_bh_tracked_reader(_bh);
+	put_bh(_bh);
+	return 0;
+}
+
+/*
+ * cancel buffer tracked read
+ * called for tracked read that was started but was not submitted
+ * put tracked reader ref count on buffer cache entry
+ * and clear buffer tracked read flag
+ */
+void cancel_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *_bh;
+
+	BUG_ON(!buffer_tracked_read(bh));
+	BUG_ON(!buffer_mapped(bh));
+
+	/* try to grab the buffer cache entry */
+	_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	BUG_ON(!_bh || _bh == bh);
+	put_bh_tracked_reader(_bh);
+	put_bh(_bh);
+	clear_buffer_tracked_read(bh);
+	clear_buffer_mapped(bh);
+}
+
+EXPORT_SYMBOL(start_buffer_tracked_read);
+EXPORT_SYMBOL(cancel_buffer_tracked_read);
+
+/*
+ * submit buffer tracked read
+ * save a reference to buffer cache entry and submit I/O
+ */
+static int submit_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *_bh;
+
+	BUG_ON(!buffer_tracked_read(bh));
+	BUG_ON(!buffer_mapped(bh));
+	/* tracked read doesn't work with multiple buffers per page */
+	BUG_ON(bh->b_this_page != bh);
+
+	/* try to grab the buffer cache entry */
+	_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	BUG_ON(!_bh || _bh == bh);
+	/* override page buffers list with reference to buffer cache entry */
+	bh->b_this_page = _bh;
+	submit_bh(READ, bh);
+	return 0;
+}
+
+/*
+ * end buffer tracked read
+ * complete submitted tracked read
+ */
+static void end_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *_bh = bh->b_this_page;
+
+	BUG_ON(!buffer_tracked_read(bh));
+	BUG_ON(!_bh || _bh == bh);
+
+	put_bh_tracked_reader(_bh);
+	bh->b_this_page = bh;
+	put_bh(_bh);
+	/* 
+	 * clear the buffer mapping to make sure 
+	 * that get_block() will always be called -goldor
+	 */
+	clear_buffer_mapped(bh);
+	clear_buffer_tracked_read(bh);
+}
+#endif
+
 /*
  * I/O completion handler for block_read_full_page() - pages
  * which come unlocked at the end of I/O.
@@ -455,59 +551,6 @@ void mark_buffer_async_write(struct buffer_head *bh)
 	mark_buffer_async_write_endio(bh, end_buffer_async_write);
 }
 EXPORT_SYMBOL(mark_buffer_async_write);
-
-#ifdef CONFIG_BLOCK_TRACKED_READ
-/*
- * start/end buffer tracked read
- *
- * cmd input values:
- * 0: test tracked read
- * > 0: start tracked read
- * < 0: end tracked read
- *
- * return values:
- * >= 0: current tracked read count
- * < 0: tracked read cmd failed
- */
-int do_buffer_tracked_read(struct buffer_head *bh, int cmd)
-{
-	struct buffer_head *_bh;
-	int count;
-
-	BUG_ON(!buffer_mapped(bh));
-
-	/* try to grab the buffer cache entry */
-	_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
-	if (!_bh && cmd > 0)
-		/* try to create the buffer cache entry for first tracked read */
-		_bh = __getblk(bh->b_bdev, bh->b_blocknr, bh->b_size);
-	if (!_bh)
-		return -EIO;
-
-	if (cmd > 0) {
-		BUG_ON(buffer_tracked_read(bh));
-		set_buffer_tracked_read(bh);
-		get_bh_tracked_reader(_bh);
-	}
-	else if (cmd < 0) {
-		BUG_ON(!buffer_tracked_read(bh));
-		/* 
-		 * tracked reads start inside get_block()
-		 * we clear the buffer mapping to make
-		 * sure that get_block() will always be called -goldor
-		 */
-		clear_buffer_mapped(bh);
-		clear_buffer_tracked_read(bh);
-		put_bh_tracked_reader(_bh);
-	}
-
-	count = buffer_tracked_readers_count(_bh);
-	put_bh(_bh);
-	return count;
-}
-
-EXPORT_SYMBOL(do_buffer_tracked_read);
-#endif
 
 /*
  * fs/buffer.c contains helper functions for buffer-backed address space's
@@ -2268,6 +2311,10 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 	 */
 	for (i = 0; i < nr; i++) {
 		bh = arr[i];
+#ifdef CONFIG_BLOCK_TRACKED_READ
+		if (buffer_tracked_read(bh))
+			return submit_buffer_tracked_read(bh);
+#endif
 		if (buffer_uptodate(bh))
 			end_buffer_async_read(bh, 1);
 		else

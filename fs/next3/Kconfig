@@ -253,14 +253,6 @@ config NEXT3_FS_SNAPSHOT_BALLOC_GOAL
 	help
 	  allocate snapshot COWed blocks close to their source block.
 
-config NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-	bool "Next3 Snapshot Block Allocator - avoid COW bitmap conflicts"
-	depends on NEXT3_FS_SNAPSHOT_BALLOC
-	default n
-	help
-	  ensure that blocks that are protected by the snapshot COW bitmap
-	  cannot be reused until they have been copied into the snapshot file.
-
 config NEXT3_FS_SNAPSHOT_JOURNAL
 	bool "Next3 Snapshot Journalled"
 	depends on NEXT3_FS_SNAPSHOT_FILE

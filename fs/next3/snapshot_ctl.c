@@ -21,14 +21,6 @@ extern int next3_snapshot_zero_data_buffer(handle_t *handle, struct inode *inode
 /* helper function for next3_snapshot_take() */ 
 extern int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh, 
 		struct buffer_head *bh);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-/* helper function for next3_snapshot_stabilize() */ 
-extern int next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot, 					
-		unsigned int block_group);
-/* helper function for next3_snapshot_verify() */ 
-extern int next3_snapshot_verify_cow_bitmap(handle_t *handle, struct inode *snapshot, 					
-		unsigned int block_group);
-#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 /* 
@@ -1005,100 +997,6 @@ out_err:
 }
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-/* 
- * next3_snapshot_stabilize() initializes the snapshot COW bitmap
- * to prepare it to snapshot_verify() after reboot.
- *
- * in snapshot_take(), the COW bitmap is initialized 
- * only for selected block groups.
- * the rest of the COW bitmap is initialized lazily on the first
- * block group access.
- * deleted snapshots excluded blocks are cleared from the COW bitmap
- * lazily on snapshot shrink, merge and cleanup.
- *
- * this function initializes the COW bitmap for all block groups
- * and clears all the snapshot excluded blocks from the COW bitmap,
- * so it will be safe to take another snapshot.
- */
-int next3_snapshot_stabilize(handle_t *handle, struct inode *inode)
-{
-	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
-	unsigned long ngroups;
-	int bgi, err;
-
-	if (snapshot != inode) {
-		snapshot_debug(1, "failed to stabilize non active snapshot (%u)\n", 
-				inode->i_generation);
-		return -EPERM;
-	}
-
-	ngroups = NEXT3_SB(inode->i_sb)->s_groups_count;
-	for (bgi = 0; bgi < ngroups; bgi++) {
-		err = extend_or_restart_transaction_inode(handle, inode, 1);
-		if (err)
-			goto out_err;
-		err = next3_snapshot_init_cow_bitmap(handle, inode, bgi);
-		if (err)
-			goto out_err;
-	}
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	/* clear old snapshot files blocks from COW bitmap */
-	err = next3_snapshot_clean(handle, inode);
-	if (err)
-		goto out_err;
-#endif
-
-	snapshot_debug(1, "snapshot (%u) is stable\n", inode->i_generation);
-out_err:
-	if (err)
-		snapshot_debug(1, "failed to stabilize active snapshot (%u) (err=%d, bgi=%d)\n", 
-				inode->i_generation, err, bgi);
-	return err;
-}
-
-/* 
- * next3_snapshot_verify() is used to verify the active snapshot
- * after reboot in case fsck was run on the file system.
- *
- * this function compares the COW bitmap for all block groups
- * with the file system block bitmap and checks for blocks
- * that may have been deleted by fsck.
- */
-int next3_snapshot_verify(handle_t *handle, struct inode *inode)
-{
-	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
-	unsigned long ngroups;
-	int bgi, err;
-
-	if (snapshot != inode) {
-		snapshot_debug(1, "failed to verify non active snapshot (%u)\n", 
-				inode->i_generation);
-		return -EPERM;
-	}
-
-	ngroups = NEXT3_SB(inode->i_sb)->s_groups_count;
-	for (bgi = 0; bgi < ngroups; bgi++) {
-		err = extend_or_restart_transaction_inode(handle, inode, 1);
-		if (err)
-			goto out_err;
-		err = next3_snapshot_verify_cow_bitmap(handle, inode, bgi);
-		if (err)
-			goto out_err;
-	}
-
-	snapshot_debug(1, "snapshot (%u) is verified\n", inode->i_generation);
-out_err:
-	if (err) {
-		snapshot_debug(1, "failed to verify active snapshot (%u) (err=%d, bgi=%d)\n", 
-				inode->i_generation, err, bgi);
-		if (err > 0)
-			err = -EIO;
-	}
-	return err;
-}
-#endif
 
 /* 
  * next3_snapshot_enable() enables snapshot mount

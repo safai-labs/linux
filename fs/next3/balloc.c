@@ -753,15 +753,6 @@ static int next3_test_allocatable(next3_grpblk_t nr, struct buffer_head *bh)
 		ret = 1;
 	else
 		ret = !next3_test_bit(nr, jh->b_committed_data);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-	if (ret && jh->b_cowed && jh->b_snapshot_data) {
-		ret = !next3_test_bit(nr, jh->b_snapshot_data);
-		if (!ret)
-			snapshot_debug(1, "%s: tried to allocate snapshot "
-					"protected block [%d/%lld]\n", __func__, 
-					nr, SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
-	}
-#endif
 	jbd_unlock_bh_state(bh);
 	return ret;
 }
@@ -793,18 +784,6 @@ bitmap_search_next_usable_block(next3_grpblk_t start, struct buffer_head *bh,
 		if (jh->b_committed_data)
 			start = next3_find_next_zero_bit(jh->b_committed_data,
 							maxblocks, next);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-		if (start < maxblocks &&
-			jh->b_cowed && jh->b_snapshot_data) {
-			next = next3_find_next_zero_bit(jh->b_snapshot_data,
-							maxblocks, start);
-			if (next > start)
-				snapshot_debug(1, "%s: tried to allocate snapshot "
-						"protected block [%d/%lld]\n", __func__, 
-						start, SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
-			start = next;
-		}
-#endif
 		jbd_unlock_bh_state(bh);
 	}
 	return -1;
@@ -891,20 +870,6 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 	if (jh->b_committed_data && next3_test_bit(block,jh->b_committed_data)) {
 		next3_clear_bit_atomic(lock, block, bh->b_data);
 		ret = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-	} else if (jh->b_cowed && jh->b_snapshot_data && 
-			next3_test_bit(block,jh->b_snapshot_data)) {
-		/* 
-		 * we should never get here because COW bitmap bits 
-		 * should never become set in the middle of a transaction.
-		 * since the first block group access of the current snapshot, 
-		 * when the COW bitmap is copied from b_data or b_commited_data, 
-		 * bits are only cleared in the COW bitmap -goldor 
-		 */
-		WARN_ON(1);
-		next3_clear_bit_atomic(lock, block, bh->b_data);
-		ret = 0;
-#endif
 	} else {
 		ret = 1;
 	}

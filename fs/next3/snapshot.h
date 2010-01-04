@@ -135,10 +135,6 @@ void next3_snapshot_dump(struct inode *inode);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 int next3_snapshot_clean(handle_t *handle, struct inode *inode);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_SAFE
-int next3_snapshot_stabilize(handle_t *handle, struct inode *inode);
-int next3_snapshot_verify(handle_t *handle, struct inode *inode);
-#endif
 #endif
 
 /*

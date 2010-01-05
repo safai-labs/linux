@@ -122,9 +122,10 @@ next3_snapshot_copy_buffer_ordered(handle_t *handle,
  * helper function for next3_snapshot_take()
  * used for initializing pre-allocated snapshot blocks
  * copy buffer to snapshot buffer and sync it to disk
+ * 'mask' buffer before copying to snapshot.
  */
 int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh, 
-									struct buffer_head *bh)
+		struct buffer_head *bh, const char *mask)
 {
 	/* 
 	 * the path coming from snapshot_take()
@@ -132,7 +133,7 @@ int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh,
 	 * because these blocks are pre-allocated
 	 */
 	get_bh(sbh);
-	next3_snapshot_copy_to_buffer_sync(sbh, bh, bh->b_data, NULL);
+	next3_snapshot_copy_to_buffer_sync(sbh, bh, bh->b_data, mask);
 	return 0;
 }
 

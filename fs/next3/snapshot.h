@@ -156,6 +156,12 @@ inline static int init_next3_snapshot(void) {return 0;}
 inline static void exit_next3_snapshot(void) {}
 #endif
 
+/* balloc.c */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+struct buffer_head *read_exclude_bitmap(struct super_block *sb, 
+		unsigned int block_group);
+#endif
+
 /* namei.c */
 int next3_inode_list_add(handle_t *handle, struct inode *inode, 
 		struct list_head *s_list, __le32 *s_last, const char *name);
@@ -220,6 +226,11 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	if (next3_snapshot_file(inode))
 		/* clear bit from COW bitmap */
+		return -1;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	if (next3_snapshot_exclude_inode(inode))
+		/* exclude exclude inode itself */
 		return -1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE

@@ -55,6 +55,11 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		flags = next3_mask_flags(inode->i_mode, flags);
 
 		mutex_lock(&inode->i_mutex);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* this may or may not be a snapshot operation 
+		 * but to be on the safe side just take the mutex */
+		mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+#endif
 
 		/* Is it quota file? Do not allow user to mess with it */
 		err = -EPERM;
@@ -100,7 +105,6 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		flags = flags & NEXT3_FL_USER_MODIFIABLE;
 		flags |= oldflags & ~NEXT3_FL_USER_MODIFIABLE;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
-		mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
 		err = next3_snapshot_set_flags(handle, inode, flags);
 		if (err)
 			goto flags_err;
@@ -266,12 +270,19 @@ setrsvsz_out:
 			err = -EFAULT;
 			goto group_extend_out;
 		}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* avoid snapshot_take() in the middle of group_extend() */
+		mutex_lock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 		err = next3_group_extend(sb, NEXT3_SB(sb)->s_es, n_blocks_count);
 		journal_lock_updates(NEXT3_SB(sb)->s_journal);
 		err2 = journal_flush(NEXT3_SB(sb)->s_journal);
 		journal_unlock_updates(NEXT3_SB(sb)->s_journal);
 		if (err == 0)
 			err = err2;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		mutex_unlock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 group_extend_out:
 		mnt_drop_write(filp->f_path.mnt);
 		return err;
@@ -294,12 +305,19 @@ group_extend_out:
 			goto group_add_out;
 		}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* avoid snapshot_take() in the middle of group_add() */
+		mutex_lock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 		err = next3_group_add(sb, &input);
 		journal_lock_updates(NEXT3_SB(sb)->s_journal);
 		err2 = journal_flush(NEXT3_SB(sb)->s_journal);
 		journal_unlock_updates(NEXT3_SB(sb)->s_journal);
 		if (err == 0)
 			err = err2;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		mutex_unlock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 group_add_out:
 		mnt_drop_write(filp->f_path.mnt);
 		return err;

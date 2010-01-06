@@ -804,6 +804,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	struct inode *exclude_inode = NULL;
 	struct buffer_head *exclude_bh = NULL;
 	__le32 *exclude_bitmap = NULL;
+	int credits;
 #endif
 	handle_t *handle;
 	int gdb_off, gdb_num;
@@ -885,9 +886,21 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	 * are adding a group with superblock/GDT backups  we will also
 	 * modify each of the reserved GDT dindirect blocks.
 	 */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	credits = next3_bg_has_super(sb, input->group) ? 
+		3 + reserved_gdb : 4;
+	if (exclude_bitmap && !*exclude_bitmap)
+		/*
+		 * we will also be modifying the exclude inode 
+		 * and one of it's indirect blocks
+		 */
+		credits += 2;
+	handle = next3_journal_start_sb(sb, credits);
+#else
 	handle = next3_journal_start_sb(sb,
 				       next3_bg_has_super(sb, input->group) ?
 				       3 + reserved_gdb : 4);
+#endif
 	if (IS_ERR(handle)) {
 		err = PTR_ERR(handle);
 		goto exit_put;
@@ -963,10 +976,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			/* set exclude bitmap block to first free block */
 			next3_fsblk_t first_free = input->inode_table + sbi->s_itb_per_group;
 			struct next3_iloc iloc;
-			/* 
-			 * the following 2 credits can be accounted from COW credits, 
-			 * since super uses no COW credits -goldor
-			 */
+
 			if ((err = next3_journal_get_write_access(handle, exclude_bh)))
 				goto exit_journal;
 			if ((err = next3_reserve_inode_write(handle, exclude_inode, &iloc)))

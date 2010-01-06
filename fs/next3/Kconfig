@@ -153,11 +153,11 @@ config NEXT3_FS_SNAPSHOT_FILE
 	depends on NEXT3_FS_SNAPSHOT
 	select NEXT3_FS_SNAPSHOT_FILE_PEEP
 	select NEXT3_FS_SNAPSHOT_FILE_MOVE
+	select NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	select NEXT3_FS_SNAPSHOT_FILE_SHRINK
 	select NEXT3_FS_SNAPSHOT_FILE_MERGE
 	select NEXT3_FS_SNAPSHOT_FILE_PERM
 	select NEXT3_FS_SNAPSHOT_FILE_STORE
-	select NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	help
 	  Next3 snapshot implementation as a file inside the file system.
 	  currently, this is the only snapshot implementation.
@@ -182,15 +182,15 @@ config NEXT3_FS_SNAPSHOT_FILE_MOVE
 	  the command -1=move triggers moving of blocks into the file.
 
 config NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	bool "Next3 Snapshot File - Exclude from snapshot"
+	bool "Next3 Snapshot File - Exclude blocks from COW bitmap"
 	depends on NEXT3_FS_SNAPSHOT_FILE
 	depends on NEXT3_FS_SNAPSHOT_LIST
+	depends on NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	help
-	  old snapshot inodes must be excluded from any new snapshot
-	  in order to enable old snapshots shrink/merge/delete without
-	  COWing the old snapshot blocks into the active snapshot.
-	  this is done by clearing all old snapshot blocks from
-	  the active snapshot COW bitmap.
+	  all snapshot blocks must be cleared from the COW bitmap
+	  in order to properly shrink/merge deleted old snapshots.
+	  this is done by marking all snapshot blocks in exclude bitmap
+	  and masking exclude bitmap with block bitmap to create the COW bitmap.
 
 config NEXT3_FS_SNAPSHOT_FILE_SHRINK
 	bool "Next3 Snapshot File - Shrink deleted snapshots"
@@ -421,7 +421,7 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE
 	select NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	select NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	help
-	  Exclude blocks for being COWed into snapshot.
+	  Mark all snapshot block excluded.
 	  excluding snapshot file blocks is essential for efficient 
 	  shrinking and merging of old snapshot files.
 	  Exclude is enabled by setting the file system feature 'exclude_inode'.
@@ -432,7 +432,7 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	help
 	  Excluding blocks is done by setting their bit in the exclude bitmap.
 	  there is one exclude bitmap block per block group and it's location
-	  is stored in the group descriptor.
+	  is cached in the group descriptor.
 
 config NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	bool "Next3 Snapshot Exclude - the exclude inode"
@@ -440,7 +440,7 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	help
 	  The exclude inode owns all the exclude bitmap blocks.
 	  The blocks are pre-allocated and written to the group descriptor by
-	  mkfs, tune2fs and online resize.
+	  mke2fs, tune2fs and resize2fs.
 
 config NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	bool "Next3 Snapshot Exclude - regular files (experimental)"

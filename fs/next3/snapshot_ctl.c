@@ -25,7 +25,7 @@ extern int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 /* 
  * flag to prevent freeing old snapshot blocks while snapshot_clean()
- * is clearing snapshot blocks from COW bitmap.
+ * is marking snapshot blocks in exclude bitmap.
  * it may only be set/cleared by the owner of snapshot_mutex.
  * snapshot_clean() sets it to snapshot ID to disable cleanup in snapshot_update().
  * snapshot_take() sets it to -1 to abort a running snapshot_clean().
@@ -847,10 +847,13 @@ out_err:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 /* 
- * next3_snapshot_clean() clears old snapshots blocks from the COW bitmap.
+ * next3_snapshot_clean() marks old snapshots blocks in exclude bitmap.
+ * this function is for sanity tests and disaster recovery only.
+ * if everything works properly, all snapshot blocks should already 
+ * be set in exclude bitmap.
  *
- * Q: deleted snapshots blocks are cleared from the COW bitmap
- * lazily on snapshot shrink, merge and cleanup, so what is this for?
+ * Q: snapshot blocks are not COWed on snapshot shrink/merge/cleanup, 
+ *    so why is the exclude bitmap needed?
  *
  * A: the following example explains the problem of merging non-clean snapshots:
  * 1. create a 100M file 'foo' in the root directory - allocated from block group 0

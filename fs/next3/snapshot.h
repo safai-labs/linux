@@ -86,7 +86,7 @@ typedef long long next3_snapblk_t;
 #define SNAPSHOT_COPY	2 /* if in use, copy the block to the active snapshot */
 #define SNAPSHOT_BITMAP	3 /* same as copy, but don't use journal credits */
 #define SNAPSHOT_MOVE	-1 /* if in use, move the block to the active snapshot */
-#define SNAPSHOT_DEL	-2 /* if in use, mark the block deleted in the active snapshot */
+#define SNAPSHOT_CLEAR	-2 /* mark the block excluded from snapshot */
 #define SNAPSHOT_SHRINK	-3 /* free unused blocks of deleted snapshots */
 
 /* block access return codes */
@@ -214,34 +214,35 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
 	return 0;
 }
 
-/* 
- * excluded file blocks are not COWed to snapshot 
- * and they are marked deleted in the snapshot file.
- * snapshot file blocks are only cleared from COW bitmap.
+/*
+ * next3_snapshot_excluded()
+ * checks if the file should be excluded from snapshot 
+ * returns non-zero for excluded file
+ * returns < 0 for ignored file
+ *
+ * excluded/ignored file blocks are not moved to snapshot.
+ * ignored file metadata blocks are not COWed to snapshot.
+ * excluded file metadata blocks are zeroed in the snapshot file.
  */
 static inline int next3_snapshot_excluded(struct inode *inode)
 {
 	if (!inode || !S_ISREG(inode->i_mode))
 		return 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	if (next3_snapshot_file(inode))
-		/* clear bit from COW bitmap */
+		/* ignore snapshot file */
 		return -1;
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (next3_snapshot_exclude_inode(inode))
-		/* exclude exclude inode itself */
+		/* ignore exclude inode */
 		return -1;
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	if (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)
 		/* exclude zombie and deleted snapshot files */
 		return 1;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	if (NEXT3_I(inode)->i_flags & NEXT3_NOSNAP_FL)
 		/* exclude file with 'nosnap'/'nodump' flag */
 		return 1;
-#endif
 #endif
 	return 0;
 }

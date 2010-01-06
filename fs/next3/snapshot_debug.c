@@ -88,8 +88,8 @@ const char *snapshot_cmd_str(int cmd)
 		return "copy";
 	case SNAPSHOT_MOVE:
 		return "move";
-	case SNAPSHOT_DEL:
-		return "delete";
+	case SNAPSHOT_CLEAR:
+		return "clear";
 	default:
 		return "unknown";
 	}

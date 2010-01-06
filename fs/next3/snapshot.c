@@ -297,7 +297,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 static struct buffer_head *
 next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot, 
-								unsigned int block_group, int *cowed)
+								unsigned int block_group)
 {
 	SNAPSHOT_DEBUG_ONCE;
 	struct super_block *sb = snapshot->i_sb;
@@ -350,16 +350,6 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 
 	if (cow_bitmap_blk)
 		return sb_bread(sb, cow_bitmap_blk);
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	/* 
-	 * this is the first time this block group is accessed 
-	 * in the current handle, so we have to account for one COW credit
-	 * (even if we don't end up COWing this bitmap) -goldor
-	 */
-	if (cowed)
-		*cowed = 1;
-#endif
 
 	/* 
 	 * read cow bitmap block from snapshot file 
@@ -453,7 +443,7 @@ update_cache:
  */
 static int
 next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot, 
-		next3_fsblk_t block, struct buffer_head **pcow_bh, int *cowed)
+		next3_fsblk_t block, struct buffer_head **pcow_bh)
 {
 	struct buffer_head *cow_bh;
 	unsigned long block_group;
@@ -476,7 +466,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		return 0;
 	}
 
-	cow_bh = next3_snapshot_read_cow_bitmap(handle, snapshot, block_group, cowed);
+	cow_bh = next3_snapshot_read_cow_bitmap(handle, snapshot, block_group);
 	if (!cow_bh)
 		return -1;
 	/* 
@@ -610,7 +600,6 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	int err = -EIO;
 	int count = pcount ? *pcount : 1;
 	int clear = 0;
-	int cowed = 0;
 
 	next3_snapshot_trace_cow(handle, inode, bh, block, cmd, fn);
 	snapshot_debug_hl(4, "{\n");
@@ -699,7 +688,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 #endif
 
 	/* first get the COW bitmap and test if the block needs to be COWed */
-	err = next3_snapshot_test_cow_bitmap(handle, snapshot, block, &cow_bh, &cowed);
+	err = next3_snapshot_test_cow_bitmap(handle, snapshot, block, &cow_bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 	if (err == 0)
 		handle->h_cow_ok_clear++;
@@ -749,13 +738,6 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 				/* set moved blocks in exclude bitmap */
 				clear = SNAPSHOT_MOVE;
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-				/* 
-				 * when moving 'count' blocks to the same indirect block
-				 * we have to account for only one COW credit -goldor
-				 */
-				cowed = 1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 				handle->h_cow_moved++;
@@ -817,14 +799,6 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	else
 		handle->h_cow_ok_mapped++;
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	/* 
-	 * this is the first time this block was COWed
-	 * in the current handle, so we have to account for one COW credit
-	 * (even if we didn't actually COW this block) -goldor
-	 */
-	cowed = 1;
-#endif
 
 test_pending_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
@@ -861,11 +835,10 @@ out:
 		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid) {
 			/* 
 			 * this is the first time this block is being COWed
-			 * in the runnning transaction, so we account for one COW credit
-			 * (even if we didn't actually COW this block) 
-			 * and we update the COW tid in the journal head. -goldor
+			 * in the runnning transaction.
+			 * update the COW tid in the journal head
+			 * to mark that this block doesn't need to be COWed.
 			 */
-			cowed = 1;
 			if (!err)
 				jh->b_cow_tid = handle->h_transaction->t_tid;
 		}
@@ -879,23 +852,10 @@ out:
 		count = next3_snapshot_clear_cow_bitmap(handle, snapshot, block, count, cow_bh);
 		if (count < 0)
 			err = count;
-		else if (count > 0) {
-			cowed = 1; /* clear COW bitmap used buffer credits */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+		else if (count > 0)
 			handle->h_cow_cleared++;
 #endif
-		}
-	}
-#endif
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	if (cowed) {
-		/*
-		 * we should get here at most once per transaction for each journalled block
-		 * and at most once per handle for each moved/copied block
-		 * and at most once per handle for each access block group (COW bitmap)
-		 */
-		//handle->h_cow_credits--;
 	}
 #endif
 

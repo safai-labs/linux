@@ -365,11 +365,11 @@ struct handle_s
 	int			h_buffer_credits;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	/* Number of buffers requested by user: 
+	/* Number of buffers requested by user:
 	 * (before adding the COW credits factor -goldor) */
 	int			h_base_credits;
 
-	/* Number of buffers the user is allowed to dirty: 
+	/* Number of buffers the user is allowed to dirty:
 	 * (counts only h_level 0 dirty buffers -goldor) */
 	int			h_user_credits;
 #endif

@@ -928,8 +928,8 @@ extern next3_fsblk_t next3_new_blocks (handle_t *handle, struct inode *inode,
 extern void next3_free_blocks (handle_t *handle, struct inode *inode,
 			next3_fsblk_t block, unsigned long count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
-extern void __next3_free_blocks_sb_inode(const char *where, handle_t *handle, 
-			struct super_block *sb, struct inode *inode, next3_fsblk_t block, 
+extern void __next3_free_blocks_sb_inode(const char *where, handle_t *handle,
+			struct super_block *sb, struct inode *inode, next3_fsblk_t block,
 			unsigned long count, unsigned long *pdquot_freed_blocks);
 
 #define next3_free_blocks_sb(handle, sb, block, count, freed) \

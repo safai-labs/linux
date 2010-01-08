@@ -56,7 +56,7 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		mutex_lock(&inode->i_mutex);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
-		/* this may or may not be a snapshot operation 
+		/* this may or may not be a snapshot operation
 		 * but to be on the safe side just take the mutex */
 		mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
 #endif

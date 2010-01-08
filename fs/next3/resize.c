@@ -887,11 +887,11 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	 * modify each of the reserved GDT dindirect blocks.
 	 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-	credits = next3_bg_has_super(sb, input->group) ? 
+	credits = next3_bg_has_super(sb, input->group) ?
 		3 + reserved_gdb : 4;
 	if (exclude_bitmap && !*exclude_bitmap)
 		/*
-		 * we will also be modifying the exclude inode 
+		 * we will also be modifying the exclude inode
 		 * and one of it's indirect blocks
 		 */
 		credits += 2;
@@ -964,10 +964,10 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (exclude_bitmap) {
 		if (*exclude_bitmap) {
-			/* 
+			/*
 			 * offline resize from a bigger size filesystem may leave
-			 * allocated exclude bitmap blocks of unused block groups 
-			 * -goldor 
+			 * allocated exclude bitmap blocks of unused block groups
+			 * -goldor
 			 */
 			snapshot_debug(2, "reusing old exclude bitmap #%d block (%u)\n",
 					input->group, le32_to_cpu(*exclude_bitmap));
@@ -986,7 +986,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			snapshot_debug(2, "allocated new exclude bitmap #%d block ("E3FSBLK")\n",
 					input->group, first_free);
 			next3_journal_dirty_metadata(handle, exclude_bh);
-			
+
 			/* update exclude inode size and blocks */
 			i_size_write(exclude_inode, SNAPSHOT_IBLOCK(input->group) << SNAPSHOT_BLOCK_SIZE_BITS);
 			NEXT3_I(exclude_inode)->i_disksize = exclude_inode->i_size;

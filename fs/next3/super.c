@@ -79,7 +79,7 @@ static int next3_freeze(struct super_block *sb);
  * appropriate.
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-handle_t *__next3_journal_start(const char *where, 
+handle_t *__next3_journal_start(const char *where,
 		struct super_block *sb, int nblocks)
 {
 	handle_t *handle;
@@ -736,7 +736,7 @@ static int bdev_try_to_free_page(struct super_block *sb, struct page *page,
 	if (!page_has_buffers(page))
 		return 0;
 	if (journal)
-		return journal_try_to_free_buffers(journal, page, 
+		return journal_try_to_free_buffers(journal, page,
 						   wait & ~__GFP_WAIT);
 	return try_to_free_buffers(page);
 }
@@ -2738,7 +2738,7 @@ static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 		buf->f_bavail = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
 	if (sbi->s_active_snapshot) {
-		if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count) + 
+		if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count) +
 				le32_to_cpu(es->s_snapshot_r_blocks_count))
 			buf->f_bavail = 0;
 		else

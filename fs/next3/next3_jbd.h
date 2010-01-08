@@ -70,27 +70,27 @@
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 /* on block write we have to journal the block itself */
-#define NEXT3_WRITE_CREDITS 1 
+#define NEXT3_WRITE_CREDITS 1
 /* on snapshot block alloc we have to journal block group bitmap, exclude bitmap and gdb */
 #define NEXT3_ALLOC_CREDITS 3
 /* number of credits for COW bitmap operation (allocated blocks are not journalled):
-   alloc(dind+ind+cow) = 9 */ 
-#define NEXT3_COW_BITMAP_CREDITS	(3*NEXT3_ALLOC_CREDITS) 
+   alloc(dind+ind+cow) = 9 */
+#define NEXT3_COW_BITMAP_CREDITS	(3*NEXT3_ALLOC_CREDITS)
 /* number of credits for other block COW operations:
    alloc(ind+cow)+write(dind+ind) = 8 */
-#define NEXT3_COW_BLOCK_CREDITS	(2*NEXT3_ALLOC_CREDITS+2*NEXT3_WRITE_CREDITS) 
+#define NEXT3_COW_BLOCK_CREDITS	(2*NEXT3_ALLOC_CREDITS+2*NEXT3_WRITE_CREDITS)
 /* number of credits for the first COW operation in the block group:
    9+8 = 17 */
-#define NEXT3_COW_CREDITS		(NEXT3_COW_BLOCK_CREDITS+NEXT3_COW_BITMAP_CREDITS) 
+#define NEXT3_COW_CREDITS		(NEXT3_COW_BLOCK_CREDITS+NEXT3_COW_BITMAP_CREDITS)
 /* number of credits for snapshot operations counted once per transaction:
    write(sb+inode+tind) = 3 */
-#define NEXT3_SNAPSHOT_CREDITS 	(3*NEXT3_WRITE_CREDITS) 
+#define NEXT3_SNAPSHOT_CREDITS 	(3*NEXT3_WRITE_CREDITS)
 /*
  * in total, for N COW operations, we may have to journal 17N+3 blocks,
  * and we also want to reserve 17+3 credits for the last COW opertation,
- * so we add 17(N-1)+3+(17+3) to the requested N buffer credits 
+ * so we add 17(N-1)+3+(17+3) to the requested N buffer credits
  * and request 18N+6 buffer credits. -goldor
- * 
+ *
  * we are going to need a bigger journal to accomodate the
  * extra snapshot credits.
  * mke2fs uses the following default formula for fs-size above 1G:
@@ -103,7 +103,7 @@
 #define NEXT3_SNAPSHOT_START_TRANS_BLOCKS(n) \
 	((n)*(1+NEXT3_COW_CREDITS)+2*NEXT3_SNAPSHOT_CREDITS)
 
-/* 
+/*
  * check for sufficient buffer and COW credits
  */
 #define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
@@ -219,7 +219,7 @@ int __next3_journal_dirty_metadata(const char *where,
 int next3_journal_dirty_data(handle_t *handle, struct buffer_head *bh);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-void __next3_journal_trace(int debug, const char *fn, const char *caller, 
+void __next3_journal_trace(int debug, const char *fn, const char *caller,
 		handle_t *handle, int nblocks);
 
 #define next3_journal_trace(n, caller, handle, nblocks) \
@@ -233,7 +233,7 @@ void __next3_journal_trace(int debug, const char *fn, const char *caller,
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-handle_t *__next3_journal_start(const char *where, 
+handle_t *__next3_journal_start(const char *where,
 		struct super_block *sb, int nblocks);
 
 #define next3_journal_start_sb(sb, nblocks) \
@@ -264,7 +264,7 @@ static inline handle_t *next3_journal_current_handle(void)
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-static inline int __next3_journal_extend(const char *where, 
+static inline int __next3_journal_extend(const char *where,
 		handle_t *handle, int nblocks)
 {
 	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits+nblocks);
@@ -281,7 +281,7 @@ static inline int __next3_journal_extend(const char *where,
 	return err;
 }
 
-static inline int __next3_journal_restart(const char *where, 
+static inline int __next3_journal_restart(const char *where,
 		handle_t *handle, int nblocks)
 {
 	int err = journal_restart(handle, NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));

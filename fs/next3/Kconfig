@@ -117,7 +117,7 @@ config NEXT3_FS_SNAPSHOT_HOOKS_JBD
 	bool "Next3 Snapshot Hooks - inside JBD hooks"
 	depends on NEXT3_FS_SNAPSHOT_HOOKS
 	help
-	  before every meta data buffer write, the journal API is called, 
+	  before every meta data buffer write, the journal API is called,
 	  namely, one of the next3_journal_get_XXX_access() functions.
 	  we use these journal hooks to call the snapshot API,
 	  before every meta data buffer write.
@@ -135,7 +135,7 @@ config NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 	bool "Next3 Snapshot Hooks - Move data blocks"
 	depends on NEXT3_FS_SNAPSHOT_HOOKS
 	help
-	  before every regular file data buffer write, 
+	  before every regular file data buffer write,
 	  the function next3_get_block() is called to map the buffer to disk.
 	  we use this hook to call the snapshot API snapshot_get_move_access(),
 	  to optionally move the block to the snapshot file.
@@ -166,9 +166,9 @@ config NEXT3_FS_SNAPSHOT_FILE_PEEP
 	bool "Next3 Snapshot File - Peep through to block device"
 	depends on NEXT3_FS_SNAPSHOT_FILE
 	help
-	  on snapshot page read, the function next3_get_block() is called 
+	  on snapshot page read, the function next3_get_block() is called
 	  to map the page to a disk block.
-	  if the page is not mapped in the active snapshot file, 
+	  if the page is not mapped in the active snapshot file,
 	  a direct mapping to the block device is returned.
 
 config NEXT3_FS_SNAPSHOT_FILE_MOVE
@@ -198,9 +198,9 @@ config NEXT3_FS_SNAPSHOT_FILE_SHRINK
 	depends on NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	depends on NEXT3_FS_SNAPSHOT_LIST_PEEP
 	help
-	  free blocks of deleted snapshots, 
+	  free blocks of deleted snapshots,
 	  which are not in use by any older non-deleted snapshot.
-	  shirking helps reclaiming disk space 
+	  shirking helps reclaiming disk space
 	  while older snapshots are currently in use (enabled).
 
 config NEXT3_FS_SNAPSHOT_FILE_MERGE
@@ -209,7 +209,7 @@ config NEXT3_FS_SNAPSHOT_FILE_MERGE
 	depends on NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	depends on NEXT3_FS_SNAPSHOT_FILE_SHRINK
 	help
-	  move blocks of deleted and shrinked snapshots 
+	  move blocks of deleted and shrinked snapshots
 	  to an older non-deleted and disabled snapshot.
 	  merging helps removing (unlinking) snapshot files
 	  while older snapshots are not currently in use (disabled).
@@ -234,7 +234,7 @@ config NEXT3_FS_SNAPSHOT_BALLOC
 	depends on NEXT3_FS_SNAPSHOT_FILE
 	select NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
 	help
-	  special considerations of the file system block allocator 
+	  special considerations of the file system block allocator
 	  when working with snapshots.
 
 config NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
@@ -282,7 +282,7 @@ config NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
 	  to journal_get_write_access() and to recall the used buffer credit.
 	  in fact, current journal_release_buffer() implementation in JBD is empty,
 	  since no buffer credtis are used until the buffer is marked dirty.
-	  however, because resulting snapshot COW operation cannot be undone, 
+	  however, because resulting snapshot COW operation cannot be undone,
 	  we try to extend the current transaction to compensate for the used credits
 	  of the extra COW operation, so we don't run out of buffer credits too soon.
 
@@ -299,7 +299,7 @@ config NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 	  snapshot errors are recorded as journal errors.
 	  Next3 should be mounted with errors=remount-ro.
 	  after a snapshot error the file system will be in read-only mode.
-	  the administrator must un-mount the file system and run fsck 
+	  the administrator must un-mount the file system and run fsck
 	  to prevent data corruption.
 
 config NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
@@ -333,9 +333,9 @@ config NEXT3_FS_SNAPSHOT_LIST_PEEP
 	depends on NEXT3_FS_SNAPSHOT_LIST
 	depends on NEXT3_FS_SNAPSHOT_FILE_PEEP
 	help
-	  on snapshot page read, the function next3_get_block() is called 
+	  on snapshot page read, the function next3_get_block() is called
 	  to map the page to a disk block.
-	  if the page is not mapped in the snapshot file, 
+	  if the page is not mapped in the snapshot file,
 	  the previous snapshots on the list are checked.
 	  the first found mapping is returned.
 
@@ -343,9 +343,9 @@ config NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 	bool "Next3 Snapshot List - use Orphan list functions"
 	depends on NEXT3_FS_SNAPSHOT_LIST
 	help
-	  Orphan inodes are chained on a list starting at the super block, 
+	  Orphan inodes are chained on a list starting at the super block,
 	  both on-disk and in-memory.
-	  we use the same functions to chain the snapshot inodes on a list 
+	  we use the same functions to chain the snapshot inodes on a list
 	  starting at the super block.
 	  unlink and truncate of snapshot inodes is not allowed,
 	  so an inode can never be chained on both orphan and snapshot lists.
@@ -383,7 +383,7 @@ config NEXT3_FS_SNAPSHOT_RACE_COW
 	  unlocks it, marks it as journal dirty data, clears the new_buffer flag
 	  and drops its reference count.
 	  on "active snapshot" readpage, the buffer cache is checked.
-	  if a "new buffer" entry is found, the reader task 
+	  if a "new buffer" entry is found, the reader task
 	  has to wait until the buffer_new flag is cleared.
 	  if the "new buffer" is dirty, the reader task calls sync_dirty_buffer()
 	  and waits for the new buffer to be written to disk before
@@ -400,7 +400,7 @@ config NEXT3_FS_SNAPSHOT_RACE_READ
 	  the snapshot page buffer is added to the block tracked readers.
 	  upon completion of the async read I/O request of the snapshot page,
 	  the page buffer is removed from the block tracked readers.
-	  when a block is being COWed, all of its tracked readers 
+	  when a block is being COWed, all of its tracked readers
 	  have to remove themselves before the COW operation is completed.
 
 config NEXT3_FS_SNAPSHOT_RACE_BITMAP
@@ -422,7 +422,7 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE
 	select NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	help
 	  Mark all snapshot block excluded.
-	  excluding snapshot file blocks is essential for efficient 
+	  excluding snapshot file blocks is essential for efficient
 	  shrinking and merging of old snapshot files.
 	  Exclude is enabled by setting the file system feature 'exclude_inode'.
 

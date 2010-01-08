@@ -1939,15 +1939,15 @@ static int empty_dir (struct inode * inode)
 int next3_orphan_add(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
-	/* 
+	/*
 	 * only get the field address from the super block structs
 	 * the content of the field will only be changed under lock_super() -goldor
 	 */
-	return next3_inode_list_add(handle, inode, &NEXT3_SB(sb)->s_orphan, 
+	return next3_inode_list_add(handle, inode, &NEXT3_SB(sb)->s_orphan,
 			&NEXT3_SB(sb)->s_es->s_last_orphan, "orphan");
 }
 
-int next3_inode_list_add(handle_t *handle, struct inode *inode, 
+int next3_inode_list_add(handle_t *handle, struct inode *inode,
 		struct list_head *s_list, __le32 *s_last, const char *name)
 {
 #else
@@ -1985,7 +1985,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 		goto out_unlock;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
-	snapshot_debug(4, "add inode %lu to %s list\n", 
+	snapshot_debug(4, "add inode %lu to %s list\n",
 			inode->i_ino, name);
 
 	/* Insert this inode at the head of the on-disk inode list... */
@@ -2018,9 +2018,9 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 		list_add(&NEXT3_I(inode)->i_orphan, &NEXT3_SB(sb)->s_orphan);
 #endif
 
-	snapshot_debug(4, "last_%s will point to inode %lu\n", 
+	snapshot_debug(4, "last_%s will point to inode %lu\n",
 			name, inode->i_ino);
-	snapshot_debug(4, "%s inode %lu will point to inode %d\n", 
+	snapshot_debug(4, "%s inode %lu will point to inode %d\n",
 			name, inode->i_ino, NEXT_ORPHAN(inode));
 
 out_unlock:
@@ -2037,15 +2037,15 @@ out_unlock:
 int next3_orphan_del(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
-	/* 
+	/*
 	 * only get the field address from the super block structs
 	 * the content of the field will only be changed under lock_super() -goldor
 	 */
-	return next3_inode_list_del(handle, inode, &NEXT3_SB(sb)->s_orphan, 
+	return next3_inode_list_del(handle, inode, &NEXT3_SB(sb)->s_orphan,
 			&NEXT3_SB(sb)->s_es->s_last_orphan, "orphan");
 }
 
-int next3_inode_list_del(handle_t *handle, struct inode *inode, 
+int next3_inode_list_del(handle_t *handle, struct inode *inode,
 		struct list_head *s_list, __le32 *s_last, const char *name)
 {
 #else
@@ -2062,7 +2062,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 
 	lock_super(inode->i_sb);
 	if (list_empty(&ei->i_orphan)) {
-		snapshot_debug(4, "next3_orphan_del() called with inode %lu not in %s list\n", 
+		snapshot_debug(4, "next3_orphan_del() called with inode %lu not in %s list\n",
 				inode->i_ino, name);
 		unlock_super(inode->i_sb);
 		return 0;

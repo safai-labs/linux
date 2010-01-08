@@ -39,9 +39,9 @@ enum bh_state_bits {
 
 #ifdef CONFIG_BLOCK_TRACKED_READ
 	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
-						 * to serialize write I/O to block device.
-						 * that is, don't write over this block 
-						 * until I finished reading it -goldor */
+				 * to serialize write I/O to block device.
+				 * that is, don't write over this block
+				 * until I finished reading it -goldor */
 #endif
 
 	BH_PrivateStart,/* not a state bit, but the first bit available
@@ -274,11 +274,11 @@ static inline void put_bh(struct buffer_head *bh)
 int start_buffer_tracked_read(struct buffer_head *bh);
 void cancel_buffer_tracked_read(struct buffer_head *bh);
 
-/* 
+/*
  * tracked readers take a track reader reference count
  * on the block device buffer cache entry.
- * using upper dword of b_count to count tracked readers 
- * -goldor 
+ * using upper dword of b_count to count tracked readers
+ * -goldor
  */
 #define BH_TRACKED_READERS_COUNT_SHIFT 16
 

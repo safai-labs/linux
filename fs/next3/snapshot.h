@@ -19,7 +19,7 @@
 
 #define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.0-rc7"
 
-/* 
+/*
  * use signed 64bit for snapshot image addresses
  * negative addresses are used to refernce snapshot meta blocks
  */
@@ -40,7 +40,7 @@ typedef long long next3_snapblk_t;
 #define	SNAPSHOT_ADDR_PER_BLOCK			(SNAPSHOT_BLOCK_SIZE / sizeof (__u32))
 #define SNAPSHOT_ADDR_PER_BLOCK_BITS	(SNAPSHOT_BLOCK_SIZE_BITS - 2)
 #define SNAPSHOT_DIR_BLOCKS				NEXT3_NDIR_BLOCKS
-#define SNAPSHOT_IND_BLOCKS				SNAPSHOT_ADDR_PER_BLOCK	
+#define SNAPSHOT_IND_BLOCKS				SNAPSHOT_ADDR_PER_BLOCK
 
 #define SNAPSHOT_BLOCKS_PER_GROUP_BITS	15
 #define SNAPSHOT_BLOCKS_PER_GROUP		(1<<SNAPSHOT_BLOCKS_PER_GROUP_BITS) /* 32K */
@@ -108,7 +108,7 @@ int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh);
 int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
 													struct buffer_head *bh);
 int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh);
-int next3_snapshot_get_move_access(handle_t *handle, struct inode *inode, 
+int next3_snapshot_get_move_access(handle_t *handle, struct inode *inode,
 										next3_fsblk_t block, int count);
 int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
 										next3_fsblk_t block, int count);
@@ -158,14 +158,14 @@ inline static void exit_next3_snapshot(void) {}
 
 /* balloc.c */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-struct buffer_head *read_exclude_bitmap(struct super_block *sb, 
+struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 		unsigned int block_group);
 #endif
 
 /* namei.c */
-int next3_inode_list_add(handle_t *handle, struct inode *inode, 
+int next3_inode_list_add(handle_t *handle, struct inode *inode,
 		struct list_head *s_list, __le32 *s_last, const char *name);
-int next3_inode_list_del(handle_t *handle, struct inode *inode, 
+int next3_inode_list_del(handle_t *handle, struct inode *inode,
 		struct list_head *s_list, __le32 *s_last, const char *name);
 
 /* inode.c */
@@ -177,7 +177,7 @@ void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 			       __le32 *first, __le32 *last, int depth, int cow);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
-int next3_merge_blocks(handle_t *handle, struct inode *src, struct inode *dst, 
+int next3_merge_blocks(handle_t *handle, struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks);
 #endif
 
@@ -216,7 +216,7 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
 
 /*
  * next3_snapshot_excluded()
- * checks if the file should be excluded from snapshot 
+ * checks if the file should be excluded from snapshot
  * returns non-zero for excluded file
  * returns < 0 for ignored file
  *
@@ -261,7 +261,7 @@ static inline int next3_snapshot_should_cow_data(struct inode *inode)
 
 /*
  * next3_snapshot_get_active() gets the current active snapshot.
- * active snapshot is only changed under journal_lock_updates(), 
+ * active snapshot is only changed under journal_lock_updates(),
  * so it should be safe to use it during a transaction
  */
 static inline struct inode *next3_snapshot_get_active(struct super_block *sb)
@@ -316,8 +316,8 @@ static inline void next3_snapshot_exclude_hide(struct next3_inode *raw_inode)
  */
 static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
 {
-	/* 
-	 * link DIND branches to as IND branches, 
+	/*
+	 * link DIND branches to as IND branches,
 	 * so we can read exclude bitmap block addresses with next3_bread()
 	 * I'm so bad -goldor
 	 */

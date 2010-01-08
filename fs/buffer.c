@@ -342,8 +342,8 @@ void cancel_buffer_tracked_read(struct buffer_head *bh)
 	clear_buffer_mapped(bh);
 }
 
-EXPORT_SYMBOL(start_buffer_tracked_read);
-EXPORT_SYMBOL(cancel_buffer_tracked_read);
+EXPORT_SYMBOL_GPL(start_buffer_tracked_read);
+EXPORT_SYMBOL_GPL(cancel_buffer_tracked_read);
 
 /*
  * submit buffer tracked read

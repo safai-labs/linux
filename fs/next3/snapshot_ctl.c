@@ -65,7 +65,7 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 	if (inode) {
 		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
 		/* add active snapshot reference */
-		__iget(inode);
+		igrab(inode);
 		snapshot_debug(1, "snapshot (%u) activated\n", inode->i_generation);
 	}
 	NEXT3_SB(sb)->s_active_snapshot = inode;
@@ -447,7 +447,7 @@ int next3_snapshot_create(struct inode *inode)
 		goto out_handle;
 	}
 	/* add snapshot list reference */
-	__iget(inode);
+	igrab(inode);
 	l = list->next;
 #endif
 
@@ -1105,7 +1105,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	int err = 0;
 
 	/* elevate ref count until final cleanup */
-	__iget(inode);
+	igrab(inode);
 
 	if (ei->i_flags &
 		(NEXT3_SNAPFILE_ENABLED_FL|NEXT3_SNAPFILE_INUSE_FL|NEXT3_SNAPFILE_ACTIVE_FL)) {
@@ -1614,7 +1614,7 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 	 	/* if active snapshot is permanently unused and deleted, deactivate it */
 		if (cleanup && !used_by && (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL)) {
 			/* keep the refcount above 0 */
-			__iget(snapshot);
+			igrab(snapshot);
 			/* lock journal updates before deactivating snapshot */
 			journal_lock_updates(NEXT3_SB(sb)->s_journal);
 			snapshot = next3_snapshot_set_active(sb, NULL);

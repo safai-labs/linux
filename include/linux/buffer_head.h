@@ -271,8 +271,8 @@ static inline void put_bh(struct buffer_head *bh)
 }
 
 #ifdef CONFIG_BLOCK_TRACKED_READ
-int start_buffer_tracked_read(struct buffer_head *bh);
-void cancel_buffer_tracked_read(struct buffer_head *bh);
+extern int start_buffer_tracked_read(struct buffer_head *bh);
+extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 
 /*
  * tracked readers take a track reader reference count

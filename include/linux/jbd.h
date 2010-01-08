@@ -376,22 +376,17 @@ struct handle_s
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 	/* Statistic counters: */
-	int			h_cow_moved;	/* blocks moved to snapshot */
-	int			h_cow_copied;	/* blocks copied to snapshot */
-	int			h_cow_ok_jh;	/* blocks already COWed during current transaction */
-	int			h_cow_ok_clear;	/* blocks not set in COW bitmap */
-	int			h_cow_ok_mapped;/* blocks already mapped in snapshot */
-	int			h_cow_bitmaps;	/* COW bitmaps created */
-	int			h_cow_cleared;	/* blocks cleared from COW bitmap */
+	unsigned int	h_cow_moved;	/* blocks moved to snapshot */
+	unsigned int	h_cow_copied;	/* blocks copied to snapshot */
+	unsigned int	h_cow_ok_jh;	/* blocks already COWed during current transaction */
+	unsigned int	h_cow_ok_clear;	/* blocks not set in COW bitmap */
+	unsigned int	h_cow_ok_mapped;/* blocks already mapped in snapshot */
+	unsigned int	h_cow_bitmaps;	/* COW bitmaps created */
+	unsigned int	h_cow_cleared;	/* blocks cleared from COW bitmap */
 #endif
 
 	/* Reference count on this handle */
 	int			h_ref;
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	/* Level of recursion caused by snapshot file updates */
-	int			h_level;
-#endif
 
 	/* Field for caller's use to track errors through large fs */
 	/* operations */
@@ -401,6 +396,9 @@ struct handle_s
 	unsigned int	h_sync:		1;	/* sync-on-close */
 	unsigned int	h_jdata:	1;	/* force data journaling */
 	unsigned int	h_aborted:	1;	/* fatal error on handle */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	unsigned int	h_level:	2;	/* snapshot COW recursion level */
+#endif
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	h_lockdep_map;

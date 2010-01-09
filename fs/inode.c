@@ -303,7 +303,6 @@ void __iget(struct inode *inode)
 		list_move(&inode->i_list, &inode_in_use);
 	inodes_stat.nr_unused--;
 }
-EXPORT_SYMBOL_GPL(__iget);
 
 /**
  * clear_inode - clear an inode

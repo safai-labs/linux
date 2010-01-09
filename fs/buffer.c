@@ -319,6 +319,7 @@ int start_buffer_tracked_read(struct buffer_head *bh)
 	put_bh(_bh);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(start_buffer_tracked_read);
 
 /*
  * cancel buffer tracked read
@@ -341,8 +342,6 @@ void cancel_buffer_tracked_read(struct buffer_head *bh)
 	clear_buffer_tracked_read(bh);
 	clear_buffer_mapped(bh);
 }
-
-EXPORT_SYMBOL_GPL(start_buffer_tracked_read);
 EXPORT_SYMBOL_GPL(cancel_buffer_tracked_read);
 
 /*

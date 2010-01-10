@@ -27,11 +27,14 @@
 #include "acl.h"
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
-static int next3_file_open(struct inode * inode, struct file * filp)
+static int next3_file_open(struct inode *inode, struct file *filp)
 {
 	if ((NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK) &&
 		(filp->f_flags & O_ACCMODE) != O_RDONLY)
-		/* allow only read-only access to live or zombie snapshots -goldor */
+		/*
+		 * allow only read-only access to live or zombie snapshots
+		 * -goldor
+		 */
 		return -EPERM;
 
 	return generic_file_open(inode, filp);

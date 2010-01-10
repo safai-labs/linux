@@ -295,7 +295,7 @@ static inline void put_bh_tracked_reader(struct buffer_head *_bh)
 
 static inline int buffer_tracked_readers_count(struct buffer_head *_bh)
 {
-	return (atomic_read(&_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT);
+	return atomic_read(&_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
 }
 #endif
 

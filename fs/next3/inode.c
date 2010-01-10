@@ -162,7 +162,8 @@ static handle_t *start_transaction(struct inode *inode)
 static int try_to_extend_transaction(handle_t *handle, struct inode *inode)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	if (NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, NEXT3_RESERVE_TRANS_BLOCKS+1))
+	if (NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle,
+					    NEXT3_RESERVE_TRANS_BLOCKS+1))
 #else
 	if (handle->h_buffer_credits > NEXT3_RESERVE_TRANS_BLOCKS)
 #endif
@@ -360,8 +361,9 @@ static int next3_block_to_path(struct inode *inode,
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 static Indirect *__next3_get_branch_cow(const char *where, handle_t *handle,
-				struct inode *inode, int depth, int *offsets, Indirect chain[4],
-				int *err, int cmd)
+					struct inode *inode, int depth,
+					int *offsets, Indirect chain[4],
+					int *err, int cmd)
 {
 	int ret;
 #else

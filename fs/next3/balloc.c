@@ -186,8 +186,8 @@ read_block_bitmap(struct super_block *sb, unsigned int block_group)
 struct buffer_head *
 read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 {
-	struct next3_group_desc * desc;
-	struct buffer_head * bh = NULL;
+	struct next3_group_desc *desc;
+	struct buffer_head *bh = NULL;
 	next3_fsblk_t bitmap_blk;
 
 	desc = next3_get_group_desc(sb, block_group, NULL);
@@ -531,8 +531,9 @@ void next3_discard_reservation(struct inode *inode)
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 void __next3_free_blocks_sb_inode(const char *where, handle_t *handle,
-			struct super_block *sb, struct inode *inode, next3_fsblk_t block,
-			unsigned long count, unsigned long *pdquot_freed_blocks)
+				  struct super_block *sb, struct inode *inode,
+				  next3_fsblk_t block, unsigned long count,
+				  unsigned long *pdquot_freed_blocks)
 #else
 void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 			 next3_fsblk_t block, unsigned long count,
@@ -637,8 +638,8 @@ do_more:
 	brelse(exclude_bitmap_bh);
 	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh) {
-		err = next3_journal_get_write_access_inode(handle, &dummy_exclude_inode,
-				exclude_bitmap_bh);
+		err = next3_journal_get_write_access_inode(
+			handle, &dummy_exclude_inode, exclude_bitmap_bh);
 		if (err)
 			goto error_return;
 		exclude_freed = 0;
@@ -649,10 +650,12 @@ do_more:
 
 	for (i = 0, group_freed = 0; i < count; i++) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
-		ret = next3_snapshot_get_delete_access(handle, inode, block + i, count - i);
+		ret = next3_snapshot_get_delete_access(handle, inode,
+						       block + i, count - i);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 		if (ret < 0) {
-			next3_journal_abort_handle(where, __func__, NULL, handle, ret);
+			next3_journal_abort_handle(where, __func__, NULL,
+						   handle, ret);
 			err = ret;
 			break;
 		}
@@ -731,13 +734,12 @@ do_more:
 		}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		/*
-		 * when there is an active snapshot we only free blocks
-		 * of deleted snapshots (and maybe excluded files)
-		 * so typically, these blocks need to be cleared from
-		 * exclude bitmap.
-		 * anyway, a free block should never be excluded from snapshot,
-		 * so we always clear exclude bitmap just to be on the safe side.
-		 * -goldor
+		 * When there is an active snapshot we only free blocks of
+		 * deleted snapshots (and maybe excluded files) so
+		 * typically, these blocks need to be cleared from exclude
+		 * bitmap.  Anyway, a free block should never be excluded
+		 * from snapshot, so we always clear exclude bitmap just to
+		 * be on the safe side.  -goldor
 		 */
 		if (exclude_bitmap_bh &&
 			next3_clear_bit_atomic(sb_bgl_lock(sbi, block_group),
@@ -752,7 +754,7 @@ do_more:
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 	percpu_counter_add(&sbi->s_freeblocks_counter, count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
-	percpu_counter_add(&sbi->s_freeblocks_counter,-group_skipped);
+	percpu_counter_add(&sbi->s_freeblocks_counter, -group_skipped);
 	group_skipped = 0;
 #endif
 
@@ -760,14 +762,16 @@ do_more:
 	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 	ret = next3_journal_dirty_metadata(handle, bitmap_bh);
-	if (!err) err = ret;
+	if (!err)
+		err = ret;
 #else
 	err = next3_journal_dirty_metadata(handle, bitmap_bh);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh && exclude_freed) {
 		ret = next3_journal_dirty_metadata(handle, exclude_bitmap_bh);
-		if (!err) err = ret;
+		if (!err)
+			err = ret;
 	}
 #endif
 
@@ -811,7 +815,8 @@ void next3_free_blocks(handle_t *handle, struct inode *inode,
 		return;
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
-	next3_free_blocks_sb_inode(handle, sb, inode, block, count, &dquot_freed_blocks);
+	next3_free_blocks_sb_inode(handle, sb, inode, block, count,
+				   &dquot_freed_blocks);
 #else
 	next3_free_blocks_sb(handle, sb, block, count, &dquot_freed_blocks);
 #endif
@@ -980,13 +985,12 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	/*
-	 * mark excluded file block in exclude bitmap.
-	 * it would have been better to mark the block excluded
-	 * before marking it allocated or to mark both under jbd_lock_bh_state()
-	 * but we can rest this rule, because exclude bitmap is only used for
-	 * creating the COW bitmap from commited_data
-	 * and we already checked that the block is not marked is committed_data.
-	 * -goldor
+	 * Mark excluded file block in exclude bitmap.  It would have been
+	 * better to mark the block excluded before marking it allocated or
+	 * to mark both under jbd_lock_bh_state() but we can rest this rule,
+	 * because exclude bitmap is only used for creating the COW bitmap
+	 * from commited_data and we already checked that the block is not
+	 * marked is committed_data.  -goldor
 	 */
 	if (ret && exclude_bitmap_bh &&
 		next3_set_bit_atomic(lock, block, exclude_bitmap_bh->b_data)) {
@@ -1502,10 +1506,14 @@ next3_try_to_allocate_with_rsv(struct super_block *sb, handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (next3_snapshot_excluded(inode)) {
-		/* allocating blocks for excluded file - try to read exclude bitmap */
+		/*
+		 * allocating blocks for excluded file - try to read exclude
+		 * bitmap
+		 */
 		exclude_bitmap_bh = read_exclude_bitmap(sb, group);
 		if (exclude_bitmap_bh) {
-			fatal = next3_journal_get_write_access_inode(handle, &dummy_exclude_inode,
+			fatal = next3_journal_get_write_access_inode(
+					handle, &dummy_exclude_inode,
 					exclude_bitmap_bh);
 			if (fatal) {
 				brelse(exclude_bitmap_bh);
@@ -1601,7 +1609,8 @@ out:
 		fatal = next3_journal_dirty_metadata(handle, bitmap_bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		if (!fatal && exclude_bitmap_bh)
-			fatal = next3_journal_dirty_metadata(handle, exclude_bitmap_bh);
+			fatal = next3_journal_dirty_metadata(handle,
+						     exclude_bitmap_bh);
 		brelse(exclude_bitmap_bh);
 #endif
 		if (fatal) {
@@ -1640,12 +1649,20 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 	root_blocks = le32_to_cpu(sbi->s_es->s_r_blocks_count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
 	if (snapshot && handle) {
-		snapshot_r_blocks = le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
-		/* only active snapshot (h_level > 0) can use snapshot reserved blocks */
-		if (free_blocks < snapshot_r_blocks + 1 && handle->h_level == 0) {
+		snapshot_r_blocks =
+			le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
+		/*
+		 * only active snapshot (h_level > 0) can use snapshot
+		 * reserved blocks.
+		 */
+		if (free_blocks < snapshot_r_blocks + 1 &&
+		    handle->h_level == 0) {
 			return 0;
 		}
-		/* mortal users must reserve blocks for both snapshot and root user */
+		/*
+		 * mortal users must reserve blocks for both snapshot and
+		 * root user
+		 */
 		root_blocks += snapshot_r_blocks;
 	}
 #endif

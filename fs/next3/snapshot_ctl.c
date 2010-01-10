@@ -69,6 +69,7 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
 		snapshot_debug(1, "snapshot (%u) activated\n", inode->i_generation);
 	}
+#warning if igrab returns null above, you would set s_active_snaphot to null below. is that ok? if so, document the behavior.
 	NEXT3_SB(sb)->s_active_snapshot = inode;
 
 	return old;
@@ -589,6 +590,7 @@ alloc_self_inode:
 out_handle:
 	next3_journal_stop(handle);
 out_err:
+#warning if igrab returned null above, you goto here, but then err could be non null, in which cause you will try to dereference a possibly dead inode below.
 	if (err)
 		NEXT3_I(inode)->i_flags &= ~(NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
 	return err;

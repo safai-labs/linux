@@ -364,8 +364,15 @@ static inline void next3_snapshot_exclude_hide(struct next3_inode *raw_inode)
 static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
 {
 	/*
-	 * Link DIND branches to as IND branches,
+	 * Link the DIND branch to the IND branch,
 	 * so we can read exclude bitmap block addresses with next3_bread().
+	 *
+	 * My reasons to justify this hack are:
+	 * 1. I like shortcuts and it helped keeping my patch small
+	 * 2. No user has access to the exclude inode
+	 * 3. The exclude inode is never truncated on a mounted next3
+	 * 4. The 'expose' is only to the in-memory inode (so fsck is happy)
+	 * 5. A healthy exclude inode has blocks only on the DIND brnach
 	 * XXX: is that a problem?
 	 * -goldor
 	 */

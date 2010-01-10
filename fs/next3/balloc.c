@@ -135,7 +135,7 @@ err_out:
  *
  * Return buffer_head on success or NULL in case of failure.
  */
-static struct buffer_head *
+struct buffer_head *
 read_block_bitmap(struct super_block *sb, unsigned int block_group)
 {
 	struct next3_group_desc * desc;

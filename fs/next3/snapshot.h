@@ -174,6 +174,20 @@ extern int next3_snapshot_clean(handle_t *handle, struct inode *inode);
 #endif
 #endif
 
+/* helper functions for next3_snapshot_create() */
+extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
+				     next3_snapblk_t block,
+				     unsigned long maxblocks,
+				     next3_fsblk_t *mapped, int cmd);
+extern int next3_snapshot_zero_data_buffer(handle_t *handle,
+					   struct inode *inode,
+					   next3_snapblk_t blk,
+					   next3_fsblk_t blocknr);
+/* helper function for next3_snapshot_take() */
+extern int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh,
+					   struct buffer_head *bh,
+					   const char *mask);
+
 /*
  * Snapshot constructor/destructor
  */

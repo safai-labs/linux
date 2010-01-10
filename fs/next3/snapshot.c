@@ -43,8 +43,10 @@ static inline int
 next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
 		struct buffer_head *bh, const char *data, const char *mask)
 {
-	SNAPSHOT_DEBUG_ONCE;
 	int err = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
+	SNAPSHOT_DEBUG_ONCE;
+#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (mask)
@@ -311,7 +313,6 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       unsigned int block_group)
 {
 #warning this function is a little too long
-	SNAPSHOT_DEBUG_ONCE;
 	struct super_block *sb = snapshot->i_sb;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	struct next3_group_desc *desc;
@@ -323,6 +324,9 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	next3_fsblk_t bitmap_blk;
 	next3_fsblk_t cow_bitmap_blk;
 	int err;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_BITMAP
+	SNAPSHOT_DEBUG_ONCE;
+#endif
 
 	desc = next3_get_group_desc(sb, block_group, NULL);
 	if (!desc)
@@ -670,40 +674,36 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	}
 #endif
 
+	if (!inode || cmd == SNAPSHOT_READ)
+		/* skip excluded file test */
+		goto test_cow;
 	clear = next3_snapshot_excluded(inode);
-	if (!clear) {
-#warning: Amir: is this an error condition that needs to be handled
-		/* if !clear: not an excluded file */
-	}
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	else if (cmd == SNAPSHOT_CLEAR) {
-		/*
-		 * excluded file block clear access - mark block in exclude
-		 * bitmap
-		 */
-		cmd = SNAPSHOT_READ;
-	}
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-	else if (clear > 0 && cmd == SNAPSHOT_COPY) {
-		/* excluded file block write access -
-		 * COW and zero out snapshot block */
-		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
-				"zero out block (%lu) in snapshot\n",
-				inode->i_ino, block);
-	}
-#endif
-	else if (cmd != SNAPSHOT_READ) {
-		/* excluded file block move/delete access
+	if (!clear)
+		/* file is not excluded */
+		goto test_cow;
+
+	if (cmd < 0 || clear < 0) {
+		/* excluded file block move/delete/clear access
 		 * or ignored file block write access -
 		 * mark block in exclude bitmap */
 		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
 				"mark block (%lu) in exclude bitmap\n",
 				inode->i_ino, block);
 		cmd = SNAPSHOT_READ;
-		clear = -1;
+	} else {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+		/* excluded file block write access -
+		 * COW and zero out snapshot block */
+		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
+				"zero out block (%lu) in snapshot\n",
+				inode->i_ino, block);
+#else
+		/* user excluded files are not supported */
+		BUG_ON(clear > 0);
+#endif
 	}
 
+test_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1)) {
 		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/user "

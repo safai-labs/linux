@@ -30,13 +30,11 @@ static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
 	"test-bitmap-delay-msec",
 };
 
-#define SNAPSHOT_TEST_NAMES (sizeof(snapshot_test_names)/sizeof(snapshot_test_names[0]))
+#define SNAPSHOT_TEST_NAMES (sizeof(snapshot_test_names) / \
+			     sizeof(snapshot_test_names[0]))
 
 u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM] __read_mostly = {0};
 u8 snapshot_enable_debug __read_mostly = 1;
-
-EXPORT_SYMBOL(snapshot_enable_test);
-EXPORT_SYMBOL(snapshot_enable_debug);
 
 static struct dentry *snapshot_debugfs_dir;
 static struct dentry *snapshot_debug;
@@ -53,24 +51,26 @@ static void snapshot_create_debugfs_entry(void)
 {
 	int i;
 	snapshot_debugfs_dir = debugfs_create_dir("snapshot", NULL);
-	if (snapshot_debugfs_dir) {
-		snapshot_debug = debugfs_create_u8("snapshot-debug", S_IRUGO|S_IWUSR,
-					       snapshot_debugfs_dir,
-					       &snapshot_enable_debug);
-		snapshot_version = debugfs_create_blob("snapshot-version", S_IRUGO,
+	if (!snapshot_debugfs_dir)
+		return;
+	snapshot_debug = debugfs_create_u8("snapshot-debug", S_IRUGO|S_IWUSR,
+					   snapshot_debugfs_dir,
+					   &snapshot_enable_debug);
+	snapshot_version = debugfs_create_blob("snapshot-version", S_IRUGO,
 					       snapshot_debugfs_dir,
 					       &snapshot_version_blob);
-		for (i=0; i<SNAPSHOT_TESTS_NUM && i<SNAPSHOT_TEST_NAMES; i++)
-			snapshot_test[i] = debugfs_create_u16(snapshot_test_names[i], S_IRUGO|S_IWUSR,
-					snapshot_debugfs_dir,
-					&snapshot_enable_test[i]);
-	}
+	for (i = 0; i < SNAPSHOT_TESTS_NUM && i < SNAPSHOT_TEST_NAMES; i++)
+		snapshot_test[i] = debugfs_create_u16(snapshot_test_names[i],
+					      S_IRUGO|S_IWUSR,
+					      snapshot_debugfs_dir,
+					      &snapshot_enable_test[i]);
 }
 
 static void snapshot_remove_debugfs_entry(void)
 {
 	int i;
-	for (i=0; i<SNAPSHOT_TESTS_NUM && i<SNAPSHOT_TEST_NAMES; i++)
+
+	for (i = 0; i < SNAPSHOT_TESTS_NUM && i < SNAPSHOT_TEST_NAMES; i++)
 		debugfs_remove(snapshot_test[i]);
 	debugfs_remove(snapshot_version);
 	debugfs_remove(snapshot_debug);
@@ -113,5 +113,3 @@ void exit_next3_snapshot(void)
 {
 	snapshot_remove_debugfs_entry();
 }
-
-

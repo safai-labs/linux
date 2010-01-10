@@ -28,7 +28,8 @@ next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
 	const u32 *ps = (const u32 *)src, *pm = (const u32 *)mask;
 	u32 *pd = (u32 *)dst;
 	int i;
-	for (i=0; i<SNAPSHOT_ADDR_PER_BLOCK; i++)
+
+	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
 		*pd++ = *ps++ & ~*pm++;
 }
 #endif
@@ -56,11 +57,12 @@ next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	/* wait for completion of tracked reads before completing COW */
 	while (buffer_tracked_readers_count(bh) > 0) {
-		snapshot_debug_once(2, "waiting for tracked reads: block = [%lld/%lld]"
-				", tracked_readers_count = %d...\n",
-				SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-				SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-				buffer_tracked_readers_count(bh));
+		snapshot_debug_once(2, "waiting for tracked reads: "
+			    "block = [%lld/%lld], "
+			    "tracked_readers_count = %d...\n",
+			    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
+			    buffer_tracked_readers_count(bh));
 		/* can happen once per block/snapshot - just keep trying */
 		yield();
 	}
@@ -98,7 +100,8 @@ next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
  */
 static inline void
 next3_snapshot_copy_to_buffer_sync(struct buffer_head *sbh,
-		struct buffer_head *bh, const char *data, const char *mask)
+				   struct buffer_head *bh,
+				   const char *data, const char *mask)
 {
 	lock_buffer(sbh);
 	next3_snapshot_copy_to_buffer(NULL, sbh, bh, data, mask);
@@ -112,9 +115,11 @@ next3_snapshot_copy_to_buffer_sync(struct buffer_head *sbh,
  */
 static inline int
 next3_snapshot_copy_buffer_ordered(handle_t *handle,
-		struct buffer_head *sbh, struct buffer_head *bh)
+				   struct buffer_head *sbh,
+				   struct buffer_head *bh)
 {
-	return next3_snapshot_copy_to_buffer(handle, sbh, bh, bh->b_data, NULL);
+	return next3_snapshot_copy_to_buffer(handle, sbh, bh, bh->b_data,
+					     NULL);
 }
 
 /*
@@ -125,12 +130,12 @@ next3_snapshot_copy_buffer_ordered(handle_t *handle,
  * 'mask' buffer before copying to snapshot.
  */
 int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh,
-		struct buffer_head *bh, const char *mask)
+				    struct buffer_head *bh, const char *mask)
 {
 	/*
-	 * the path coming from snapshot_take()
-	 * doesn't have elevated refcount on snaphshot buffer
-	 * because these blocks are pre-allocated
+	 * The path coming from snapshot_take() doesn't have elevated
+	 * refcount on snaphshot buffer because these blocks are
+	 * pre-allocated.
 	 */
 	get_bh(sbh);
 	next3_snapshot_copy_to_buffer_sync(sbh, bh, bh->b_data, mask);
@@ -172,11 +177,8 @@ next3_snapshot_zero_data_buffer(handle_t *handle, struct inode *inode,
 	return err;
 }
 
-
-#define snapshot_debug_hl(n, f, a...)	\
-		snapshot_debug_l(n, handle ? 	\
-				handle->h_level : 0, f, ## a)
-
+#define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
+						 handle->h_level : 0, f, ## a)
 
 /*
  * next3_snapshot_get_inode_access() - called from next3_get_blocks_handle()
@@ -195,20 +197,22 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 			SNAPSHOT_BLOCK_GROUP(block));
 	next3_grpblk_t blk = (iblock < SNAPSHOT_BLOCK_OFFSET ? iblock :
 			SNAPSHOT_BLOCK_GROUP_OFFSET(block));
-	snapshot_debug_hl(4, "snapshot (%u) get_blocks [%d/%lu] count=%d cmd=%d\n",
-			inode->i_generation, blk, block_group, count, cmd);
+	snapshot_debug_hl(4, "snapshot (%u) get_blocks [%d/%lu] count=%d "
+			  "cmd=%d\n", inode->i_generation, blk, block_group,
+			  count, cmd);
 #endif
 	if (iblock < SNAPSHOT_META_BLOCKS) {
-		/* snapshot meta blocks access */
-		/* h_level > 0 indicates this is snapshot_map_blocks recursive call */
+		/*
+		 * Snapshot meta blocks access: h_level > 0 indicates this
+		 * is snapshot_map_blocks recursive call
+		 */
 		if (handle && handle->h_level > 0) {
 			snapshot_debug(1, "snapshot (%u) meta block (%d)"
 					" - recursive access denied!\n",
 					inode->i_generation, (int)iblock);
 			return -EPERM;
 		}
-	}
-	else if (iblock < SNAPSHOT_BLOCK_OFFSET) {
+	} else if (iblock < SNAPSHOT_BLOCK_OFFSET) {
 		/* snapshot reserved blocks */
 		if (cmd != SNAPSHOT_READ) {
 			snapshot_debug(1, "snapshot (%u) reserved block (%d)"
@@ -217,26 +221,26 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 					snapshot_cmd_str(cmd));
 			return -EPERM;
 		}
-	}
-	else if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
+	} else if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
 		/* only allocating blocks is allowed during snapshot take */
 		if (cmd != SNAPSHOT_READ && cmd != SNAPSHOT_WRITE) {
 			snapshot_debug(1, "snapshot (%u) during 'take'"
-					" - %s access denied!\n",
-					inode->i_generation, snapshot_cmd_str(cmd));
+				       " - %s access denied!\n",
+				       inode->i_generation,
+				       snapshot_cmd_str(cmd));
 			return -EPERM;
 		}
-	}
-	else if (cmd == SNAPSHOT_WRITE) {
+	} else if (cmd == SNAPSHOT_WRITE) {
 		/* snapshot image write access */
 		snapshot_debug(1, "snapshot (%u) is read-only"
 				" - write access denied!\n",
 				inode->i_generation);
 		return -EPERM;
-	}
-	else if (cmd == SNAPSHOT_READ) {
-		/* snapshot image read access */
-		/* no handle or h_level == 0 indicates this is a direct user read */
+	} else if (cmd == SNAPSHOT_READ) {
+		/*
+		 * Snapshot image read access: no handle or h_level == 0
+		 * indicates this is a direct user read
+		 */
 		if (!handle || handle->h_level == 0)
 			/* read access as snapshot file */
 			return 1;
@@ -252,21 +256,23 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 }
 
 /*
- * next3_snapshot_map_blocks() - helper function for next3_snapshot_test_and_cow()
- * also used by next3_snapshot_create() to pre-allocate snapshot blocks.
- * check for mapped block (cmd == SNAPSHOT_READ)
- * or map new blocks to snapshot file
+ * next3_snapshot_map_blocks() - helper function for
+ * next3_snapshot_test_and_cow().
+ * Also used by next3_snapshot_create() to pre-allocate snapshot blocks.
+ * Check for mapped block (cmd == SNAPSHOT_READ) or map new blocks to
+ * snapshot file.
  */
 int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
-		next3_snapblk_t block, unsigned long maxblocks, next3_fsblk_t *mapped, int cmd)
+			      next3_snapblk_t block, unsigned long maxblocks,
+			      next3_fsblk_t *mapped, int cmd)
 {
 	struct buffer_head dummy;
 	int err;
 
 	dummy.b_state = 0;
 	dummy.b_blocknr = -1000;
-	err = next3_get_blocks_handle(handle, inode, SNAPSHOT_IBLOCK(block), maxblocks,
-					&dummy, cmd);
+	err = next3_get_blocks_handle(handle, inode, SNAPSHOT_IBLOCK(block),
+				      maxblocks, &dummy, cmd);
 	/*
 	 * next3_get_blocks_handle() returns number of blocks
 	 * mapped. 0 in case of a HOLE.
@@ -276,11 +282,15 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 	else if (mapped)
 		*mapped = dummy.b_blocknr;
 
-	snapshot_debug_hl(5, "snapshot (%u) map_blocks [%lld/%lld] = [%lld/%lld] "
-			"cmd=%d, maxblocks=%lu, mapped=%d\n",
-			inode->i_generation, SNAPSHOT_BLOCK_GROUP_OFFSET(block), SNAPSHOT_BLOCK_GROUP(block),
-			SNAPSHOT_BLOCK_GROUP_OFFSET(dummy.b_blocknr), SNAPSHOT_BLOCK_GROUP(dummy.b_blocknr),
-			cmd, maxblocks, err);
+	snapshot_debug_hl(5, "snapshot (%u) map_blocks "
+			  "[%lld/%lld] = [%lld/%lld] "
+			  "cmd=%d, maxblocks=%lu, mapped=%d\n",
+			  inode->i_generation,
+			  SNAPSHOT_BLOCK_GROUP_OFFSET(block),
+			  SNAPSHOT_BLOCK_GROUP(block),
+			  SNAPSHOT_BLOCK_GROUP_OFFSET(dummy.b_blocknr),
+			  SNAPSHOT_BLOCK_GROUP(dummy.b_blocknr),
+			  cmd, maxblocks, err);
 	return err;
 }
 
@@ -289,20 +299,22 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 
 /*
- * next3_snapshot_read_cow_bitmap() reads the COW bitmap for a given block_group
- * creates the COW bitmap on first time after snapshot take
- * COW bitmap cache is non-persistent, so no need to mark the group desc block dirty
+ * next3_snapshot_read_cow_bitmap() reads the COW bitmap for a given
+ * block_group.  Creates the COW bitmap on first time after snapshot take.
+ * COW bitmap cache is non-persistent, so no need to mark the group desc
+ * block dirty.
  *
  * Return buffer_head on success or NULL in case of failure.
  */
 static struct buffer_head *
 next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
-								unsigned int block_group)
+			       unsigned int block_group)
 {
+#warning this function is a little too long
 	SNAPSHOT_DEBUG_ONCE;
 	struct super_block *sb = snapshot->i_sb;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
-	struct next3_group_desc * desc;
+	struct next3_group_desc *desc;
 	struct buffer_head *cow_bh, *bitmap_bh;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
@@ -332,17 +344,21 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		spin_unlock(sb_bgl_lock(sbi, block_group));
 
 		if (cow_bitmap_blk == 0) {
-			snapshot_debug(3, "COWing bitmap #%u of snapshot (%u)...\n",
-					block_group, snapshot->i_generation);
+			snapshot_debug(3, "COWing bitmap #%u of snapshot "
+				       "(%u)...\n", block_group,
+				       snapshot->i_generation);
 			/* sleep 1 tunable delay unit */
 			snapshot_test_delay(SNAPTEST_BITMAP);
 			break;
 		}
 		if (cow_bitmap_blk == bitmap_blk) {
 			/* wait for another task to COW bitmap block */
-			snapshot_debug_once(2, "waiting for pending cow bitmap #%d...\n",
-					block_group);
-			/* can happen once per block_group/snapshot - just keep trying */
+			snapshot_debug_once(2, "waiting for pending cow "
+					    "bitmap #%d...\n", block_group);
+			/*
+			 * can happen once per block_group/snapshot - just
+			 * keep trying
+			 */
 			yield();
 		}
 	}
@@ -356,9 +372,13 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * if cow bitmap is not yet allocated,
 	 * create the new cow bitmap block
 	 */
-	cow_bh = next3_bread(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk), SNAPSHOT_READ, &err);
+	cow_bh = next3_bread(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
+			     SNAPSHOT_READ, &err);
 	if (cow_bh)
-		/* update cow bitmap cache with snapshot existing cow bitmap block */
+		/*
+		 * update cow bitmap cache with snapshot existing cow bitmap
+		 *  block
+		 */
 		goto update_cache;
 
 	/*
@@ -383,17 +403,21 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
 		if (exclude_bitmap_bh)
-			/* mask block bitmap with exclude bitmap to create COW bitmap */
+			/*
+			 * mask block bitmap with exclude bitmap to create
+			 * COW bitmap
+			 */
 			mask = exclude_bitmap_bh->b_data;
 #endif
 		/*
-		 * another COWing task may be changing this block bitmap
-		 * (allocating active snapshot blocks) while we are trying to copy it.
-		 * copying committed_data will keep us protected from these changes.
-		 * at this point we are guarantied, that the only difference
-		 * between block bitmap and commited_data are the new active snapshot blocks,
-		 * because before allocating/freeing any other blocks
-		 * a task must first get_undo_access() and get here. -goldor
+		 * Another COWing task may be changing this block bitmap
+		 * (allocating active snapshot blocks) while we are trying
+		 * to copy it.  Copying committed_data will keep us
+		 * protected from these changes.  At this point we are
+		 * guaranteed that the only difference between block bitmap
+		 * and commited_data are the new active snapshot blocks,
+		 * because before allocating/freeing any other blocks a task
+		 * must first get_undo_access() and get here. -goldor
 		 */
 		jbd_lock_bh_journal_head(bitmap_bh);
 		jbd_lock_bh_state(bitmap_bh);
@@ -401,7 +425,8 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		if (jh && jh->b_committed_data)
 			data = jh->b_committed_data;
 
-		next3_snapshot_copy_to_buffer_sync(cow_bh, bitmap_bh, data, mask);
+		next3_snapshot_copy_to_buffer_sync(cow_bh, bitmap_bh, data,
+						   mask);
 
 		jbd_unlock_bh_state(bitmap_bh);
 		jbd_unlock_bh_journal_head(bitmap_bh);
@@ -414,8 +439,7 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 		handle->h_cow_bitmaps++;
 #endif
-	}
-	else {
+	} else {
 		snapshot_debug(1, "failed to create COW "
 				"bitmap %u of snapshot (%u)\n",
 				block_group, snapshot->i_generation);
@@ -443,7 +467,7 @@ update_cache:
  */
 static int
 next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
-		next3_fsblk_t block)
+			       next3_fsblk_t block)
 {
 	struct buffer_head *cow_bh;
 	unsigned long block_group;
@@ -454,15 +478,16 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	int snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
 
 	block_group = (block - le32_to_cpu(es->s_first_data_block)) /
-		      	NEXT3_BLOCKS_PER_GROUP(sb);
+		NEXT3_BLOCKS_PER_GROUP(sb);
 	bit = (block - le32_to_cpu(es->s_first_data_block)) %
 		NEXT3_BLOCKS_PER_GROUP(sb);
 
 	/* check if block is in snapshot range (maybe fs was resized) */
 	if (block >= snapshot_blocks) {
-		snapshot_debug_hl(4, "snapshot (%u) test COW bitmap: "
-				"block [%d/%lu] out of range (snapshot_blocks=%d)\n",
-				snapshot->i_generation, bit, block_group, snapshot_blocks);
+		snapshot_debug_hl(4, "snapshot (%u) test COW bitmap: block "
+				  "[%d/%lu] out of range (snapshot_blocks=%d)"
+				  "\n", snapshot->i_generation, bit,
+				  block_group, snapshot_blocks);
 		return 0;
 	}
 
@@ -482,7 +507,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
  */
 static int
 next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
-		next3_fsblk_t block, int count)
+			      next3_fsblk_t block, int count)
 {
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	unsigned long block_group;
@@ -494,7 +519,7 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
 
 	blocks_per_group = NEXT3_BLOCKS_PER_GROUP(sb);
 	block_group = (block - le32_to_cpu(es->s_first_data_block)) /
-		      	blocks_per_group;
+		blocks_per_group;
 	bit = (block - le32_to_cpu(es->s_first_data_block)) %
 		blocks_per_group;
 
@@ -510,8 +535,7 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
 		if (!next3_set_bit_atomic(sb_bgl_lock(sbi, block_group),
 					bit, exclude_bitmap_bh->b_data)) {
 			n++;
-		}
-		else if (n) {
+		} else if (n) {
 			snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
 					bit-n, bit-1, block_group);
 			excluded += n;
@@ -542,15 +566,17 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 static void
 __next3_snapshot_trace_cow(handle_t *handle, struct inode *inode,
-		struct buffer_head *bh, next3_fsblk_t block, int code, const char *fn)
+			   struct buffer_head *bh, next3_fsblk_t block,
+			   int code, const char *fn)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
-	struct next3_super_block * es = sbi->s_es;
-	unsigned long block_group = (block - le32_to_cpu(es->s_first_data_block)) /
-		      					NEXT3_BLOCKS_PER_GROUP(sb);
+	struct next3_super_block *es = sbi->s_es;
+	unsigned long block_group = (block -
+				     le32_to_cpu(es->s_first_data_block)) /
+		NEXT3_BLOCKS_PER_GROUP(sb);
 	next3_grpblk_t bit = (block - le32_to_cpu(es->s_first_data_block)) %
-							NEXT3_BLOCKS_PER_GROUP(sb);
+		NEXT3_BLOCKS_PER_GROUP(sb);
 	unsigned long ino = inode ? inode->i_ino : 1;
 	unsigned long inode_group = (ino - 1) / NEXT3_INODES_PER_GROUP(sb);
 	next3_grpblk_t inode_offset = (ino - 1) % NEXT3_INODES_PER_GROUP(sb);
@@ -562,7 +588,7 @@ __next3_snapshot_trace_cow(handle_t *handle, struct inode *inode,
 }
 
 #define next3_snapshot_trace_cow(handle, inode, bh, block, code, fn) \
-	if (snapshot_enable_debug >= 4)	\
+	if (snapshot_enable_debug >= 4)					\
 		__next3_snapshot_trace_cow(handle, inode, bh, block, code, fn)
 #else
 #define next3_snapshot_trace_cow(handle, inode, bh, block, code, fn)
@@ -581,9 +607,10 @@ __next3_snapshot_trace_cow(handle_t *handle, struct inode *inode,
  */
 static int
 next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
-		struct buffer_head *bh, next3_fsblk_t block, int *pcount,
-		int cmd, const char *fn)
+			    struct buffer_head *bh, next3_fsblk_t block,
+			    int *pcount, int cmd, const char *fn)
 {
+#warning function too long, over 300 LoC
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *snapshot = next3_snapshot_get_active(sb);
 	struct buffer_head *sbh = NULL;
@@ -592,12 +619,16 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	int err = -EIO;
 	int count = pcount ? *pcount : 1;
 	int clear = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+	SNAPSHOT_DEBUG_ONCE;
+#endif
 
 	next3_snapshot_trace_cow(handle, inode, bh, block, cmd, fn);
 	snapshot_debug_hl(4, "{\n");
 
 	if (handle->h_level++ >= SNAPSHOT_MAX_RECURSION_LEVEL) {
-		snapshot_debug_hl(1, "COW error: max recursion level exceeded!\n");
+		snapshot_debug_hl(1,
+			  "COW error: max recursion level exceeded!\n");
 		goto skip_cow;
 	}
 
@@ -611,7 +642,8 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		next3_snapshot_exclude_inode(inode) ||
 #endif
 		(inode == snapshot && cmd != SNAPSHOT_CLEAR)) {
-		snapshot_debug_hl(4, "active snapshot file update - skip block cow!\n");
+		snapshot_debug_hl(4, "active snapshot file update - "
+				  "skip block cow!\n");
 		goto skip_cow;
 	}
 
@@ -625,9 +657,10 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		jbd_unlock_bh_state(bh);
 		if (jh) {
 			/*
-			 * this is not the first time this block is being COWed
-			 * in the running transaction, so we don't need to COW
-			 * and we don't need to account for any COW credits -goldor
+			 * This is not the first time this block is being
+			 * COWed in the running transaction, so we don't
+			 * need to COW and we don't need to account for any
+			 * COW credits. -goldor
 			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 			handle->h_cow_ok_jh++;
@@ -639,12 +672,15 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 
 	clear = next3_snapshot_excluded(inode);
 	if (!clear) {
-		/* not an excluded file */
+#warning: Amir: is this an error condition that needs to be handled
+		/* if !clear: not an excluded file */
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	else if (cmd == SNAPSHOT_CLEAR) {
-		/* excluded file block clear access -
-		 * mark block in exclude bitmap */
+		/*
+		 * excluded file block clear access - mark block in exclude
+		 * bitmap
+		 */
 		cmd = SNAPSHOT_READ;
 	}
 #endif
@@ -670,9 +706,10 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1)) {
-		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/user credits (%d/%d) "
-				"for COW operation?\n",
-				handle->h_buffer_credits, handle->h_user_credits);
+		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/user "
+				  "credits (%d/%d) for COW operation?\n",
+				  handle->h_buffer_credits,
+				  handle->h_user_credits);
 	}
 #endif
 
@@ -685,9 +722,9 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	if (err && clear < 0) {
 		/* ignore COW bitmap test result for ignored file blocks */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-		snapshot_debug_hl(1, "warning: file (%lu) is excluded from snapshot "
-				"but block (%lu) is set in COW bitmap!\n",
-				inode->i_ino, block);
+		snapshot_debug_hl(1, "warning: file (%lu) is excluded from "
+				  "snapshot but block (%lu) is set in "
+				  "COW bitmap!\n", inode->i_ino, block);
 #endif
 		err = 0;
 	}
@@ -695,7 +732,8 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		goto out;
 
 	/* then test if snapshot already has a private copy of the block */
-	err = next3_snapshot_map_blocks(handle, snapshot, block, 1, &blk, SNAPSHOT_READ);
+	err = next3_snapshot_map_blocks(handle, snapshot, block, 1, &blk,
+					SNAPSHOT_READ);
 	if (err < 0)
 		goto out;
 	if (err > 0) {
@@ -714,7 +752,10 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	/* if move or delete were requested, try to map the block to snapshot */
 	if (cmd == SNAPSHOT_MOVE) {
 		if (inode == NULL) {
-			/* freeing blocks of newly added block group - don't move them to snapshot */
+			/*
+			 * freeing blocks of newly added block group - don't
+			 * move them to snapshot
+			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 			handle->h_cow_ok_clear++;
 #endif
@@ -722,7 +763,8 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 			goto out;
 		}
 		/* move block from inode to snapshot */
-		err = next3_snapshot_map_blocks(handle, snapshot, block, count, NULL, cmd);
+		err = next3_snapshot_map_blocks(handle, snapshot, block,
+						count, NULL, cmd);
 		if (err) {
 			if (err > 0) {
 				count = err;
@@ -762,14 +804,19 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	}
 
 	/* next try to allocate snapshot block to make a backup copy */
-	sbh = next3_getblk(handle, snapshot, SNAPSHOT_IBLOCK(block), SNAPSHOT_COPY, &err);
+	sbh = next3_getblk(handle, snapshot, SNAPSHOT_IBLOCK(block),
+			   SNAPSHOT_COPY, &err);
 	if (!sbh || err < 0)
 		goto out;
 
 	if (err) {
-		/* locked buffer - copy block data to snapshot and unlock buffer */
+		/*
+		 * locked buffer - copy block data to snapshot and unlock
+		 * buffer
+		 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-		snapshot_debug(3, "COWing block [%lld/%lld] of snapshot (%u)...\n",
+		snapshot_debug(3, "COWing block [%lld/%lld] of snapshot "
+			       "(%u)...\n",
 				SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
 				SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
 				snapshot->i_generation);
@@ -797,25 +844,30 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 
 test_pending_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	if (sbh) {
-		SNAPSHOT_DEBUG_ONCE;
-		while (buffer_new(sbh)) {
-			/* wait for pending COW to complete */
-			snapshot_debug_once(2, "waiting for pending cow: block = [%lld/%lld]...\n",
-					SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-					SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
-			/* can happen once per block/snapshot - wait for COW and keep trying */
-			wait_on_buffer(sbh);
-			yield();
-		}
+	if (!sbh)
+		goto no_sbh;
+	while (buffer_new(sbh)) {
+		/* wait for pending COW to complete */
+		snapshot_debug_once(2, "waiting for pending cow: "
+				    "block = [%lld/%lld]...\n",
+				    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+				    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
+		/*
+		 * can happen once per block/snapshot - wait for COW and
+		 * keep trying
+		 */
+		wait_on_buffer(sbh);
+		yield();
 	}
+no_sbh:
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	if (sbh && !blk)
 		blk = sbh->b_blocknr;
 	if (clear && blk) {
 		/* zero out snapshot block data */
-		err = next3_snapshot_zero_data_buffer(handle, snapshot, bh->b_blocknr, blk);
+		err = next3_snapshot_zero_data_buffer(handle, snapshot,
+						      bh->b_blocknr, blk);
 		if (err)
 			goto out;
 	}
@@ -844,7 +896,8 @@ out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (clear < 0) {
 		/* mark blocks in exclude bitmap */
-		count = next3_snapshot_exclude_blocks(handle, snapshot, block, count);
+		count = next3_snapshot_exclude_blocks(handle, snapshot,
+						      block, count);
 		if (count < 0)
 			err = count;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
@@ -866,29 +919,33 @@ skip_cow:
 /*
  * tests if the block should be cowed
  */
-#define next3_snapshot_test_cow(handle, bh, fn) \
-	next3_snapshot_test_and_cow(handle, NULL, bh, bh->b_blocknr, NULL, SNAPSHOT_READ, fn)
+#define next3_snapshot_test_cow(handle, bh, fn)				\
+	next3_snapshot_test_and_cow(handle, NULL, bh, bh->b_blocknr, NULL, \
+				    SNAPSHOT_READ, fn)
 /*
  * tests if the metadata block should be cowed
  * and in case it does, tries to copy the block to the snapshot
  */
-#define next3_snapshot_cow(handle, inode, bh, fn) \
-	next3_snapshot_test_and_cow(handle, inode, bh, bh->b_blocknr, NULL, SNAPSHOT_COPY, fn)
+#define next3_snapshot_cow(handle, inode, bh, fn)			\
+	next3_snapshot_test_and_cow(handle, inode, bh, bh->b_blocknr, NULL, \
+				    SNAPSHOT_COPY, fn)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 /*
  * tests if the data block should be cowed
  * and in case it does, tries to move the block to the snapshot
  */
-#define next3_snapshot_mow(handle, inode, block, num, fn) \
-	next3_snapshot_test_and_cow(handle, inode, NULL, block, num, SNAPSHOT_MOVE, fn)
+#define next3_snapshot_mow(handle, inode, block, num, fn)	     \
+	next3_snapshot_test_and_cow(handle, inode, NULL, block, num, \
+				    SNAPSHOT_MOVE, fn)
 #endif
 /*
  * tests if the block should be cowed
  * and in case it does, tries to clear the block from the COW bitmap
  */
-#define next3_snapshot_clear(handle, inode, block, num, fn) \
-	next3_snapshot_test_and_cow(handle, inode, NULL, block, num, SNAPSHOT_CLEAR, fn)
+#define next3_snapshot_clear(handle, inode, block, num, fn)	     \
+	next3_snapshot_test_and_cow(handle, inode, NULL, block, num, \
+				    SNAPSHOT_CLEAR, fn)
 
 /*
  * Block access functions
@@ -900,7 +957,7 @@ skip_cow:
  * otherwise, this is a file system global metadata block
  */
 int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
-													struct buffer_head *bh)
+				    struct buffer_head *bh)
 {
 	return next3_snapshot_cow(handle, inode, bh, "write");
 }
@@ -913,17 +970,18 @@ int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
 int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
 {
 	int ret = next3_snapshot_test_cow(handle, bh, "undo");
-	if (ret == SNAPSHOT_COW) {
-		/*
-		 * we shouldn't get here if everything works properly
-		 * because undo access is only requested for block bitmaps
-		 * which should be COW'ed in next3_snapshot_test_cow_bitmap() -goldor
-		 */
-		snapshot_debug(1, "warning: block bitmap [%lld/%lld]"
-				" needs to be COWed?!\n",
-				 SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-				 SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
-	}
+
+	if (ret != SNAPSHOT_COW)
+		return ret;
+	/*
+	 * We shouldn't get here if everything works properly because undo
+	 * access is only requested for block bitmaps which should be COW'ed
+	 * in next3_snapshot_test_cow_bitmap() -goldor
+	 */
+	snapshot_debug(1, "warning: block bitmap [%lld/%lld]"
+		       " needs to be COWed?!\n",
+		       SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+		       SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
 	return ret;
 }
 
@@ -933,39 +991,36 @@ int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
 int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 {
 	int ret;
+
 	ret = next3_snapshot_test_cow(handle, bh, "create");
-	if (ret == SNAPSHOT_COW) {
+	if (ret != SNAPSHOT_COW)
+		return ret;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
-		/*
-		 * we shouldn't get here if get_delete_access()
-		 * was called for all deleted blocks.
-		 * however, we could definetly get here if fsck was run
-		 * and if it had freed some blocks, naturally,
-		 * without moving them to snapshot. -goldor
-		 */
-		snapshot_debug(1, "warning: new allocated block (%lld)"
-				" needs to be COWed?!\n",
-				bh->b_blocknr);
+	/*
+	 * We shouldn't get here if get_delete_access() was called for all
+	 * deleted blocks.  However, we could definetly get here if fsck was
+	 * run and if it had freed some blocks, naturally, without moving
+	 * them to snapshot. -goldor
+	 */
+	snapshot_debug(1, "warning: new allocated block (%lld)"
+		       " needs to be COWed?!\n", bh->b_blocknr);
 #else
-		if (handle->h_level == 0) {
-			/*
-			 * never mind why we got here, we have to try to COW
-			 * the new allocated block before it is overwritten.
-			 * if allocation is for active snapshot itself (h_level > 0),
-			 * there is nothing gracefull we can do,
-			 * so issue an fs error. -goldor
-			 */
-			/*
-			 * buffer comes here locked and should return locked
-			 * but we must unlock it, because it may not be up-to-date,
-			 * so it may be read from disk before it is being COWed.
-			 */
-			unlock_buffer(bh);
-			ret = next3_snapshot_cow(handle, NULL, bh, "create");
-			lock_buffer(bh);
-		}
+	if (handle->h_level == 0)
+		return ret;
+	/*
+	 * Never mind why we got here, we have to try to COW the new
+	 * allocated block before it is overwritten.  If allocation is for
+	 * active snapshot itself (h_level > 0), there is nothing graceful
+	 * we can do, so issue an fs error. -goldor
+	 *
+	 * Buffer comes here locked and should return locked but we must
+	 * unlock it, because it may not be up-to-date, so it may be read
+	 * from disk before it is being COWed.
+	 */
+	unlock_buffer(bh);
+	ret = next3_snapshot_cow(handle, NULL, bh, "create");
+	lock_buffer(bh);
 #endif
-	}
 	return ret;
 
 }
@@ -983,6 +1038,7 @@ int next3_snapshot_get_move_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t block, int count)
 {
 	int ret = next3_snapshot_mow(handle, inode, block, &count, "move");
+
 	if (ret == SNAPSHOT_MOVED)
 		ret = count;
 	else if (ret > 0)
@@ -1002,6 +1058,7 @@ int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t block, int count)
 {
 	int ret = next3_snapshot_mow(handle, inode, block, &count, "delete");
+
 	if (ret == SNAPSHOT_MOVED)
 		ret = count;
 	else if (ret > 0)
@@ -1019,9 +1076,8 @@ int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
  * without being COWed to snapshot
  */
 int next3_snapshot_get_clear_access(handle_t *handle, struct inode *inode,
-		next3_fsblk_t block, int count)
+				    next3_fsblk_t block, int count)
 {
 	return next3_snapshot_clear(handle, inode, block, &count, "clear");
 }
 #endif
-

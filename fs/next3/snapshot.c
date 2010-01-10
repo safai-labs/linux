@@ -1005,14 +1005,15 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	snapshot_debug(1, "warning: new allocated block (%lld)"
 		       " needs to be COWed?!\n", bh->b_blocknr);
 #else
-	if (handle->h_level == 0)
-		return ret;
 	/*
 	 * Never mind why we got here, we have to try to COW the new
 	 * allocated block before it is overwritten.  If allocation is for
 	 * active snapshot itself (h_level > 0), there is nothing graceful
 	 * we can do, so issue an fs error. -goldor
-	 *
+	 */
+	if (handle->h_level > 0)
+		return ret;
+	/*
 	 * Buffer comes here locked and should return locked but we must
 	 * unlock it, because it may not be up-to-date, so it may be read
 	 * from disk before it is being COWed.

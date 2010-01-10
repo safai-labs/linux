@@ -57,15 +57,16 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 		return NULL; /* no snapshot was deactivated */
 
 	if (old) {
+		snapshot_debug(1, "snapshot (%u) deactivated\n", old->i_generation);
 		NEXT3_I(old)->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
 		/* remove active snapshot reference */
 		iput(old);
-		snapshot_debug(1, "snapshot (%u) deactivated\n", old->i_generation);
 	}
+	if (inode)
+		/* grab snapshot inode or don't activate */
+		inode = igrab(inode);
 	if (inode) {
 		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
-		/* add active snapshot reference */
-		igrab(inode);
 		snapshot_debug(1, "snapshot (%u) activated\n", inode->i_generation);
 	}
 	NEXT3_SB(sb)->s_active_snapshot = inode;
@@ -441,13 +442,11 @@ int next3_snapshot_create(struct inode *inode)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	err = next3_inode_list_add(handle, inode, list,
 			&NEXT3_SB(inode->i_sb)->s_es->s_last_snapshot, "snapshot");
-
-	if (err) {
+	/* add snapshot list reference */
+	if (err || !igrab(inode)) {
 		snapshot_debug(1, "failed to add snapshot (%u) to list\n", inode->i_generation);
 		goto out_handle;
 	}
-	/* add snapshot list reference */
-	igrab(inode);
 	l = list->next;
 #endif
 
@@ -1105,7 +1104,8 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	int err = 0;
 
 	/* elevate ref count until final cleanup */
-	igrab(inode);
+	if (!igrab(inode))
+		return 0;
 
 	if (ei->i_flags &
 		(NEXT3_SNAPFILE_ENABLED_FL|NEXT3_SNAPFILE_INUSE_FL|NEXT3_SNAPFILE_ACTIVE_FL)) {
@@ -1502,13 +1502,12 @@ void next3_snapshot_destroy(struct super_block *sb)
  */
 void next3_snapshot_update(struct super_block *sb, int cleanup)
 {
+	struct inode *active_snapshot;
+	struct inode *used_by = NULL; /* last non-deleted snapshot found */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct list_head *l, *n;
-#endif
-	struct inode *snapshot;
 	struct inode *inode;
 	struct next3_inode_info *ei;
-	struct inode *used_by = NULL; /* last non-deleted snapshot found */
 	int found_active = 0;
 	int found_enabled = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
@@ -1517,6 +1516,8 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
 	int need_merge = 0;
 #endif
+#endif
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	if (cleaning)
 		/*
@@ -1526,17 +1527,14 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 		cleanup = 0;
 #endif
 
-	/* we are outside a transaction so we must read active snapshot under mutex lock */
-	snapshot = next3_snapshot_get_active(sb);
+	active_snapshot = next3_snapshot_get_active(sb);
+	if (!active_snapshot)
+		return;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	/* iterate safe from oldest snapshot backwards */
 	list_for_each_prev_safe(l, n, &NEXT3_SB(sb)->s_snapshot_list) {
 		ei = list_entry(l, struct next3_inode_info, i_orphan);
-#else
-	if (snapshot) {
-		ei = NEXT3_I(snapshot);
-#endif
 		inode = &ei->vfs_inode;
 		/* all snapshots on the list must have the SNAPSHOT flag and are not zombies */
 		ei->i_flags |= NEXT3_SNAPFILE_FL;
@@ -1550,7 +1548,7 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 		 * after completion of a snapshot management operation,
 		 * only the active snapshot can have the ACTIVE flag
 		 */
-		if (inode == snapshot) {
+		if (inode == active_snapshot) {
 			ei->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
 			found_active = 1;
 		}
@@ -1605,25 +1603,20 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 				found_enabled = 1;
 		}
 	}
+#endif
 
-	/*
-	 * update active snapshot
-	 */
-	if (snapshot) {
-		ei = NEXT3_I(snapshot);
-	 	/* if active snapshot is permanently unused and deleted, deactivate it */
-		if (cleanup && !used_by && (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL)) {
-			/* keep the refcount above 0 */
-			igrab(snapshot);
-			/* lock journal updates before deactivating snapshot */
-			journal_lock_updates(NEXT3_SB(sb)->s_journal);
-			snapshot = next3_snapshot_set_active(sb, NULL);
-			journal_unlock_updates(NEXT3_SB(sb)->s_journal);
-			/* cleanup unused deleted active snapshot */
-			next3_snapshot_cleanup(snapshot);
-			/* drop the refcount to 0 */
-			iput(snapshot);
-		}
+	/* if active snapshot is permanently unused and deleted, deactivate it */
+	if (cleanup && !used_by && 
+		(NEXT3_I(active_snapshot)->i_flags & NEXT3_SNAPFILE_DELETED_FL) &&
+		igrab(active_snapshot)) {
+		/* lock journal updates before deactivating snapshot */
+		journal_lock_updates(NEXT3_SB(sb)->s_journal);
+		next3_snapshot_set_active(sb, NULL);
+		journal_unlock_updates(NEXT3_SB(sb)->s_journal);
+		/* cleanup unused deleted active snapshot */
+		next3_snapshot_cleanup(active_snapshot);
+		/* drop the refcount to 0 */
+		iput(active_snapshot);
 	}
 }
 

@@ -27,51 +27,50 @@
 #define SNAPSHOT_TESTS_NUM	5
 
 extern const char *snapshot_ident;
-
 extern u8 snapshot_enable_debug;
 extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 
-#define snapshot_test_delay(i) 					\
-	do {										\
-		if (snapshot_enable_test[i])			\
-			msleep_interruptible(snapshot_enable_test[i]);	\
+#define snapshot_test_delay(i)		     \
+	do {							       \
+		if (snapshot_enable_test[i])			       \
+			msleep_interruptible(snapshot_enable_test[i]); \
 	} while (0)
 
-#define snapshot_test_delay_per_ticks(i,n) 		\
-	do {										\
-		if (snapshot_enable_test[i] && (n))	\
-			msleep_interruptible((snapshot_enable_test[i]/(n))+1);	\
+#define snapshot_test_delay_per_ticks(i, n)	    \
+	do {								\
+		if (snapshot_enable_test[i] && (n))			\
+			msleep_interruptible(				\
+				(snapshot_enable_test[i]/(n))+1);	\
 	} while (0)
 
-#define snapshot_debug_l(n, l, f, a...)			\
-	do {										\
-		if ((n) <= snapshot_enable_debug &&		\
-			(l) <= SNAPSHOT_IDENT_MAX) {		\
-			printk ("snapshot: %s", 			\
-					snapshot_ident - (l));		\
-			printk (f, ## a);					\
-		}										\
+#define snapshot_debug_l(n, l, f, a...)					\
+	do {								\
+		if ((n) <= snapshot_enable_debug &&			\
+		    (l) <= SNAPSHOT_IDENT_MAX) {			\
+			printk(KERN_DEBUG "snapshot: %s",		\
+			       snapshot_ident - (l));			\
+			printk(KERN_DEBUG f, ## a);			\
+		}							\
 	} while (0)
 
-#define snapshot_debug(n, f, a...)	\
-		snapshot_debug_l(n, 0, f, ## a)
+#define snapshot_debug(n, f, a...)	snapshot_debug_l(n, 0, f, ## a)
 
 #define SNAPSHOT_DEBUG_ONCE int once = 1
-#define snapshot_debug_once(n, f, a...)		\
-	do {									\
-		if (once) {							\
-			snapshot_debug(n, f, ## a);		\
-			once = 0; 						\
-		}									\
+#define snapshot_debug_once(n, f, a...)					\
+	do {								\
+		if (once) {						\
+			snapshot_debug(n, f, ## a);			\
+			once = 0;					\
+		}							\
 	} while (0)
 
 #else
-#define snapshot_test_delay(i) /**/
-#define snapshot_test_delay_per_ticks(i, n) /**/
-#define snapshot_debug(n, f, a...)	/**/
-#define snapshot_debug_l(n, l, f, a...)	/**/
-#define snapshot_debug_once(n, f, a...)	/**/
-#define SNAPSHOT_DEBUG_ONCE /**/
+#define snapshot_test_delay(i)
+#define snapshot_test_delay_per_ticks(i, n)
+#define snapshot_debug(n, f, a...)
+#define snapshot_debug_l(n, l, f, a...)
+#define snapshot_debug_once(n, f, a...)
+#define SNAPSHOT_DEBUG_ONCE
 #endif
 
 /* debug levels */

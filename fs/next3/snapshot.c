@@ -301,7 +301,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 
 /*
- * next3_snapshot_init_cow_bitmap() creates the COW bitmap on first time 
+ * next3_snapshot_init_cow_bitmap() creates the COW bitmap on first time
  * block group access after snapshot take.
  * COW bitmap is created by masking the block bitmap with exclude bitmap.
  *
@@ -325,8 +325,8 @@ next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (!bitmap_bh)
 		goto out;
 
-	err = next3_snapshot_map_blocks(handle, snapshot, bitmap_bh->b_blocknr, 1,
-		   							&cow_bitmap_blk, SNAPSHOT_BITMAP);
+	err = next3_snapshot_map_blocks(handle, snapshot, bitmap_bh->b_blocknr,
+					1, &cow_bitmap_blk, SNAPSHOT_BITMAP);
 	if (err > 0)
 		cow_bh = sb_getblk(sb, cow_bitmap_blk);
 	if (!cow_bh)
@@ -444,18 +444,19 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		return sb_bread(sb, cow_bitmap_blk);
 
 	/*
-	 * Try to read cow bitmap block from snapshot file. If COW bitmap is not 
-	 * yet allocated, create the new COW bitmap block
+	 * Try to read cow bitmap block from snapshot file.  If COW bitmap
+	 * is not yet allocated, create the new COW bitmap block.
 	 */
 	cow_bh = next3_bread(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
 			     SNAPSHOT_READ, &err);
 	if (!cow_bh)
-		cow_bh = next3_snapshot_init_cow_bitmap(handle, snapshot, block_group);
+		cow_bh = next3_snapshot_init_cow_bitmap(handle, snapshot,
+							block_group);
 
 	if (!cow_bh)
-		snapshot_debug(1, "failed to init COW bitmap %u of snapshot (%u)\n",
-				block_group, snapshot->i_generation);
-	
+		snapshot_debug(1, "failed to init COW bitmap %u of snapshot "
+			       "(%u)\n", block_group, snapshot->i_generation);
+
 	spin_lock(sb_bgl_lock(sbi, block_group));
 	if (cow_bh)
 		/* update cow bitmap cache with snapshot cow bitmap block */

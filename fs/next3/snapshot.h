@@ -195,8 +195,8 @@ static inline void exit_next3_snapshot(void) { return; }
 #endif
 
 /* balloc.c */
-extern struct buffer_head *read_block_bitmap(struct super_block *sb, 
-					       unsigned int block_group);
+extern struct buffer_head *read_block_bitmap(struct super_block *sb,
+					     unsigned int block_group);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 					       unsigned int block_group);

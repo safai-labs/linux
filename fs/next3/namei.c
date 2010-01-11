@@ -1649,7 +1649,6 @@ static int next3_delete_entry (handle_t *handle,
 			BUFFER_TRACE(bh, "get_write_access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 			err = next3_journal_get_write_access(handle, bh);
-			/* why not check for errors? -goldor */
 			if (err)
 				return err;
 #else
@@ -1803,7 +1802,6 @@ retry:
 	BUFFER_TRACE(dir_block, "get_write_access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 	err = next3_journal_get_write_access(handle, dir_block);
-	/* why not check for errors? -goldor */
 	if (err) {
 		drop_nlink(inode); /* is this nlink == 0? */
 		unlock_new_inode(inode);
@@ -1941,7 +1939,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	struct super_block *sb = inode->i_sb;
 	/*
 	 * only get the field address from the super block structs
-	 * the content of the field will only be changed under lock_super() -goldor
+	 * the content of the field will only be changed under lock_super()
 	 */
 	return next3_inode_list_add(handle, inode, &NEXT3_SB(sb)->s_orphan,
 			&NEXT3_SB(sb)->s_es->s_last_orphan, "orphan");
@@ -1991,7 +1989,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	/* Insert this inode at the head of the on-disk inode list... */
 	NEXT_ORPHAN(inode) = le32_to_cpu(*s_last);
 	if (s_list == &NEXT3_SB(sb)->s_orphan)
-		/* last_snapshot will be written to disk in snapshot_take() -goldor */
+		/* last_snapshot will be written to disk in snapshot_take() */
 		*s_last = cpu_to_le32(inode->i_ino);
 #else
 	/* Insert this inode at the head of the on-disk orphan list... */
@@ -2039,7 +2037,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	struct super_block *sb = inode->i_sb;
 	/*
 	 * only get the field address from the super block structs
-	 * the content of the field will only be changed under lock_super() -goldor
+	 * the content of the field will only be changed under lock_super()
 	 */
 	return next3_inode_list_del(handle, inode, &NEXT3_SB(sb)->s_orphan,
 			&NEXT3_SB(sb)->s_es->s_last_orphan, "orphan");
@@ -2424,7 +2422,6 @@ static int next3_rename (struct inode * old_dir, struct dentry *old_dentry,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 		BUFFER_TRACE(dir_bh, "get_write_access");
 		retval = next3_journal_get_write_access(handle, dir_bh);
-		/* check for errors before it's too late -goldor */
 		if (retval)
 			goto end_rename;
 #endif
@@ -2437,7 +2434,6 @@ static int next3_rename (struct inode * old_dir, struct dentry *old_dentry,
 		BUFFER_TRACE(new_bh, "get write access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 		retval = next3_journal_get_write_access(handle, new_bh);
-		/* why not check for errors? -goldor */
 		if (retval)
 			goto end_rename;
 #else

@@ -33,7 +33,6 @@ static int next3_file_open(struct inode *inode, struct file *filp)
 		(filp->f_flags & O_ACCMODE) != O_RDONLY)
 		/*
 		 * allow only read-only access to live or zombie snapshots
-		 * -goldor
 		 */
 		return -EPERM;
 

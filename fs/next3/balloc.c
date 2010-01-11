@@ -220,7 +220,7 @@ read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 
 /*
  * dummy exclude inode is passed to next3_journal_get_write_access_inode()
- * to ensure that exclude bitmap will not be COWed -goldor
+ * to ensure that exclude bitmap will not be COWed.
  */
 static struct inode dummy_exclude_inode = {
 	.i_ino = NEXT3_EXCLUDE_INO
@@ -739,7 +739,7 @@ do_more:
 		 * typically, these blocks need to be cleared from exclude
 		 * bitmap.  Anyway, a free block should never be excluded
 		 * from snapshot, so we always clear exclude bitmap just to
-		 * be on the safe side.  -goldor
+		 * be on the safe side.
 		 */
 		if (exclude_bitmap_bh &&
 			next3_clear_bit_atomic(sb_bgl_lock(sbi, block_group),
@@ -990,13 +990,13 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 	 * to mark both under jbd_lock_bh_state() but we can rest this rule,
 	 * because exclude bitmap is only used for creating the COW bitmap
 	 * from commited_data and we already checked that the block is not
-	 * marked is committed_data.  -goldor
+	 * marked is committed_data.
 	 */
 	if (ret && exclude_bitmap_bh &&
 		next3_set_bit_atomic(lock, block, exclude_bitmap_bh->b_data)) {
 		/*
 		 * we should never get here because free blocks
-		 * should never be excluded from snapshot -goldor
+		 * should never be excluded from snapshot
 		 */
 		WARN_ON(1);
 	}

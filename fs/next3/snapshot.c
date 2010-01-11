@@ -347,7 +347,7 @@ next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * guaranteed that the only difference between block bitmap
 	 * and commited_data are the new active snapshot blocks,
 	 * because before allocating/freeing any other blocks a task
-	 * must first get_undo_access() and get here. -goldor
+	 * must first get_undo_access() and get here.
 	 */
 	jbd_lock_bh_journal_head(bitmap_bh);
 	jbd_lock_bh_state(bitmap_bh);
@@ -666,8 +666,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 			/*
 			 * This is not the first time this block is being
 			 * COWed in the running transaction, so we don't
-			 * need to COW and we don't need to account for any
-			 * COW credits. -goldor
+			 * need to COW it again.
 			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 			handle->h_cow_ok_jh++;
@@ -979,7 +978,7 @@ int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
 	/*
 	 * We shouldn't get here if everything works properly because undo
 	 * access is only requested for block bitmaps which should be COW'ed
-	 * in next3_snapshot_test_cow_bitmap() -goldor
+	 * in next3_snapshot_test_cow_bitmap()
 	 */
 	snapshot_debug(1, "warning: block bitmap [%lld/%lld]"
 		       " needs to be COWed?!\n",
@@ -1003,7 +1002,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	 * We shouldn't get here if get_delete_access() was called for all
 	 * deleted blocks.  However, we could definetly get here if fsck was
 	 * run and if it had freed some blocks, naturally, without moving
-	 * them to snapshot. -goldor
+	 * them to snapshot.
 	 */
 	snapshot_debug(1, "warning: new allocated block (%lld)"
 		       " needs to be COWed?!\n", bh->b_blocknr);
@@ -1012,7 +1011,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	 * Never mind why we got here, we have to try to COW the new
 	 * allocated block before it is overwritten.  If allocation is for
 	 * active snapshot itself (h_level > 0), there is nothing graceful
-	 * we can do, so issue an fs error. -goldor
+	 * we can do, so issue an fs error.
 	 */
 	if (handle->h_level > 0)
 		return ret;

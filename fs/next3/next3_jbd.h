@@ -89,7 +89,7 @@
  * in total, for N COW operations, we may have to journal 17N+3 blocks,
  * and we also want to reserve 17+3 credits for the last COW opertation,
  * so we add 17(N-1)+3+(17+3) to the requested N buffer credits
- * and request 18N+6 buffer credits. -goldor
+ * and request 18N+6 buffer credits.
  *
  * we are going to need a bigger journal to accomodate the
  * extra snapshot credits.

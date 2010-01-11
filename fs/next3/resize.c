@@ -731,7 +731,7 @@ static void update_backups(struct super_block *sb,
 		if (next3_snapshot_get_active(sb))
 			/*
 			 * next3_snapshot_get_write_access() expects an uptodate buffer
-			 * do it here to supress "non uptodate buffer" warning. -goldor
+			 * do it here to supress "non uptodate buffer" warning.
 			 */
 			bh = sb_bread(sb, group * bpg + blk_off);
 		else
@@ -967,7 +967,6 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			/*
 			 * offline resize from a bigger size filesystem may leave
 			 * allocated exclude bitmap blocks of unused block groups
-			 * -goldor
 			 */
 			snapshot_debug(2, "reusing old exclude bitmap #%d block (%u)\n",
 					input->group, le32_to_cpu(*exclude_bitmap));

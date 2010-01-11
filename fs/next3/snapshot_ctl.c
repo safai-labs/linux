@@ -121,7 +121,7 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 #endif
 
 	if ((flags ^ oldflags) & NEXT3_SNAPFILE_ENABLED_FL) {
-		/* enabled/disabled the snapshot during transaction -goldor */
+		/* enabled/disabled the snapshot during transaction */
 		if (flags & NEXT3_SNAPFILE_ENABLED_FL)
 			err = next3_snapshot_enable(inode);
 		else
@@ -131,7 +131,7 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 		goto out;
 
 	if ((flags ^ oldflags) & NEXT3_SNAPFILE_FL) {
-		/* add/delete to snapshots list during transaction -goldor */
+		/* add/delete to snapshots list during transaction */
 		if (flags & NEXT3_SNAPFILE_FL)
 			err = next3_snapshot_create(inode);
 		else
@@ -464,7 +464,6 @@ int next3_snapshot_create(struct inode *inode)
 	 * at the end of snapshot_take(), it will become the active snapshot.
 	 * finally, if snapshot_create() or snapshot_take() has failed,
 	 * snapshot_update() will remove it from the head of the list.
-	 * -goldor
 	 */
 	NEXT3_I(inode)->i_flags |= (NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
 	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;

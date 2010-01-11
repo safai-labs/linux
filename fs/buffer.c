@@ -382,7 +382,7 @@ static void end_buffer_tracked_read(struct buffer_head *bh)
 	put_bh(_bh);
 	/*
 	 * clear the buffer mapping to make sure
-	 * that get_block() will always be called -goldor
+	 * that get_block() will always be called
 	 */
 	clear_buffer_mapped(bh);
 	clear_buffer_tracked_read(bh);

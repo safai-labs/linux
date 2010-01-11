@@ -515,7 +515,7 @@ static next3_fsblk_t next3_find_goal(struct inode *inode, long block,
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
-	/* snapshot file copied blocks are allocated close to their source -goldor */
+	/* snapshot file copied blocks are allocated close to their source */
 	if (next3_snapshot_file(inode))
 		return SNAPSHOT_BLOCK(block);
 #endif
@@ -847,7 +847,7 @@ static int next3_alloc_blocks(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 		if (blks == 0 && target == 0) {
-			/* mapping data blocks -goldor */
+			/* mapping data blocks */
 			*err = 0;
 			return 0;
 		}
@@ -914,11 +914,11 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	if (cmd == SNAPSHOT_MOVE) {
-		/* mapping snapshot block to block device block -goldor */
+		/* mapping snapshot block to block device block */
 		current_block = SNAPSHOT_BLOCK(iblock);
 		num = 0;
 		if (indirect_blks > 0) {
-			/* allocating only indirect blocks -goldor */
+			/* allocating only indirect blocks */
 			next3_alloc_blocks(handle, inode, goal, indirect_blks,
 					0, new_blocks, &err);
 			if (err)
@@ -954,7 +954,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 		BUFFER_TRACE(bh, "call get_create_access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (cmd == SNAPSHOT_BITMAP) {
-			/* don't journal snapshot bitmap indirect blocks -goldor */
+			/* don't journal snapshot bitmap indirect blocks */
 		} else
 #endif
 		err = next3_journal_get_create_access(handle, bh);
@@ -993,7 +993,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 		 * so instead of writing through the journal,
 		 * we sync the indirect blocks directly to disk.
 		 * of course, this is not good for performance but it only happens
-		 * once per snapshot/blockgroup. -goldor
+		 * once per snapshot/blockgroup.
 		 */
 		if (cmd == SNAPSHOT_BITMAP) {
 			mark_buffer_dirty(bh);
@@ -1012,7 +1012,7 @@ failed:
 		BUFFER_TRACE(branch[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (cmd == SNAPSHOT_BITMAP) {
-			/* don't journal snapshot bitmap indirect blocks -goldor */
+			/* don't journal snapshot bitmap indirect blocks */
 		} else
 #endif
 		next3_journal_forget(handle, branch[i].bh);
@@ -1022,7 +1022,7 @@ failed:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	if (cmd == SNAPSHOT_MOVE && num > 0) {
-		/* mapping data blocks -goldor */
+		/* mapping data blocks */
 		vfs_dq_free_block(inode, num);
 	} else if (cmd >= SNAPSHOT_WRITE)
 #endif
@@ -1095,7 +1095,7 @@ static int next3_splice_branch(handle_t *handle, struct inode *inode,
 	 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	if (cmd == SNAPSHOT_MOVE) {
-		/* mapping data blocks -goldor */
+		/* mapping data blocks */
 	} else
 #endif
 	if (block_i) {
@@ -1138,7 +1138,7 @@ err_out:
 		BUFFER_TRACE(where[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (cmd == SNAPSHOT_BITMAP) {
-			/* don't journal snapshot bitmap indirect block -goldor */
+			/* don't journal snapshot bitmap indirect block */
 		} else
 #endif
 		next3_journal_forget(handle, where[i].bh);
@@ -1146,7 +1146,7 @@ err_out:
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	if (cmd == SNAPSHOT_MOVE) {
-		/* mapping data blocks -goldor */
+		/* mapping data blocks */
 		vfs_dq_free_block(inode, blks);
 	} else if (cmd >= SNAPSHOT_WRITE)
 #endif
@@ -1474,7 +1474,7 @@ retry:
 		/*
 		 * on read of snapshot file, an unmapped block is a peephole to prev snapshot.
 		 * on read of active snapshot, an unmapped block is a peephole to the block device.
-		 * on first block write, the peephole is patched forever. -goldor
+		 * on first block write, the peephole is patched forever.
 		 */
 		if ((create == SNAPSHOT_READ || create == SNAPSHOT_SHRINK) && !err) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
@@ -1529,7 +1529,7 @@ retry:
 		partial = next3_get_branch_cow(handle, inode, depth, offsets, chain, &err,
 				create);
 		if (err) {
-			/* failed to move block to snapshot? -goldor */
+			/* failed to move block to snapshot? */
 			mutex_unlock(&ei->truncate_mutex);
 			goto cleanup;
 		}
@@ -1584,7 +1584,7 @@ retry:
 		 * grab the buffer cache entry and mark it new
 		 * to indicate a pending COW operation.
 		 * the refcount for the buffer cache will be released
-		 * when the COW operation is either completed or canceled. -goldor
+		 * when the COW operation is either completed or canceled.
 		 */
 		sbh = sb_getblk(inode->i_sb, le32_to_cpu(chain[depth-1].key));
 		if (sbh)
@@ -1626,7 +1626,7 @@ got_it:
 		/*
 		 * on read of active snapshot, a mapped block may belong
 		 * to a non completed COW operation.
-		 * use the buffer cache to test this condition. -goldor
+		 * use the buffer cache to test this condition.
 		 */
 		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
 		if (sbh) {
@@ -2472,7 +2472,7 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 
 static int next3_snapshot_readpage(struct file *file, struct page *page)
 {
-	/* do read I/O with buffer heads to enable tracked reads -goldor */
+	/* do read I/O with buffer heads to enable tracked reads */
 	return block_read_full_page(page, next3_snapshot_get_block);
 }
 #endif
@@ -2662,7 +2662,7 @@ static const struct address_space_operations next3_journalled_aops = {
 /*
  * readonly aops for snapshot file:
  * always readpage (by page) with buffer tracked read
- * never writepage and never direct_IO. -goldor
+ * never writepage and never direct_IO.
  */
 static const struct address_space_operations next3_snapfile_aops = {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
@@ -2681,7 +2681,7 @@ void next3_set_aops(struct inode *inode)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (NEXT3_I(inode)->i_flags & (NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_ZOMBIE_FL))
-		/* handle both dead and live snapshot files -goldor */
+		/* handle both dead and live snapshot files */
 		inode->i_mapping->a_ops = &next3_snapfile_aops;
 	else
 #endif
@@ -2932,7 +2932,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 			next3_journal_get_write_access(handle, bh);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-			/* we may have lost write_access on bh -goldor */
+			/* we may have lost write_access on bh */
 			if (is_handle_aborted(handle))
 				return;
 #endif
@@ -3069,7 +3069,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 						  count, block_to_free_p, p);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-				/* we may have lost write_access on this_bh -goldor */
+				/* we may have lost write_access on this_bh */
 				if (is_handle_aborted(handle))
 					return;
 #endif
@@ -3092,7 +3092,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 				  count, block_to_free_p, p);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-	/* we may have lost write_access on this_bh -goldor */
+	/* we may have lost write_access on this_bh */
 	if (is_handle_aborted(handle))
 		return;
 #endif

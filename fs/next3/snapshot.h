@@ -390,7 +390,6 @@ static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
 	 * 4. The 'expose' is only to the in-memory inode (so fsck is happy)
 	 * 5. A healthy exclude inode has blocks only on the DIND brnach
 	 * XXX: is that a problem?
-	 * -goldor
 	 */
 	ei->i_data[NEXT3_IND_BLOCK] = ei->i_data[NEXT3_DIND_BLOCK];
 }

@@ -129,12 +129,14 @@ flags_err:
 
 		if ((flags & NEXT3_SNAPFILE_FL) &&
 			(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_TAKE_FL))
-			/* take snapshot outside transaction -goldor */
+			/* take snapshot outside transaction */
 			err = next3_snapshot_take(inode);
 
 		if ((flags | oldflags) & NEXT3_SNAPFILE_FL)
-			/* finally: update all snapshots status flags
-			 * and cleanup after delete command */
+			/*
+			 * Finally: update all snapshots status flags
+			 * and cleanup after delete command
+			 */
 			next3_snapshot_update(inode->i_sb, !(flags & NEXT3_SNAPFILE_FL));
 #endif
 flags_out:

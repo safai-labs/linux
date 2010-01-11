@@ -269,8 +269,6 @@ static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 		max_groups *= NEXT3_DESC_PER_BLOCK(sb);
 	}
 init_exclude_bitmap_blocks:
-#else
-#warning why the empty else/endif pair? maybe the 'else' is not needed?
 #endif
 
 	/*
@@ -409,7 +407,6 @@ int next3_snapshot_create(struct inode *inode)
 		prev_inode_blk = 0;
 	loff_t snapshot_blocks = le32_to_cpu(NEXT3_SB(inode->i_sb)->
 					     s_es->s_blocks_count);
-#warning i removed strange-looking/unnecessary init of static struct below
 	static struct next3_inode_info dummy_inode;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct list_head *l, *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
@@ -1008,12 +1005,6 @@ int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 			SNAPSHOT_DIND_BLOCK_GROUPS) + 1;
 	if (ndind > SNAPSHOT_IND_BLOCKS)
 		ndind = SNAPSHOT_IND_BLOCKS;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
-	/* iterate on dind branches, then on snapshots (to reduce disk seek
-	 * time) */
-	for (dind = 0; dind < ndind; dind++) {
-#endif
-#warning the iterator below should be indented further inside the 'for' above.
 	list_for_each_prev(l, &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
 		snapshot = &list_entry(l, struct next3_inode_info,
 				       i_orphan)->vfs_inode;
@@ -1021,14 +1012,8 @@ int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 			/* no need to clear snapshot blocks from its own COW
 			 * bitmap */
 			break;
-#ifndef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
 		/* iterate on old snapshots, then on dind branches */
-#warning WHOA! why do you have two "for (dind" loops inside each other?!
-#warning you're overriding a local variable which can mess up C, plus it just
-#warning seems unnecessary.  You need to look carefully at this function and
-#warning see whether it's correct, and how to simplify and clean it up.
 		for (dind = 0; dind < ndind; dind++) {
-#endif
 #warning this is a deep-nested and long "for" loop. extract into helper?
 			/*
 			 * Other snapshot operations may be waiting for this
@@ -1360,15 +1345,18 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			bg_boundary += NEXT3_BLOCKS_PER_GROUP(start->i_sb);
 			block_group++;
 			if (block >= snapshot_blocks) {
-				/* past last snapshot block group - map COW
+				/*
+				 * Past last snapshot block group - map COW
 				 * bitmap cache to zero block.  This will
 				 * force snapshots after resize to shrink to
 				 * start snapshot size.  I know this is
 				 * somewhat of a hack, but I prefer this
 				 * simple hack over more special code to
-				 * handle resize and shrink. -goldor
+				 * handle resize and shrink.
+				 * TODO: replace next3_get_blocks_handle()
+				 * hack with next3_snapshot_shrink_blocks()
+				 * and this will not be needed anymore.
 				 */
-#warning maybe add an XXX to the above comment (future work of sorts)
 				map_bh(&cow_bitmap, start->i_sb,
 				       le32_to_cpu(SNAPSHOT_ZERO_BLOCK(start)));
 				set_buffer_new(&cow_bitmap);

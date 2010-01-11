@@ -1,7 +1,9 @@
 /*
  * linux/fs/next3/snapshot_debug.c
  *
- * Copyright (C) 2008 Amir Goldor <amir73il@users.sf.net>
+ * Written by Amir Goldstein <amir@ctera.com>, 2008
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your

@@ -20,6 +20,8 @@
 
 #define SNAPSHOT_IDENT_MAX 4
 #define SNAPSHOT_IDENT_STR "\t\t\t\t"
+#define KERN_LEVEL_STR "<%d>"
+#define SNAP_KERN_LEVEL(n) ((n)+2) /* 1 = KERN_ERR, ..., 5 = KERN_DEBUG */
 
 #define SNAPTEST_TAKE	0
 #define SNAPTEST_DELETE	1
@@ -49,9 +51,10 @@ extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 	do {								\
 		if ((n) <= snapshot_enable_debug &&			\
 		    (l) <= SNAPSHOT_IDENT_MAX) {			\
-			printk(KERN_DEBUG "snapshot: %s",		\
-			       snapshot_ident - (l));			\
-			printk(KERN_DEBUG f, ## a);			\
+			printk(KERN_LEVEL_STR "snapshot: %s" f,		\
+				   SNAP_KERN_LEVEL(n),			\
+			       snapshot_ident - (l),			\
+				   ## a);				\
 		}							\
 	} while (0)
 

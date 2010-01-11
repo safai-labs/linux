@@ -56,16 +56,14 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 		/* remove active snapshot reference */
 		iput(old);
 	}
-	if (inode)
-		/* grab snapshot inode or don't activate */
-		inode = igrab(inode);
 	if (inode) {
+		/* add active snapshot reference */
+		if (!igrab(inode))
+			return old;
 		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
 		snapshot_debug(1, "snapshot (%u) activated\n",
 			       inode->i_generation);
 	}
-#warning if igrab returns null above, you would set s_active_snaphot to
-#warning null below. is that ok? if so, document the behavior.
 	NEXT3_SB(sb)->s_active_snapshot = inode;
 
 	return old;
@@ -403,7 +401,7 @@ int next3_snapshot_create(struct inode *inode)
 {
 	handle_t *handle;
 	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
-	int i, count, err = -EPERM;
+	int i, count, err;
 	struct next3_group_desc *desc;
 	unsigned long ino;
 	struct next3_iloc iloc;
@@ -424,7 +422,7 @@ int next3_snapshot_create(struct inode *inode)
 			snapshot_debug(1, "failed to add snapshot because last"
 				       " snapshot (%u) is not active\n",
 				       last_snapshot->i_generation);
-			goto out_err;
+			return -EPERM;
 		}
 	}
 #else
@@ -432,7 +430,7 @@ int next3_snapshot_create(struct inode *inode)
 		snapshot_debug(1, "failed to add snapshot because active "
 			       "snapshot (%u) has to be deleted first\n",
 			       snapshot->i_generation);
-		goto out_err;
+		return -EPERM;
 	}
 #endif
 
@@ -448,7 +446,7 @@ int next3_snapshot_create(struct inode *inode)
 			       "i_size=%lld, i_disksize=%lld\n",
 				inode->i_ino, i, inode->i_size,
 			       NEXT3_I(inode)->i_disksize);
-		goto out_err;
+		return -EPERM;
 	}
 
 	/*
@@ -659,10 +657,6 @@ alloc_self_inode:
 	err = 0;
 out_handle:
 	next3_journal_stop(handle);
-out_err:
-#warning if igrab returned null above, you goto here, but then err could
-#warning be non null, in which cause you will try to dereference a possibly
-#warning dead inode below.
 	if (err)
 		NEXT3_I(inode)->i_flags &=
 			~(NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);

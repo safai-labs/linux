@@ -323,7 +323,7 @@ next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	struct journal_head *jh;
 	int err;
 
-	bitmap_bh = read_exclude_bitmap(sb, block_group);
+	bitmap_bh = read_block_bitmap(sb, block_group);
 	if (!bitmap_bh)
 		goto out;
 

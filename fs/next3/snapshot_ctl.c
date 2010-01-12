@@ -72,14 +72,20 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 }
 
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 /*
  * Snapshots control functions
  */
+static int next3_snapshot_enable(struct inode *inode);
+static int next3_snapshot_disable(struct inode *inode);
+static int next3_snapshot_create(struct inode *inode);
+static int next3_snapshot_delete(struct inode *inode);
+static int next3_snapshot_clean(handle_t *handle, struct inode *inode);
+static void next3_snapshot_dump(struct inode *inode);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 /*
  * next3_snapshot_get_flags() check snapshot state
- * called from next3_ioctl() under i_mutex lock
+ * Called from next3_ioctl() under i_mutex
  */
 void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 {
@@ -96,7 +102,7 @@ void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 
 /*
  * next3_snapshot_set_flags() monitors snapshot state changes
- * called from next3_ioctl() under i_mutex lock and during transaction
+ * Called from next3_ioctl() under i_mutex and snapshot_mutex
  */
 int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 			     unsigned int flags)
@@ -419,8 +425,9 @@ out:
 /*
  * next3_snapshot_create() initilizes a snapshot file
  * and adds it to the list of snapshots
+ * Called under i_mutex and snapshot_mutex
  */
-int next3_snapshot_create(struct inode *inode)
+static int next3_snapshot_create(struct inode *inode)
 {
 	handle_t *handle;
 	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
@@ -690,6 +697,7 @@ out_handle:
  *
  * this function calls journal_lock_updates()
  * and should not be called during a journal transaction
+ * Called from next3_ioctl() under i_mutex and snapshot_mutex
  */
 int next3_snapshot_take(struct inode *inode)
 {
@@ -992,8 +1000,10 @@ out_err:
  * move any blocks into a non-clean snapshot, so the disk space in the
  * example above cannot be reclaimed until snapshot 2 is deleted.
  *
+ * Called under i_mutex and snapshot_mutex, drops them after setting the
+ * 'cleaning' flag and reaquires them before returning.
  */
-int next3_snapshot_clean(handle_t *handle, struct inode *inode)
+static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 {
 	struct list_head *l;
 	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
@@ -1134,8 +1144,9 @@ out_err:
 /*
  * next3_snapshot_enable() enables snapshot mount
  * sets the in-use flag and the active snapshot
+ * Called under i_mutex and snapshot_mutex
  */
-int next3_snapshot_enable(struct inode *inode)
+static int next3_snapshot_enable(struct inode *inode)
 {
 	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_enable() called with non "
@@ -1154,7 +1165,6 @@ int next3_snapshot_enable(struct inode *inode)
 	/*
 	 * set i_size to block device size to enable loop device mount
 	 */
-#warning there are ~65 instances of such ->i_size refs in the total code.
 	SNAPSHOT_SET_ENABLED(inode);
 	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ENABLED_FL;
 
@@ -1166,8 +1176,9 @@ int next3_snapshot_enable(struct inode *inode)
 
 /*
  * next3_snapshot_disable() disables snapshot mount
+ * Called under i_mutex and snapshot_mutex
  */
-int next3_snapshot_disable(struct inode *inode)
+static int next3_snapshot_disable(struct inode *inode)
 {
 	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_disable() called with non "
@@ -1198,8 +1209,9 @@ int next3_snapshot_disable(struct inode *inode)
 
 /*
  * next3_snapshot_delete() marks snapshot for deletion
+ * Called under i_mutex and snapshot_mutex
  */
-int next3_snapshot_delete(struct inode *inode)
+static int next3_snapshot_delete(struct inode *inode)
 {
 	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_ENABLED_FL) {
 		snapshot_debug(1, "failed to delete enabled snapshot (%u)\n",
@@ -1218,6 +1230,7 @@ int next3_snapshot_delete(struct inode *inode)
 /*
  * next3_snapshot_cleanup() removes a snapshot inode from the list
  * of snapshots stored on disk and truncates the snapshot inode
+ * Called from next3_snapshot_update() under snapshot_mutex
  */
 static int next3_snapshot_cleanup(struct inode *inode)
 {
@@ -1265,6 +1278,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 		ei->i_data[NEXT3_TIND_BLOCK] = 0;
 	}
 	SNAPSHOT_SET_DISABLED(inode);
+#warning there are ~65 instances of such ->i_size refs in the total code.
 	ei->i_disksize = inode->i_size;
 	err = next3_mark_inode_dirty(handle, inode);
 	if (err)
@@ -1333,6 +1347,7 @@ out_err:
  * the deleted snapshots, which are due for shrinking.
  * 'need_shrink' is the number of deleted snapshot files
  * between 'start' and 'end' which are due for shrinking.
+ * Called from next3_snapshot_update() under snapshot_mutex
  */
 static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 int need_shrink)
@@ -1475,6 +1490,7 @@ out_err:
  * the shrunk snapshots, which are due for merging.
  * 'need_merge' is the number of shrunk snapshot files
  * between 'start' and 'end' which are due for merging.
+ * Called from next3_snapshot_update() under snapshot_mutex
  */
 static int next3_snapshot_merge(struct inode *start, struct inode *end,
 				int need_merge)
@@ -1558,6 +1574,7 @@ out_err:
 
 /*
  * next3_snapshot_load() loads the in-memoery snapshot list from disk
+ * Called from next3_fill_super() under sb_lock
  */
 void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 {
@@ -1637,6 +1654,7 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 
 /*
  * next3_snapshot_destroy() releases the in-memoery snapshot list
+ * Called from next3_put_super() under big kernel lock
  */
 void next3_snapshot_destroy(struct super_block *sb)
 {
@@ -1659,6 +1677,7 @@ void next3_snapshot_destroy(struct super_block *sb)
  * next3_snapshot_update() updates snapshots status
  * if 'cleanup' is true, shrink/merge/cleanup
  * all snapshots marked for deletion
+ * Called under snapshot_mutex or sb_lock
  */
 void next3_snapshot_update(struct super_block *sb, int cleanup)
 {
@@ -1797,7 +1816,11 @@ struct Indirect {
 	__le32	key;
 };
 
-void next3_snapshot_dump(struct inode *inode)
+/*
+ * next3_snapshot_dump() prints a snapshot inode block map
+ * Called under i_mutex or sb_lock
+ */
+static void next3_snapshot_dump(struct inode *inode)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	struct Indirect chain[4] = {{NULL}, {NULL} }, *ind = chain;

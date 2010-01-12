@@ -163,18 +163,7 @@ extern void next3_snapshot_get_flags(struct next3_inode_info *ei,
 				     struct file *filp);
 extern int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 				    unsigned int flags);
-extern int next3_snapshot_create(struct inode *inode);
 extern int next3_snapshot_take(struct inode *inode);
-extern int next3_snapshot_enable(struct inode *inode);
-extern int next3_snapshot_disable(struct inode *inode);
-extern int next3_snapshot_delete(struct inode *inode);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-extern void next3_snapshot_dump(struct inode *inode);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-extern int next3_snapshot_clean(handle_t *handle, struct inode *inode);
-#endif
-#endif
 
 /* helper functions for next3_snapshot_create() */
 extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
@@ -189,6 +178,7 @@ extern int next3_snapshot_zero_data_buffer(handle_t *handle,
 extern int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh,
 					   struct buffer_head *bh,
 					   const char *mask);
+#endif
 
 /*
  * Snapshot constructor/destructor

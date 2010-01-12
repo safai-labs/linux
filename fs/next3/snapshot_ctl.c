@@ -1007,9 +1007,10 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 {
 	struct list_head *l;
 	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	struct next3_inode_info *ei;
 	struct buffer_head *bh = NULL;
 	__le32 nr;
-	int i, dind, ndind, err;
+	int i, err;
 
 	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_clean() called with non "
@@ -1035,82 +1036,49 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 	mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
 	mutex_unlock(&inode->i_mutex);
 
-	ndind = (NEXT3_SB(inode->i_sb)->s_groups_count /
-			SNAPSHOT_DIND_BLOCK_GROUPS) + 1;
-	if (ndind > SNAPSHOT_IND_BLOCKS)
-		ndind = SNAPSHOT_IND_BLOCKS;
+	/* iterate from oldest snapshot backwards */
 	list_for_each_prev(l, &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
-		snapshot = &list_entry(l, struct next3_inode_info,
-				       i_orphan)->vfs_inode;
+		ei = list_entry(l, struct next3_inode_info, i_orphan);
+		snapshot = &ei->vfs_inode;
 		if (snapshot == inode)
 			/* no need to clear snapshot blocks from its own COW
 			 * bitmap */
 			break;
-		/* iterate on old snapshots, then on dind branches */
-		for (dind = 0; dind < ndind; dind++) {
-#warning this is a deep-nested and long "for" loop. extract into helper?
-			/*
-			 * Other snapshot operations may be waiting for this
-			 * transaction to close, so unless we restart the
-			 * transaction in the middle of a long clean, we
-			 * would be blocking them until the clean is
-			 * complete.
-			 */
-			err = next3_journal_restart(handle,
-						    NEXT3_MAX_TRANS_DATA);
-			if (err)
-				goto out_err;
+		if (cleaning < 0)
+			/* clean of active snapshot aborted by
+			 * snapshot_take() */
+			break;
 
-			if (cleaning < 0)
-				/* clean of active snapshot aborted by
-				 * snapshot_take() */
-				break;
-
-			if (dind == 0) {
-				/* clear all directs blocks first */
-				for (i = 0; i <= NEXT3_TIND_BLOCK; i++) {
-					nr = NEXT3_I(snapshot)->i_data[i];
-					if (nr)
-						next3_snapshot_get_clear_access(
-							handle, snapshot,
-							le32_to_cpu(nr), 1);
-				}
-				/* get the root block nr of the first dind
-				 * branch */
-				nr = NEXT3_I(snapshot)
-					->i_data[NEXT3_DIND_BLOCK];
-			} else {
-				/* get the root block nr of the tind branch */
-				nr = NEXT3_I(snapshot)
-					->i_data[NEXT3_TIND_BLOCK];
-				if (!nr)
-					continue;
-				brelse(bh);
-				bh = sb_bread(inode->i_sb, le32_to_cpu(nr));
-				if (!bh) {
-					err = -EIO;
-					goto out_err;
-				}
-				/* get the root block nr of the n-th dind
-				 * branch */
-				nr = ((__le32 *)bh->b_data)[dind-1];
-			}
+		/* exclude the snapshot meta blocks */
+		for (i = 0; i <= SNAPSHOT_META_BLOCKS; i++) {
+			nr = ei->i_data[i];
 			if (nr)
-				/* clear the the dind branch rooted at block
-				 * 'nr' */
-				next3_free_branches_cow(handle, snapshot, NULL,
-							&nr, &nr+1, 2, 1);
-
-			snapshot_debug(2, "snapshot (%u) cleaned snapshot (%u) "
-				       "blocks (dind=%d/%d)\n",
-				       inode->i_generation,
-				       snapshot->i_generation, dind, ndind);
-			/* sleep 1/ndind tunable delay unit */
-			snapshot_test_delay_per_ticks(SNAPTEST_TAKE, ndind);
+				next3_snapshot_get_clear_access(
+						handle, snapshot,
+						le32_to_cpu(nr), 1);
 		}
+		/* exclude the snapshot dind branch */
+		nr = ei->i_data[NEXT3_DIND_BLOCK];
+		if (nr) {
+			next3_free_branches_cow(handle, snapshot, NULL,
+					&nr, &nr+1, 2, 1);
+			ei->i_data[NEXT3_DIND_BLOCK] = 0;
+		}
+		/* exclude the snapshot tind branch */
+		nr = ei->i_data[NEXT3_TIND_BLOCK];
+		if (nr) {
+			next3_free_branches_cow(handle, snapshot, NULL,
+					&nr, &nr+1, 3, 1);
+			ei->i_data[NEXT3_TIND_BLOCK] = 0;
+		}
+		snapshot_debug(2, "snapshot (%u) cleaned snapshot (%u) "
+				"blocks\n",
+				inode->i_generation,
+				snapshot->i_generation);
+		/* sleep 1 tunable delay unit */
+		snapshot_test_delay(SNAPTEST_TAKE);
 	}
 
-out_err:
 	/*
 	 * snapshot_mutex may be taken by snapshot_take(), which is trying
 	 * to abort this clean and is waiting for this transaction to close,

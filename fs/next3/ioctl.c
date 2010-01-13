@@ -137,7 +137,8 @@ flags_err:
 			 * Finally: update all snapshots status flags
 			 * and cleanup after delete command
 			 */
-			next3_snapshot_update(inode->i_sb, !(flags & NEXT3_SNAPFILE_FL));
+			next3_snapshot_update(inode->i_sb,
+					      !(flags & NEXT3_SNAPFILE_FL));
 #endif
 flags_out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL

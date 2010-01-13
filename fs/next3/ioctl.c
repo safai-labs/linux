@@ -5,6 +5,8 @@
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
  * Universite Pierre et Marie Curie (Paris VI)
+ *
+ * Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 #include <linux/fs.h>

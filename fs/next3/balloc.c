@@ -9,6 +9,8 @@
  *  Enhanced block allocation by Stephen Tweedie (sct@redhat.com), 1993
  *  Big-endian to little-endian byte-swapping/bitmaps by
  *        David S. Miller (davem@caip.rutgers.edu), 1995
+ *
+ *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 #include <linux/time.h>

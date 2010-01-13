@@ -6,6 +6,8 @@
  * Copyright (C) 2001, 2002 Andreas Dilger <adilger@clusterfs.com>
  *
  * This could probably be made into a module, because it is not often in use.
+ *
+ * Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 

@@ -22,6 +22,8 @@
  *	Christopher Li, 2002
  *  Hash Tree Directory indexing cleanup
  *	Theodore Ts'o, 2002
+ *
+ *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 #include <linux/fs.h>

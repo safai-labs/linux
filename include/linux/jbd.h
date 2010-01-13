@@ -11,6 +11,8 @@
  *
  * Definitions for transaction data structures for the buffer cache
  * filesystem journaling support.
+ *
+ * Extended COW credits for Next3, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 #ifndef _LINUX_JBD_H

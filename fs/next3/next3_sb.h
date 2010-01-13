@@ -11,6 +11,8 @@
  *  linux/include/linux/minix_fs_sb.h
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
+ *
+ *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 #ifndef _LINUX_NEXT3_SB

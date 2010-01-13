@@ -20,6 +20,8 @@
  *	(jj@sunsite.ms.mff.cuni.cz)
  *
  *  Assorted race fixes, rewrite of next3_get_block() by Al Viro, 2000
+ *
+ *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
  */
 
 #include <linux/module.h>

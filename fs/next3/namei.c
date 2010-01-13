@@ -1806,8 +1806,8 @@ retry:
 		drop_nlink(inode); /* is this nlink == 0? */
 		unlock_new_inode(inode);
 		next3_mark_inode_dirty(handle, inode);
-		iput (inode);
-		brelse (dir_block);
+		iput(inode);
+		brelse(dir_block);
 		goto out_stop;
 	}
 #else
@@ -2060,8 +2060,8 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 
 	lock_super(inode->i_sb);
 	if (list_empty(&ei->i_orphan)) {
-		snapshot_debug(4, "next3_orphan_del() called with inode %lu not in %s list\n",
-				inode->i_ino, name);
+		snapshot_debug(4, "next3_orphan_del() called with inode %lu "
+			       "not in %s list\n", inode->i_ino, name);
 		unlock_super(inode->i_sb);
 		return 0;
 	}
@@ -2070,7 +2070,8 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	prev = ei->i_orphan.prev;
 	sbi = NEXT3_SB(inode->i_sb);
 
-	snapshot_debug(4, "remove inode %lu from %s list\n", inode->i_ino, name);
+	snapshot_debug(4, "remove inode %lu from %s list\n", inode->i_ino,
+		       name);
 
 	list_del_init(&ei->i_orphan);
 
@@ -2090,7 +2091,8 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 #else
 	if (prev == &sbi->s_orphan) {
 #endif
-		snapshot_debug(4, "last_%s will point to inode %lu\n", name, ino_next);
+	  snapshot_debug(4, "last_%s will point to inode %lu\n", name,
+			 ino_next);
 		BUFFER_TRACE(sbi->s_sbh, "get_write_access");
 		err = next3_journal_get_write_access(handle, sbi->s_sbh);
 		if (err)

@@ -104,7 +104,8 @@ handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	handle = journal_start(journal, NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
+	handle = journal_start(journal,
+			       NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
 	if (!IS_ERR(handle)) {
 		if (handle->h_ref == 1) {
 			handle->h_base_credits = nblocks;

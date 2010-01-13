@@ -1784,6 +1784,62 @@ struct Indirect {
 	__le32	key;
 };
 
+static void next3_snapshot_dump_ind(struct Indirect *ind,
+		int i, int n, int l,
+		int *pnmoved, int *pncopied)
+{
+	__le32 blk, prev_key;
+	int j, b, k = 0;
+
+	snapshot_debug_l(5, l-1, "{\n");
+
+	ind->key = 0;
+	for (j = 0; j <= SNAPSHOT_ADDR_PER_BLOCK; j++, ind->p++) {
+		prev_key = ind->key;
+		blk = (n << 2*SNAPSHOT_ADDR_PER_BLOCK_BITS) +
+			(i << SNAPSHOT_ADDR_PER_BLOCK_BITS) + j;
+		ind->key = (j < SNAPSHOT_ADDR_PER_BLOCK) ?
+			le32_to_cpu(*(ind->p)) : 0;
+		if (prev_key &&
+				(ind->key == prev_key ||
+				 ind->key == prev_key+1))
+			k++;
+		else
+			k = -k;
+
+		if (!prev_key || k > 0)
+			goto keep_counting;
+
+		b = ((i % SNAPSHOT_IND_PER_BLOCK_GROUP)
+				<< SNAPSHOT_ADDR_PER_BLOCK_BITS)
+			+ j - 1;
+		if (prev_key == blk - 1)
+			snapshot_debug_l(5, l,
+					"block[%d-%d/%d]\n", b+k, b,
+					n * SNAPSHOT_IND_PER_BLOCK_GROUP +
+					i / SNAPSHOT_IND_PER_BLOCK_GROUP);
+		else if (k <= 0)
+			snapshot_debug_l(5, l, "block[%d-%d/%d]"
+					" = [%u-%u/%u]\n", b+k, b,
+					n * SNAPSHOT_IND_PER_BLOCK_GROUP +
+					i / SNAPSHOT_IND_PER_BLOCK_GROUP,
+					SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key)+k,
+					SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
+					SNAPSHOT_BLOCK_GROUP(prev_key));
+		k = 0;
+
+keep_counting:
+		if (!ind->key)
+			continue;
+		else if (ind->key == blk)
+			(*pnmoved)++;
+		else
+			(*pncopied)++;
+	}
+
+	snapshot_debug_l(5, l-1, "}\n");
+}
+
 /*
  * next3_snapshot_dump() prints a snapshot inode block map
  * Called under i_mutex or sb_lock
@@ -1793,7 +1849,7 @@ static void next3_snapshot_dump(struct inode *inode)
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	struct Indirect chain[4] = {{NULL}, {NULL} }, *ind = chain;
 	int nmeta = 0, nind = 0, ncopied = 0, nmoved = 0;
-	int n = 0, i, j, k, l = 0;
+	int n = 0, i, l = 0;
 	/* print double indirect block map */
 	snapshot_debug(5, "snapshot (%u) block map:\n", inode->i_generation);
 	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
@@ -1835,54 +1891,7 @@ dump_dind:
 		(ind+1)->p = (__le32 *)ind->bh->b_data;
 		ind++;
 		nind++;
-		k = 0;
-		ind->key = 0;
-		snapshot_debug_l(5, l, "{\n");
-		l++;
-		for (j = 0; j <= SNAPSHOT_ADDR_PER_BLOCK; j++, ind->p++) {
-			__le32 prev_key = ind->key;
-			__le32 blk = (n << 2*SNAPSHOT_ADDR_PER_BLOCK_BITS) +
-				(i << SNAPSHOT_ADDR_PER_BLOCK_BITS) + j;
-			ind->key = (j < SNAPSHOT_ADDR_PER_BLOCK) ?
-				le32_to_cpu(*(ind->p)) : 0;
-			if (prev_key &&
-					(ind->key == prev_key ||
-					 ind->key == prev_key+1))
-				k++;
-			else
-				k = -k;
-
-			if (prev_key && k <= 0) {
-				int b = ((i % SNAPSHOT_IND_PER_BLOCK_GROUP)
-					 << SNAPSHOT_ADDR_PER_BLOCK_BITS)
-					+ j - 1;
-#warning this is already 4+ levels of nesting here. extract into helpers.
-#warning otherwise there is no way to un-indent these very deep snap_debug calls
-				if (prev_key == blk - 1)
-					snapshot_debug_l(5, l,
-							 "block[%d-%d/%d]\n", b+k, b,
-							 n * SNAPSHOT_IND_PER_BLOCK_GROUP +
-							 i / SNAPSHOT_IND_PER_BLOCK_GROUP);
-				else if (k <= 0)
-					snapshot_debug_l(5, l, "block[%d-%d/%d] = [%u-%u/%u]\n", b+k, b,
-							 n * SNAPSHOT_IND_PER_BLOCK_GROUP +
-							 i / SNAPSHOT_IND_PER_BLOCK_GROUP,
-							 SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key)+k,
-							 SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
-							 SNAPSHOT_BLOCK_GROUP(prev_key));
-				k = 0;
-			}
-
-			if (!ind->key)
-				continue;
-
-			if (ind->key == blk)
-				nmoved++;
-			else
-				ncopied++;
-		}
-		l--;
-		snapshot_debug_l(5, l, "}\n");
+		next3_snapshot_dump_ind(ind, i, n, l+1, &nmoved, &ncopied);
 		ind--;
 	}
 	l--;

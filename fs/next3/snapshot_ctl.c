@@ -1681,7 +1681,6 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	/* iterate safe from oldest snapshot backwards */
 	list_for_each_prev_safe(l, n, &NEXT3_SB(sb)->s_snapshot_list) {
-#warning maybe use a helper for this long iterator?
 		ei = list_entry(l, struct next3_inode_info, i_orphan);
 		inode = &ei->vfs_inode;
 		/* all snapshots on the list must have the SNAPSHOT flag and

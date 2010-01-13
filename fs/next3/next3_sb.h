@@ -76,8 +76,9 @@ struct next3_sb_info {
 	struct journal_s * s_journal;
 	struct list_head s_orphan;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	struct mutex s_snapshot_mutex; /* protect active snapshot and snapshot list */
-	struct inode * s_active_snapshot;
+	/* protect active snapshot and snapshot list */
+	struct mutex s_snapshot_mutex;
+	struct inode *s_active_snapshot;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct list_head s_snapshot_list;
 #endif

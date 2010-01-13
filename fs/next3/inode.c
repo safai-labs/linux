@@ -1169,6 +1169,7 @@ err_out:
 #else
 	next3_free_blocks(handle, inode, le32_to_cpu(where[num].key), blks);
 #endif
+
 	return err;
 }
 
@@ -1240,6 +1241,7 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	int copies = 0;
 	int mapped_blocks = 0, freed_blocks = 0, shrink;
 #endif
+
 
 retry:
 	err = -EIO;
@@ -1460,35 +1462,37 @@ check_indirect_blocks:
 no_snapshot_shrink_cmd:
 
 	/* Simplest case - block found, no allocation needed */
-	if (partial)
-		goto check_peep;
-	first_block = le32_to_cpu(chain[depth - 1].key);
-	clear_buffer_new(bh_result);
-	count++;
-	/*map more blocks*/
-	while (count < maxblocks && count <= blocks_to_boundary) {
-		next3_fsblk_t blk;
+	if (!partial) {
+		first_block = le32_to_cpu(chain[depth - 1].key);
+		clear_buffer_new(bh_result);
+		count++;
+		/*map more blocks*/
+		while (count < maxblocks && count <= blocks_to_boundary) {
+			next3_fsblk_t blk;
 
-		if (!verify_chain(chain, chain + depth - 1)) {
-			/*
-			 * Indirect block might be removed by truncate while
-			 * we were reading it.  Handling of that case:
-			 * forget what we've got now. Flag the err as
-			 * EAGAIN, so it will reread.
-			 */
-			err = -EAGAIN;
-			count = 0;
-			break;
+			if (!verify_chain(chain, chain + depth - 1)) {
+				/*
+				 * Indirect block might be removed by
+				 * truncate while we were reading it.
+				 * Handling of that case: forget what we've
+				 * got now. Flag the err as EAGAIN, so it
+				 * will reread.
+				 */
+				err = -EAGAIN;
+				count = 0;
+				break;
+			}
+			blk = le32_to_cpu(*(chain[depth-1].p + count));
+
+			if (blk == first_block + count)
+				count++;
+			else
+				break;
 		}
-		blk = le32_to_cpu(*(chain[depth-1].p + count));
 
-		if (blk == first_block + count)
-			count++;
-		else
-			break;
+		if (err != -EAGAIN)
+			goto got_it;
 	}
-	if (err != -EAGAIN)
-		goto got_it;
 
 check_peep:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
@@ -1611,7 +1615,7 @@ no_peep:
 				     partial, create);
 #else
 	err = next3_alloc_branch(handle, inode, indirect_blks, &count, goal,
-				 offsets + (partial - chain), partial);
+				offsets + (partial - chain), partial);
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
@@ -1646,7 +1650,7 @@ no_peep:
 					      indirect_blks, count, create);
 #else
 		err = next3_splice_branch(handle, inode, iblock,
-					  partial, indirect_blks, count);
+					partial, indirect_blks, count);
 #endif
 	mutex_unlock(&ei->truncate_mutex);
 	if (err)
@@ -1660,7 +1664,7 @@ got_it:
 	if (buffer_tracked_read(bh_result))
 		cancel_buffer_tracked_read(bh_result);
 #endif
-	map_bh(bh_result, inode->i_sb, le32_to_cpu(chain[depth - 1].key));
+	map_bh(bh_result, inode->i_sb, le32_to_cpu(chain[depth-1].key));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	if (!peep || !next3_snapshot_is_active(inode))
 		goto need_a_better_name;

@@ -2091,8 +2091,8 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 #else
 	if (prev == &sbi->s_orphan) {
 #endif
-	  snapshot_debug(4, "last_%s will point to inode %lu\n", name,
-			 ino_next);
+		snapshot_debug(4, "last_%s will point to inode %lu\n", name,
+				ino_next);
 		BUFFER_TRACE(sbi->s_sbh, "get_write_access");
 		err = next3_journal_get_write_access(handle, sbi->s_sbh);
 		if (err)

@@ -624,7 +624,7 @@ struct next3_super_block {
 	__le32	s_last_snapshot_id;	/* running snapshot ID */
 	__le32	s_last_snapshot;	/* start of list of snapshot inodes */
 #else
-	__u32	s_reserved[162];	/* Padding to the end of the block */
+	__u32   s_reserved[162];        /* Padding to the end of the block */
 #endif
 };
 

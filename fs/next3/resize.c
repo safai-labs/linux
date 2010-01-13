@@ -730,8 +730,9 @@ static void update_backups(struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 		if (next3_snapshot_get_active(sb))
 			/*
-			 * next3_snapshot_get_write_access() expects an uptodate buffer
-			 * do it here to supress "non uptodate buffer" warning.
+			 * next3_snapshot_get_write_access() expects an
+			 * uptodate buffer do it here to supress "non
+			 * uptodate buffer" warning.
 			 */
 			bh = sb_bread(sb, group * bpg + blk_off);
 		else
@@ -862,11 +863,13 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			return PTR_ERR(exclude_inode);
 		}
 
-		/* exclude bitmap blocks addresses are exposed on the IND branch */
-		exclude_bh = next3_bread(NULL, exclude_inode, NEXT3_IND_BLOCK+dind_offset, 0, &err);
+		/* exclude bitmap blocks addresses are exposed on the IND
+		   branch */
+		exclude_bh = next3_bread(NULL, exclude_inode,
+					 NEXT3_IND_BLOCK+dind_offset, 0, &err);
 		if (!exclude_bh) {
-			snapshot_debug(1, "failed to read exclude inode indirect[%d] block\n",
-					dind_offset);
+			snapshot_debug(1, "failed to read exclude inode "
+				       "indirect[%d] block\n", dind_offset);
 			return err ? err : -EIO;
 		}
 		exclude_bitmap = ((__le32 *)exclude_bh->b_data) + ind_offset;
@@ -962,41 +965,44 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	gdp->bg_free_blocks_count = cpu_to_le16(input->free_blocks_count);
 	gdp->bg_free_inodes_count = cpu_to_le16(NEXT3_INODES_PER_GROUP(sb));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-	if (exclude_bitmap) {
-		if (*exclude_bitmap) {
-			/*
-			 * offline resize from a bigger size filesystem may leave
-			 * allocated exclude bitmap blocks of unused block groups
-			 */
-			snapshot_debug(2, "reusing old exclude bitmap #%d block (%u)\n",
-					input->group, le32_to_cpu(*exclude_bitmap));
-		}
-		else {
-			/* set exclude bitmap block to first free block */
-			next3_fsblk_t first_free = input->inode_table + sbi->s_itb_per_group;
-			struct next3_iloc iloc;
+	if (!exclude_bitmap)
+		goto no_exclude_bitmap;
+	if (*exclude_bitmap) {
+		/*
+		 * offline resize from a bigger size filesystem may leave
+		 * allocated exclude bitmap blocks of unused block groups
+		 */
+		snapshot_debug(2, "reusing old exclude bitmap #%d block (%u)\n",
+			       input->group, le32_to_cpu(*exclude_bitmap));
+	} else {
+		/* set exclude bitmap block to first free block */
+		next3_fsblk_t first_free =
+			input->inode_table + sbi->s_itb_per_group;
+		struct next3_iloc iloc;
 
-			if ((err = next3_journal_get_write_access(handle, exclude_bh)))
-				goto exit_journal;
-			if ((err = next3_reserve_inode_write(handle, exclude_inode, &iloc)))
-				goto exit_journal;
+		err = next3_journal_get_write_access(handle, exclude_bh);
+		if (err)
+			goto exit_journal;
+		err = next3_reserve_inode_write(handle, exclude_inode, &iloc);
+		if (err)
+			goto exit_journal;
 
-			*exclude_bitmap = cpu_to_le32(first_free);
-			snapshot_debug(2, "allocated new exclude bitmap #%d block ("E3FSBLK")\n",
-					input->group, first_free);
-			next3_journal_dirty_metadata(handle, exclude_bh);
+		*exclude_bitmap = cpu_to_le32(first_free);
+		snapshot_debug(2, "allocated new exclude bitmap #%d block "
+			       "("E3FSBLK")\n", input->group, first_free);
+		next3_journal_dirty_metadata(handle, exclude_bh);
 
-			/* update exclude inode size and blocks */
-			i_size_write(exclude_inode, SNAPSHOT_IBLOCK(input->group) << SNAPSHOT_BLOCK_SIZE_BITS);
-			NEXT3_I(exclude_inode)->i_disksize = exclude_inode->i_size;
-			exclude_inode->i_blocks += sb->s_blocksize >> 9;
-			next3_mark_iloc_dirty(handle, exclude_inode, &iloc);
-		}
-		/* update exclude bitmap cache */
-		gdp->bg_exclude_bitmap = *exclude_bitmap;
+		/* update exclude inode size and blocks */
+		i_size_write(exclude_inode, SNAPSHOT_IBLOCK(input->group)
+			     << SNAPSHOT_BLOCK_SIZE_BITS);
+		NEXT3_I(exclude_inode)->i_disksize = exclude_inode->i_size;
+		exclude_inode->i_blocks += sb->s_blocksize >> 9;
+		next3_mark_iloc_dirty(handle, exclude_inode, &iloc);
 	}
+	/* update exclude bitmap cache */
+	gdp->bg_exclude_bitmap = *exclude_bitmap;
+no_exclude_bitmap:
 #endif
-
 	/*
 	 * Make the new blocks and inodes valid next.  We do this before
 	 * increasing the group count so that once the group is enabled,

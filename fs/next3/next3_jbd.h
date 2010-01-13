@@ -71,17 +71,19 @@
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 /* on block write we have to journal the block itself */
 #define NEXT3_WRITE_CREDITS 1
-/* on snapshot block alloc we have to journal block group bitmap, exclude bitmap and gdb */
+/* on snapshot block alloc we have to journal block group bitmap, exclude
+   bitmap and gdb */
 #define NEXT3_ALLOC_CREDITS 3
-/* number of credits for COW bitmap operation (allocated blocks are not journalled):
-   alloc(dind+ind+cow) = 9 */
+/* number of credits for COW bitmap operation (allocated blocks are not
+   journalled): alloc(dind+ind+cow) = 9 */
 #define NEXT3_COW_BITMAP_CREDITS	(3*NEXT3_ALLOC_CREDITS)
 /* number of credits for other block COW operations:
    alloc(ind+cow)+write(dind+ind) = 8 */
 #define NEXT3_COW_BLOCK_CREDITS	(2*NEXT3_ALLOC_CREDITS+2*NEXT3_WRITE_CREDITS)
 /* number of credits for the first COW operation in the block group:
    9+8 = 17 */
-#define NEXT3_COW_CREDITS		(NEXT3_COW_BLOCK_CREDITS+NEXT3_COW_BITMAP_CREDITS)
+#define NEXT3_COW_CREDITS	(NEXT3_COW_BLOCK_CREDITS +	\
+				 NEXT3_COW_BITMAP_CREDITS)
 /* number of credits for snapshot operations counted once per transaction:
    write(sb+inode+tind) = 3 */
 #define NEXT3_SNAPSHOT_CREDITS 	(3*NEXT3_WRITE_CREDITS)
@@ -106,11 +108,12 @@
 /*
  * check for sufficient buffer and COW credits
  */
-#define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
-		((handle)->h_buffer_credits >= NEXT3_SNAPSHOT_TRANS_BLOCKS(n) && \
-		 (handle)->h_user_credits >= (n))
+#define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n)			\
+	((handle)->h_buffer_credits >= NEXT3_SNAPSHOT_TRANS_BLOCKS(n) && \
+	 (handle)->h_user_credits >= (n))
 
-#define NEXT3_RESERVE_COW_CREDITS	(NEXT3_COW_CREDITS+NEXT3_SNAPSHOT_CREDITS)
+#define NEXT3_RESERVE_COW_CREDITS	(NEXT3_COW_CREDITS +		\
+					 NEXT3_SNAPSHOT_CREDITS)
 #endif
 
 #define NEXT3_RESERVE_TRANS_BLOCKS	12U
@@ -202,7 +205,8 @@ int __next3_journal_dirty_metadata(const char *where,
 #define next3_journal_get_write_access(handle, bh) \
 	__next3_journal_get_write_access_inode(__func__, (handle), NULL, (bh))
 #define next3_journal_get_write_access_inode(handle, inode, bh) \
-	__next3_journal_get_write_access_inode(__func__, (handle), (inode), (bh))
+	__next3_journal_get_write_access_inode(__func__, (handle), (inode), \
+					       (bh))
 #else
 #define next3_journal_get_write_access(handle, bh) \
 	__next3_journal_get_write_access(__func__, (handle), (bh))
@@ -222,10 +226,11 @@ int next3_journal_dirty_data(handle_t *handle, struct buffer_head *bh);
 void __next3_journal_trace(int debug, const char *fn, const char *caller,
 		handle_t *handle, int nblocks);
 
-#define next3_journal_trace(n, caller, handle, nblocks) \
-	do {										\
-		if ((n) <= snapshot_enable_debug)				\
-			__next3_journal_trace((n), __func__, (caller), (handle), (nblocks)); \
+#define next3_journal_trace(n, caller, handle, nblocks)			\
+	do {								\
+		if ((n) <= snapshot_enable_debug)			\
+			__next3_journal_trace((n), __func__, (caller),	\
+					      (handle), (nblocks));	\
 	} while (0)
 
 #else
@@ -271,7 +276,8 @@ static inline int __next3_journal_extend(const char *where,
 	int err = 0;
 	int missing = lower - handle->h_buffer_credits;
 	if (missing > 0)
-		/* extend transaction to keep buffer credits above lower limit */
+		/* extend transaction to keep buffer credits above lower
+		 * limit */
 		err = journal_extend(handle, missing);
 	if (!err) {
 		handle->h_base_credits += nblocks;
@@ -282,9 +288,10 @@ static inline int __next3_journal_extend(const char *where,
 }
 
 static inline int __next3_journal_restart(const char *where,
-		handle_t *handle, int nblocks)
+					  handle_t *handle, int nblocks)
 {
-	int err = journal_restart(handle, NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
+	int err = journal_restart(handle,
+				  NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
 	if (!err) {
 		handle->h_base_credits = nblocks;
 		handle->h_user_credits = nblocks;
@@ -359,6 +366,5 @@ static inline int next3_should_writeback_data(struct inode *inode)
 		return 1;
 	return 0;
 }
-
 
 #endif	/* _LINUX_NEXT3_JBD_H */

@@ -184,27 +184,30 @@ struct next3_group_desc
 #define NEXT3_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /* snapshot dynamic flags */
-#define NEXT3_SNAPFILE_ZOMBIE_FL		0x00080000 /* snapshot is zombie (Z) */
-#define NEXT3_SNAPFILE_TAKE_FL			0x00100000 /* snapshot is being taken (T) */
-#define NEXT3_SNAPFILE_ACTIVE_FL		0x00200000 /* snapshot is active (a) */
-#define NEXT3_SNAPFILE_OPEN_FL			0x00400000 /* snapshot is mounted (o) */
-#define NEXT3_SNAPFILE_INUSE_FL			0x00800000 /* snapshot is in-use (p) */
+#define NEXT3_SNAPFILE_ZOMBIE_FL	0x00080000 /* snapshot is zombie (Z) */
+#define NEXT3_SNAPFILE_TAKE_FL		0x00100000 /* snap is being taken (T) */
+#define NEXT3_SNAPFILE_ACTIVE_FL	0x00200000 /* snapshot is active (a) */
+#define NEXT3_SNAPFILE_OPEN_FL		0x00400000 /* snapshot is mounted (o) */
+#define NEXT3_SNAPFILE_INUSE_FL		0x00800000 /* snapshot is in-use (p) */
 /* end of snapshot dymnamic flags */
 /* snapshot persistent flags */
-#define NEXT3_SNAPFILE_FL				0x01000000 /* snapshot file (S) */
-#define NEXT3_SNAPFILE_ENABLED_FL		0x02000000 /* snapshot is enabled (n) */
-#define NEXT3_SNAPFILE_DELETED_FL		0x04000000 /* snapshot is deleted (s) */
-#define NEXT3_SNAPFILE_SHRUNK_FL		0x08000000 /* snapshot is shrunk (h) */
-#define NEXT3_SNAPFILE_CLEAN_FL			0x10000000 /* snapshot is clean (t) */
+#define NEXT3_SNAPFILE_FL		0x01000000 /* snapshot file (S) */
+#define NEXT3_SNAPFILE_ENABLED_FL	0x02000000 /* snapshot is enabled (n) */
+#define NEXT3_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted (s) */
+#define NEXT3_SNAPFILE_SHRUNK_FL	0x08000000 /* snapshot is shrunk (h) */
+#define NEXT3_SNAPFILE_CLEAN_FL		0x10000000 /* snapshot is clean (t) */
 /* end of snapshot persistent flags */
 #endif
 #define NEXT3_RESERVED_FL		0x80000000 /* reserved for next3 lib */
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-#define NEXT3_NOSNAP_FL				NEXT3_NODUMP_FL						/* exclude file from snapshot (d) */
+/* exclude file from snapshot (d) */
+#define NEXT3_NOSNAP_FL			NEXT3_NODUMP_FL
+
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-#define NEXT3_SNAPFILE_DUMP_FL		NEXT3_COMPR_FL						/* dump snapshot file map (c) */
+/* dump snapshot file map (c) */
+#define NEXT3_SNAPFILE_DUMP_FL		NEXT3_COMPR_FL
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
@@ -220,12 +223,17 @@ struct next3_group_desc
 /* dynamic snapshot flags viewed by lsattr -X */
 #define NEXT3_FL_SNAPSHOT_DYN_MASK		\
 	(NEXT3_SNAPFILE_TAKE_FL|NEXT3_SNAPFILE_ZOMBIE_FL| \
-	 NEXT3_SNAPFILE_ACTIVE_FL|NEXT3_SNAPFILE_OPEN_FL|NEXT3_SNAPFILE_INUSE_FL)
+	 NEXT3_SNAPFILE_ACTIVE_FL|NEXT3_SNAPFILE_OPEN_FL| \
+	 NEXT3_SNAPFILE_INUSE_FL)
 
-#define NEXT3_FL_SNAPSHOT_MASK 		(NEXT3_FL_SNAPSHOT_RW_MASK|NEXT3_FL_SNAPSHOT_RO_MASK|NEXT3_FL_SNAPSHOT_DYN_MASK)
+#define NEXT3_FL_SNAPSHOT_MASK 		(NEXT3_FL_SNAPSHOT_RW_MASK | \
+					 NEXT3_FL_SNAPSHOT_RO_MASK | \
+					 NEXT3_FL_SNAPSHOT_DYN_MASK)
 
-#define NEXT3_FL_USER_VISIBLE			(NEXT3_FL_SNAPSHOT_MASK|0x0003DFFF) /* User visible flags */
-#define NEXT3_FL_USER_MODIFIABLE		(NEXT3_FL_SNAPSHOT_RW_MASK|0x000380FF) /* User modifiable flags */
+/* User visible flags */
+#define NEXT3_FL_USER_VISIBLE		(NEXT3_FL_SNAPSHOT_MASK|0x0003DFFF)
+/* User modifiable flags */
+#define NEXT3_FL_USER_MODIFIABLE	(NEXT3_FL_SNAPSHOT_RW_MASK|0x000380FF)
 #else
 #define NEXT3_FL_USER_VISIBLE		0x0003DFFF /* User visible flags */
 #define NEXT3_FL_USER_MODIFIABLE		0x000380FF /* User modifiable flags */
@@ -353,7 +361,7 @@ struct next3_inode {
 	union {
 		struct {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-			__le32	l_i_next_snapshot;	/* On-disk snapshot list */
+			__le32	l_i_next_snapshot; /* On-disk snapshot list */
 #else
 			__u32  l_i_reserved1;
 #endif
@@ -378,7 +386,7 @@ struct next3_inode {
 			__le16	l_i_uid_high;	/* these 2 fields    */
 			__le16	l_i_gid_high;	/* were reserved2[0] */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-			__le32	l_i_snapshot_blocks;	/* On-disk snapshot size */
+			__le32	l_i_snapshot_blocks; /* On-disk snapshot size */
 #else
 			__u32	l_i_reserved2;
 #endif
@@ -609,9 +617,10 @@ struct next3_super_block {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 	__u32	s_reserved[159];	/* Padding to the end of the block */
 	/*
-	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT is set.
+	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT
+	 * is set.
 	 */
-	__le32	s_snapshot_r_blocks_count;	/* Reserved snapshot blocks count */
+	__le32	s_snapshot_r_blocks_count; /* Reserved snapshot blocks count */
 	__le32	s_last_snapshot_id;	/* running snapshot ID */
 	__le32	s_last_snapshot;	/* start of list of snapshot inodes */
 #else
@@ -701,10 +710,12 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL	0x1000 /* Snapshots - big journal */
+/* Snapshots - big journal */
+#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL	0x1000
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000 /* Snapshots - exclude inode */
+/* Snapshots - exclude inode */
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000
 #endif
 
 #define NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
@@ -929,14 +940,17 @@ extern void next3_free_blocks (handle_t *handle, struct inode *inode,
 			next3_fsblk_t block, unsigned long count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 extern void __next3_free_blocks_sb_inode(const char *where, handle_t *handle,
-			struct super_block *sb, struct inode *inode, next3_fsblk_t block,
-			unsigned long count, unsigned long *pdquot_freed_blocks);
+					 struct super_block *sb,
+					 struct inode *inode,
+					 next3_fsblk_t block,
+					 unsigned long count,
+					 unsigned long *pdquot_freed_blocks);
 
 #define next3_free_blocks_sb(handle, sb, block, count, freed) \
-	__next3_free_blocks_sb_inode(__func__,handle, sb, NULL, block, \
+	__next3_free_blocks_sb_inode(__func__, handle, sb, NULL, block, \
 								count, freed)
 #define next3_free_blocks_sb_inode(handle, sb, inode, block, count, freed) \
-	__next3_free_blocks_sb_inode(__func__,handle, sb, inode, block, \
+	__next3_free_blocks_sb_inode(__func__, handle, sb, inode, block, \
 								count, freed)
 
 #else

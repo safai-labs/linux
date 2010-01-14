@@ -1322,7 +1322,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 {
 	struct list_head *l;
 	handle_t *handle;
-	struct buffer_head cow_bitmap;
+	struct buffer_head cow_bitmap, *cow_bh;
 	next3_fsblk_t block = 0;
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
 	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
@@ -1350,24 +1350,17 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			/* reset COW bitmap cache */
 			cow_bitmap.b_state = 0;
 			cow_bitmap.b_blocknr = -1000;
+			cow_bh = &cow_bitmap;
 			bg_boundary += NEXT3_BLOCKS_PER_GROUP(start->i_sb);
 			block_group++;
-			if (block >= snapshot_blocks) {
+			if (block >= snapshot_blocks)
 				/*
-				 * Past last snapshot block group - map COW
-				 * bitmap cache to zero block.  This will
-				 * force snapshots after resize to shrink to
-				 * start snapshot size.  I know this is
-				 * somewhat of a hack, but I prefer this
-				 * simple hack over more special code to
-				 * handle resize and shrink.
+				 * Past last snapshot block group - pass NULL
+				 * cow_bh to next3_snapshot_shrink_blocks().
+				 * This will cause snapshots after resize to
+				 * shrink to start snapshot size.
 				 */
-#warning: move this logic into next3_snapshot_shrink_blocks()
-				map_bh(&cow_bitmap, start->i_sb,
-				       le32_to_cpu(SNAPSHOT_ZERO_BLOCK(start)));
-				set_buffer_new(&cow_bitmap);
-				block_group = -1;
-			}
+				cow_bh = NULL;
 		}
 
 		err = extend_or_restart_transaction(handle,

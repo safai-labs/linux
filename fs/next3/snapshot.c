@@ -249,12 +249,6 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 			/* read access as snapshot file */
 			return 1;
 	}
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
-	else if (cmd == SNAPSHOT_SHRINK) {
-		/* shrink deleted snapshot files */
-		return 1;
-	}
-#endif
 	/* access as regular file */
 	return 0;
 }

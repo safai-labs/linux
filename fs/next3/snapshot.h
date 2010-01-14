@@ -115,8 +115,6 @@
 #define SNAPSHOT_MOVE	-1
 	/* mark the block excluded from snapshot */
 #define SNAPSHOT_CLEAR	-2
-	/* free unused blocks of deleted snapshots */
-#define SNAPSHOT_SHRINK	-3
 
 /* block access return codes */
 #define SNAPSHOT_FAIL	-1 /* error */

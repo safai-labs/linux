@@ -1438,7 +1438,6 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	struct list_head *prev;
 	struct inode *prev_snapshot;
-	int retries = 0;
 
 retry:
 	err = -EIO;
@@ -1558,16 +1557,13 @@ no_snapshot_file:
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
-#warning reverse condition to if !peep
-	if (!peep)
-		goto no_peep;
 	/*
 	 * On read of snapshot file, an unmapped block is a peephole to prev
 	 * snapshot.  On read of active snapshot, an unmapped block is a
 	 * peephole to the block device.  On first block write, the peephole
 	 * is patched forever.
 	 */
-	if (create == SNAPSHOT_READ && !err) {
+	if (peep && !err) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 		if (prev_snapshot) {
 			while (partial > chain) {
@@ -1576,7 +1572,6 @@ no_snapshot_file:
 			}
 			/* repeat the same routine with prev snapshot */
 			inode = prev_snapshot;
-			retries++;
 			goto retry;
 		}
 #endif
@@ -1591,7 +1586,6 @@ no_snapshot_file:
 			err = -EIO;
 	}
 #endif
-no_peep:
 
 	/* Next simple case - plain lookup or failed read of indirect block */
 	if (!create || err == -EIO)
@@ -1668,8 +1662,11 @@ no_peep:
 				offsets + (partial - chain), partial);
 #endif
 
+	if (err)
+		goto out_mutex;
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	if (!err && (create == SNAPSHOT_COPY || create == SNAPSHOT_BITMAP)) {
+	if (create == SNAPSHOT_COPY || create == SNAPSHOT_BITMAP) {
 		/*
 		 * we now have exclusive access to the COW destination block
 		 * and we are about to create the snapshot block mapping
@@ -1680,10 +1677,11 @@ no_peep:
 		 * when the COW operation is either completed or canceled.
 		 */
 		sbh = sb_getblk(inode->i_sb, le32_to_cpu(chain[depth-1].key));
-		if (sbh)
-			set_buffer_new(sbh);
-		else
+		if (!sbh) {
 			err = -EIO;
+			goto out_mutex;
+		}
+		next3_snapshot_start_pending_cow(sbh);
 	}
 #endif
 
@@ -1702,6 +1700,7 @@ no_peep:
 		err = next3_splice_branch(handle, inode, iblock,
 					partial, indirect_blks, count);
 #endif
+out_mutex:
 	mutex_unlock(&ei->truncate_mutex);
 	if (err)
 		goto cleanup;
@@ -1716,58 +1715,38 @@ got_it:
 #endif
 	map_bh(bh_result, inode->i_sb, le32_to_cpu(chain[depth-1].key));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	if (!peep || !next3_snapshot_is_active(inode))
-		goto need_a_better_name;
 	/*
 	 * On read of active snapshot, a mapped block may belong to a non
 	 * completed COW operation.  Use the buffer cache to test this
 	 * condition.
 	 */
-	sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
-	if (sbh) {
-		SNAPSHOT_DEBUG_ONCE;
-		/* found entry in buffer cache */
-		while (buffer_new(sbh)) {
-			/* wait for pending COW to complete */
-			snapshot_debug_once(2, "waiting for pending cow: block "
-				    "= [%lld/%lld]...\n",
-				    SNAPSHOT_BLOCK_GROUP_OFFSET(
-					    bh_result->b_blocknr),
-				    SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr));
-			wait_on_buffer(sbh);
-			yield();
-		}
+	if (peep && next3_snapshot_is_active(inode))
+		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
+	if (peep && sbh) {
+		/* wait for pending COW to complete */
+		next3_snapshot_test_pending_cow(sbh, bh_result);
 		if (buffer_dirty(sbh))
 			/* sync fresh COW buffer to disk */
 			sync_dirty_buffer(sbh);
-		brelse(sbh);
-		sbh = NULL;
 	}
 #endif
-need_a_better_name:
-#warning fix name of label
 	if (count > blocks_to_boundary)
 		set_buffer_boundary(bh_result);
 	err = count;
 	/* Clean up and exit */
 	partial = chain + depth - 1;	/* the whole chain */
 cleanup:
-	if (err < 0) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-		/* cancel tracked read */
-		if (buffer_tracked_read(bh_result))
-			cancel_buffer_tracked_read(bh_result);
+	/* cancel tracked read on failure to peep through active snapshot */
+	if (peep && err < 0 && buffer_tracked_read(bh_result))
+		cancel_buffer_tracked_read(bh_result);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-		/* cancel pending COW operetion */
-		if (create == SNAPSHOT_COPY || create == SNAPSHOT_BITMAP) {
-			if (sbh) {
-				clear_buffer_new(sbh);
-				put_bh(sbh);
-			}
-		}
+	/* cancel pending COW operetion on failure to alloc snapshot block */
+	if (create && err < 0 && sbh)
+		next3_snapshot_cancel_pending_cow(sbh);
+	brelse(sbh);
 #endif
-	}
 	while (partial > chain) {
 		BUFFER_TRACE(partial->bh, "call brelse");
 		brelse(partial->bh);

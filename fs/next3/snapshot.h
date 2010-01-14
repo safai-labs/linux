@@ -386,4 +386,51 @@ static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
 }
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+/*
+ * Pending COW functions
+ */
+
+static inline void next3_snapshot_start_pending_cow(struct buffer_head *sbh)
+{
+	/*
+	 * setting the 'new' flag on a newly allocated snapshot block buffer
+	 * indicates that the COW operation is pending.
+	 */
+	set_buffer_new(sbh);
+	/* keep buffer in cache as long as we need to test the 'new' flag */
+	get_bh(sbh);
+}
+
+static inline void next3_snapshot_cancel_pending_cow(struct buffer_head *sbh)
+{
+	/*
+	 * clearing the 'new' flag from the snapshot block buffer
+	 * indicates that the COW operation is complete.
+	 */
+	clear_buffer_new(sbh);
+	/* we no longer need to keep the buffer in cache */
+	put_bh(sbh);
+}
+
+static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
+						struct buffer_head *bh)
+{
+	SNAPSHOT_DEBUG_ONCE;
+	while (buffer_new(sbh)) {
+		/* wait for pending COW to complete */
+		snapshot_debug_once(2, "waiting for pending cow: "
+				    "block = [%lld/%lld]...\n",
+				    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+				    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
+		/*
+		 * can happen once per block/snapshot - wait for COW and
+		 * keep trying
+		 */
+		wait_on_buffer(sbh);
+		yield();
+	}
+}
+#endif
+
 #endif	/* _LINUX_NEXT3_SNAPSHOT_H */

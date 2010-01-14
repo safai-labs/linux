@@ -80,17 +80,8 @@ next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
 		sync_dirty_buffer(sbh);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	/*
-	 * clearing the new flag indicates that COW operation is complete.
-	 * for as long as this snapshot should live,
-	 * this block and its buffer cache will never get dirty again.
-	 */
-	clear_buffer_new(sbh);
-	/*
-	 * COW operetion is complete -
-	 * so we no longer need to hold buffer in cache
-	 */
-	put_bh(sbh);
+	/* COW operetion is complete */
+	next3_snapshot_cancel_pending_cow(sbh);
 #endif
 	return err;
 }
@@ -622,9 +613,6 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	int err = -EIO;
 	int count = pcount ? *pcount : 1;
 	int clear = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	SNAPSHOT_DEBUG_ONCE;
-#endif
 
 	next3_snapshot_trace_cow(handle, inode, bh, block, cmd, fn);
 	snapshot_debug_hl(4, "{\n");
@@ -842,22 +830,9 @@ test_cow:
 
 test_pending_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	if (!sbh)
-		goto no_sbh;
-	while (buffer_new(sbh)) {
+	if (sbh)
 		/* wait for pending COW to complete */
-		snapshot_debug_once(2, "waiting for pending cow: "
-				    "block = [%lld/%lld]...\n",
-				    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-				    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
-		/*
-		 * can happen once per block/snapshot - wait for COW and
-		 * keep trying
-		 */
-		wait_on_buffer(sbh);
-		yield();
-	}
-no_sbh:
+		next3_snapshot_test_pending_cow(sbh, bh);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	if (sbh && !blk)

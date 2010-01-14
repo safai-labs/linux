@@ -362,6 +362,16 @@ static int next3_block_to_path(struct inode *inode,
  *	the whole chain, all way to the data (returns %NULL, *err == 0).
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#define next3_get_branch_cow(handle, inode, depth, offsets, chain, err, cmd) \
+	__next3_get_branch_cow(__func__, handle, inode, depth, offsets, \
+			       chain, err, cmd)
+#define next3_get_branch(inode, depth, offsets, chain, err) \
+	__next3_get_branch_cow(__func__, NULL, inode, depth, offsets, chain, \
+			       err, 0)
+/*
+ *	next3_get_branch_cow - move protected data block to snapshot
+ *  and return 0, so a new data block will be allocated.
+ */
 static Indirect *__next3_get_branch_cow(const char *where, handle_t *handle,
 					struct inode *inode, int depth,
 					int *offsets, Indirect chain[4],
@@ -568,6 +578,16 @@ static int next3_blks_to_allocate(Indirect *branch, int k, unsigned long blks,
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+static void next3_free_data_cow(handle_t *handle, struct inode *inode,
+			   struct buffer_head *this_bh,
+			   __le32 *first, __le32 *last,
+			   const char *bitmap, int bit,
+			   int *pfreed_blocks, int cow);
+
+#define next3_free_data(handle, inode, bh, first, last)		\
+	next3_free_data_cow(handle, inode, bh, first, last,		\
+			    NULL, 0, NULL, 0)
+
 /**
  *	next3_blks_to_skip: Look up the block map and count the number
  *	of non-allocated data blocks (holes) that can be skipped
@@ -626,6 +646,23 @@ static int next3_blks_to_skip(struct inode *inode, long i_block,
 	count <<= data_ptrs_bits;
 	count -= i_block;
 	return count < maxblocks ? count : maxblocks;
+}
+
+/*
+ * next3_snapshot_shrink_blocks() frees unused blocks from
+ * deleted snapshot files between 'start' and 'end'.
+ * Helper function for next3_snapshot_shrink().
+ * Shrinks 'maxblocks' blocks starting at 'iblock'.
+ * Returns number of shrunk blocks.
+ * Maps 'bh_cow' to the COW bitmap block of snapshot 'start'.
+ */
+int next3_snapshot_shrink_blocks(handle_t *handle,
+		struct inode *start, struct inode *end,
+		sector_t iblock, unsigned long maxblocks,
+		struct buffer_head *cow_bh)
+{
+	return next3_get_blocks_handle(handle, start, iblock, maxblocks,
+			cow_bh, SNAPSHOT_SHRINK);
 }
 #endif
 
@@ -712,7 +749,14 @@ static int next3_move_branches(handle_t *handle, struct inode *src,
 	return i;
 }
 
-int next3_merge_blocks(handle_t *handle, struct inode *src, struct inode *dst,
+/*
+ * next3_snapshot_merge_blocks() moves blocks from 'src' to 'dst'.
+ * Helper function for next3_snapshot_merge().
+ * Merges 'maxblocks' blocks starting at 'iblock'.
+ * Returns number of merged blocks.
+ */
+int next3_snapshot_merge_blocks(handle_t *handle,
+		struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks)
 {
 	Indirect S[4], D[4], *pS, *pD;
@@ -1175,23 +1219,6 @@ err_out:
 	return err;
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-static void next3_free_data_cow(handle_t *handle, struct inode *inode,
-			   struct buffer_head *this_bh,
-			   __le32 *first, __le32 *last,
-			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int cow);
-
-#define next3_free_data(handle, inode, bh, first, last)		    \
-	next3_free_data_cow(handle, inode, bh, first, last,		\
-			    NULL, 0, NULL, 0)
-
-#define next3_free_branches(handle, inode, bh, first, last, depth)	\
-	next3_free_branches_cow((handle), (inode), (bh),		\
-				(first), (last), (depth), 0)
-
-#endif
-
 /*
  * Allocation strategy is simple: if we have to allocate something, we will
  * have to go the whole way to leaf. So let's do it before attaching anything
@@ -1496,7 +1523,6 @@ no_snapshot_shrink_cmd:
 			goto got_it;
 	}
 
-check_peep:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
 #warning reverse condition to if !peep
 	if (!peep)
@@ -2946,7 +2972,7 @@ no_top:
  * We release `count' blocks on disk, but (last - first) may be greater
  * than `count' because there can be holes in there.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
 /*
  * next3_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
@@ -3046,7 +3072,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
  * @this_bh will be %NULL if @first and @last point into the inode's direct
  * block pointers.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
 /*
  * next3_free_data_cow - free a list of data blocks (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot

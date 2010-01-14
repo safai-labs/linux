@@ -1237,12 +1237,12 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	 */
 	nr = ei->i_data[NEXT3_DIND_BLOCK];
 	if (nr) {
-		next3_free_branches_cow(handle, inode, NULL, &nr, &nr+1, 2, 0);
+		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 2);
 		ei->i_data[NEXT3_DIND_BLOCK] = 0;
 	}
 	nr = ei->i_data[NEXT3_TIND_BLOCK];
 	if (nr) {
-		next3_free_branches_cow(handle, inode, NULL, &nr, &nr+1, 3, 0);
+		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
 		ei->i_data[NEXT3_TIND_BLOCK] = 0;
 	}
 	SNAPSHOT_SET_DISABLED(inode);
@@ -1361,10 +1361,8 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 * somewhat of a hack, but I prefer this
 				 * simple hack over more special code to
 				 * handle resize and shrink.
-				 * TODO: replace next3_get_blocks_handle()
-				 * hack with next3_snapshot_shrink_blocks()
-				 * and this will not be needed anymore.
 				 */
+#warning: move this logic into next3_snapshot_shrink_blocks()
 				map_bh(&cow_bitmap, start->i_sb,
 				       le32_to_cpu(SNAPSHOT_ZERO_BLOCK(start)));
 				set_buffer_new(&cow_bitmap);
@@ -1377,9 +1375,9 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 		if (err)
 			goto out_err;
 
-		err = next3_get_blocks_handle(handle, start,
+		err = next3_snapshot_shrink_blocks(handle, start, end,
 					      SNAPSHOT_IBLOCK(block), count,
-					      &cow_bitmap, SNAPSHOT_SHRINK);
+					      &cow_bitmap);
 
 		snapshot_debug(3, "snapshot (%u-%u) shrink: "
 				"block = 0x%lx, count = 0x%lx, err = 0x%x\n",
@@ -1497,7 +1495,7 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 			if (err)
 				goto out_err;
 
-			err = next3_merge_blocks(handle, inode, start,
+			err = next3_snapshot_merge_blocks(handle, inode, start,
 						 SNAPSHOT_IBLOCK(block), count);
 
 			snapshot_debug(3, "snapshot (%u) -> snapshot (%u) "

@@ -225,20 +225,21 @@ extern void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 				    struct buffer_head *parent_bh,
 				    __le32 *first, __le32 *last,
 				    int depth, int cow);
+
+#define next3_free_branches(handle, inode, bh, first, last, depth)	\
+	next3_free_branches_cow((handle), (inode), (bh),		\
+				(first), (last), (depth), 0)
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+extern int next3_snapshot_shrink_blocks(handle_t *handle,
+		struct inode *start, struct inode *end,
+		sector_t iblock, unsigned long maxblocks,
+		struct buffer_head *cow_bh);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
-extern int next3_merge_blocks(handle_t *handle, struct inode *src,
-			      struct inode *dst, sector_t iblock,
-			      unsigned long maxblocks);
-#endif
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-#define next3_get_branch_cow(handle, inode, depth, offsets, chain, err, cmd) \
-	__next3_get_branch_cow(__func__, handle, inode, depth, offsets, \
-			       chain, err, cmd)
-#define next3_get_branch(inode, depth, offsets, chain, err) \
-	__next3_get_branch_cow(__func__, NULL, inode, depth, offsets, chain, \
-			       err, 0)
+extern int next3_snapshot_merge_blocks(handle_t *handle,
+		struct inode *src, struct inode *dst,
+		sector_t iblock, unsigned long maxblocks);
 #endif
 
 /* super.c */

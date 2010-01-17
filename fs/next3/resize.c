@@ -724,9 +724,13 @@ static void update_backups(struct super_block *sb,
 		if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1))
 			buffer_credits = 0;
 #endif
-		if (buffer_credits == 0 &&
-		    next3_journal_extend(handle, NEXT3_MAX_TRANS_DATA) &&
-		    (err = next3_journal_restart(handle, NEXT3_MAX_TRANS_DATA)))
+		if (buffer_credits == 0)
+			err = next3_journal_extend(handle,
+					NEXT3_MAX_TRANS_DATA);
+		if (err)
+			err = next3_journal_restart(handle,
+					NEXT3_MAX_TRANS_DATA);
+		if (err)
 			break;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD

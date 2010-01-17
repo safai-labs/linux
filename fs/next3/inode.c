@@ -665,9 +665,12 @@ int next3_snapshot_shrink_blocks(handle_t *handle,
 	Indirect chain[4], *partial;
 	int err, blocks_to_boundary, depth, count;
 	struct buffer_head *sbh = NULL;
+	struct next3_group_desc *desc = NULL;
 	struct list_head *prev;
 	struct next3_inode_info *ei;
 	struct inode *inode = start;
+	struct next3_sb_info *sbi = NEXT3_SB(inode->i_sb);
+	struct next3_super_block *es = sbi->s_es;
 	unsigned long block_group = 0;
 	next3_fsblk_t bg_first = 0, bitmap_blk = 0;
 	int shrink, iter = 0, copies = 0;
@@ -678,11 +681,12 @@ shrink_snapshot:
 	err = -EIO;
 	ei = NEXT3_I(inode);
 	prev = ei->i_orphan.prev;
-	if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
+	if (prev == &sbi->s_snapshot_list)
 		/* reached last snapshot without reaching 'end' */
 		goto out;
 
-	depth = next3_block_to_path(inode, iblock, offsets, &blocks_to_boundary);
+	depth = next3_block_to_path(inode, iblock, offsets,
+			&blocks_to_boundary);
 	if (depth == 0)
 		goto out;
 
@@ -704,29 +708,29 @@ shrink_snapshot:
 			       SNAPSHOT_BLOCK(iblock), count);
 		goto shrink_indirect_blocks;
 	}
+
+	if (copies++ > 0)
+		goto shrink_data_blocks;
+	/* find the COW bitmap block of 'start' snapshot */
+	bg_first = SNAPSHOT_IBLOCK(le32_to_cpu(es->s_first_data_block));
+	block_group = ((next3_fsblk_t)iblock - bg_first) /
+		NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
+	bg_first += block_group * NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
+
+	if (cow_bh && buffer_mapped(cow_bh))
+		/* we cached the COW bitmap block in a previous call */
+		sbh = sb_bread(inode->i_sb, cow_bh->b_blocknr);
+	else if (cow_bh)
+		/* get COW bitmap logical block */
+		desc = next3_get_group_desc(inode->i_sb, block_group,
+				NULL);
+	if (desc)
+		bitmap_blk =
+			SNAPSHOT_IBLOCK(le32_to_cpu(desc->bg_block_bitmap));
+
+shrink_data_blocks:
 	/* data block mapped - check if data blocks should be freed */
 	partial = chain + depth - 1;	/* clean the whole chain */
-	if (++copies == 1) {
-		/* find block group and block group offset of block in
-		 * question */
-		struct next3_super_block *es = NEXT3_SB(inode->i_sb)->s_es;
-		struct next3_group_desc *desc = NULL;
-
-		bg_first = SNAPSHOT_IBLOCK(le32_to_cpu(es->s_first_data_block));
-		block_group = ((next3_fsblk_t)iblock - bg_first) /
-			NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
-		bg_first += block_group * NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
-
-		if (cow_bh && buffer_mapped(cow_bh))
-			/* we cached the COW bitmap block in a previous call */
-			sbh = sb_bread(inode->i_sb, cow_bh->b_blocknr);
-		else if (cow_bh)
-			/* get COW bitmap logical block */
-			desc = next3_get_group_desc(inode->i_sb, block_group, NULL);
-		if (desc)
-			bitmap_blk = SNAPSHOT_IBLOCK(le32_to_cpu(desc->bg_block_bitmap));
-	}
-
 	/* scan all blocks upto maxblocks/boundary */
 	count = 0;
 	while (count < maxblocks && count <= blocks_to_boundary) {
@@ -787,7 +791,8 @@ shrink_indirect_blocks:
 		if (freed_blocks == mapped_blocks &&
 		    count > blocks_to_boundary) {
 			for (p = (__le32 *)(partial->bh->b_data);
-			     !*p && p < partial->p; p++);
+			     !*p && p < partial->p; p++)
+				;
 		}
 		if (p == partial->p)
 			/* indirect block maps zero data blocks - free it */
@@ -810,12 +815,12 @@ done_shrinking:
 		       "count=0x%x, copies=%d, mapped=0x%x, freed=0x%x\n",
 		       inode->i_generation, SNAPSHOT_BLOCK(iblock), count,
 		       copies, mapped_blocks, freed_blocks);
-	
+
 	/* limit shrink of prev snapshot to this shrink count */
 	maxblocks = count;
 	inode = &list_entry(prev, struct next3_inode_info,
 			i_orphan)->vfs_inode;
-	
+
 	if (inode == end ||
 		!(NEXT3_I(inode)->i_flags &
 		  NEXT3_SNAPFILE_DELETED_FL) ||
@@ -824,7 +829,7 @@ done_shrinking:
 		err = maxblocks;
 		goto cleanup;
 	}
-	
+
 	while (partial > chain) {
 		brelse(partial->bh);
 		partial--;

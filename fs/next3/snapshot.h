@@ -95,9 +95,9 @@
 #define SNAPSHOT_BLOCKS(inode)						\
 	(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_SET_ENABLED(inode)				\
-	((inode)->i_size = NEXT3_I(inode)->i_disksize)
+	i_size_write((inode), NEXT3_I(inode)->i_disksize)
 #define SNAPSHOT_SET_DISABLED(inode)		\
-	((inode)->i_size = SNAPSHOT_META_SIZE)
+	i_size_write((inode), SNAPSHOT_META_SIZE)
 
 /* maximum recursion level allowed in snapshot file updates */
 #define SNAPSHOT_MAX_RECURSION_LEVEL	2

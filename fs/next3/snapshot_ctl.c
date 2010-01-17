@@ -468,6 +468,7 @@ static int next3_snapshot_create(struct inode *inode)
 		if (NEXT3_I(inode)->i_data[i])
 			break;
 	}
+	/* Don't need i_size_read because we hold i_mutex */
 	if (i <= NEXT3_TIND_BLOCK || inode->i_size > 0 ||
 	    NEXT3_I(inode)->i_disksize > 0) {
 		snapshot_debug(1, "failed to create snapshot file (ino=%lu) "
@@ -1136,6 +1137,7 @@ static int next3_snapshot_enable(struct inode *inode)
 	SNAPSHOT_SET_ENABLED(inode);
 	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ENABLED_FL;
 
+	/* Don't need i_size_read because we hold i_mutex */
 	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
 			inode->i_generation, inode->i_size);
 	snapshot_debug(1, "snapshot (%u) enabled\n", inode->i_generation);
@@ -1169,6 +1171,7 @@ static int next3_snapshot_disable(struct inode *inode)
 	/* invalidate page cache */
 	truncate_inode_pages(&inode->i_data, SNAPSHOT_BYTES_OFFSET);
 
+	/* Don't need i_size_read because we hold i_mutex */
 	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
 			inode->i_generation, inode->i_size);
 	snapshot_debug(1, "snapshot (%u) disabled\n", inode->i_generation);
@@ -1245,9 +1248,9 @@ static int next3_snapshot_cleanup(struct inode *inode)
 		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
 		ei->i_data[NEXT3_TIND_BLOCK] = 0;
 	}
+	/* only snapshot meta blocks are left after the truncate */
 	SNAPSHOT_SET_DISABLED(inode);
-#warning there are ~65 instances of such ->i_size refs in the total code.
-	ei->i_disksize = inode->i_size;
+	ei->i_disksize = SNAPSHOT_META_SIZE;
 	err = next3_mark_inode_dirty(handle, inode);
 	if (err)
 		goto out_handle;

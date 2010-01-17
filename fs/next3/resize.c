@@ -981,6 +981,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		next3_fsblk_t first_free =
 			input->inode_table + sbi->s_itb_per_group;
 		struct next3_iloc iloc;
+		loff_t i_size;
 
 		err = next3_journal_get_write_access(handle, exclude_bh);
 		if (err)
@@ -995,9 +996,10 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		next3_journal_dirty_metadata(handle, exclude_bh);
 
 		/* update exclude inode size and blocks */
-		i_size_write(exclude_inode, SNAPSHOT_IBLOCK(input->group)
-			     << SNAPSHOT_BLOCK_SIZE_BITS);
-		NEXT3_I(exclude_inode)->i_disksize = exclude_inode->i_size;
+		i_size = SNAPSHOT_IBLOCK(input->group)
+				 << SNAPSHOT_BLOCK_SIZE_BITS;
+		i_size_write(exclude_inode, i_size);
+		NEXT3_I(exclude_inode)->i_disksize = i_size;
 		exclude_inode->i_blocks += sb->s_blocksize >> 9;
 		next3_mark_iloc_dirty(handle, exclude_inode, &iloc);
 	}

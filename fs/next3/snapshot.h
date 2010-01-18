@@ -130,7 +130,8 @@
 extern int next3_snapshot_get_inode_access(handle_t *handle,
 					   struct inode *inode,
 					   next3_fsblk_t iblock,
-					   int count, int cmd);
+					   int count, int cmd,
+					   struct inode **peep_to);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS
 extern int next3_snapshot_get_undo_access(handle_t *handle,
@@ -410,15 +411,15 @@ static inline void next3_snapshot_cancel_pending_cow(struct buffer_head *sbh)
 }
 
 static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
-						struct buffer_head *bh)
+						sector_t blocknr)
 {
 	SNAPSHOT_DEBUG_ONCE;
 	while (buffer_new(sbh)) {
 		/* wait for pending COW to complete */
 		snapshot_debug_once(2, "waiting for pending cow: "
 				    "block = [%lld/%lld]...\n",
-				    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-				    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
+				    SNAPSHOT_BLOCK_GROUP_OFFSET(blocknr),
+				    SNAPSHOT_BLOCK_GROUP(blocknr));
 		/*
 		 * can happen once per block/snapshot - wait for COW and
 		 * keep trying

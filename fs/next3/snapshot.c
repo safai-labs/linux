@@ -168,12 +168,18 @@ next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
  * on snapshot file access.
  * return value <0 indicates access not granted
  * return value 0 indicates normal inode access
- * return value 1 indicates snapshot inode access (peep through)
+ * return value 1 indicates snapshot inode read access (peep through)
+ * in which case 'peep_to' is pointed to the previous snapshot
+ * or set to NULL to indicate peep through to block device.
  */
 int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
-		next3_fsblk_t iblock, int count, int cmd)
+		next3_fsblk_t iblock, int count, int cmd,
+		struct inode **peep_to)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
+	struct list_head *prev;
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 	next3_fsblk_t block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = (iblock < SNAPSHOT_BLOCK_OFFSET ? -1 :
@@ -225,11 +231,45 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		 * indicates this is a direct user read
 		 */
 		if (!handle || handle->h_level == 0)
-			/* read access as snapshot file */
-			return 1;
+			goto peep_access;
 	}
-	/* access as regular file */
+	/* normal inode access */
 	return 0;
+
+peep_access:
+	*peep_to = NULL;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
+	/*
+	 * Snapshot list add/delete is protected by lock_super() and we
+	 * don't take lock_super() here.  However, since only
+	 * old/unused/disabled snapshots are deleted, then we cannot be
+	 * affected by deletes here.  If we are following the list
+	 * during snapshot take, then we have 3 cases:
+	 *
+	 * 1. we got here before it was added to list - no problem;
+	 * 2. we got here after it was added to list and after it was
+	 *    activated - no problem;
+	 * 3. we got here after it was added to list and before it was
+	 *    activated - we skip it.
+	 */
+	prev = ei->i_orphan.prev;
+	if (list_empty(prev)) {
+		/* not in snapshots list */
+		return -EIO;
+	} else if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
+		/* last snapshot - peep through to block device */
+		if (!next3_snapshot_is_active(inode))
+			return -EIO;
+	} else {
+		/* non last snapshot - peep through to prev snapshot */
+		ei = list_entry(prev, struct next3_inode_info, i_orphan);
+		if (!(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
+			/* skip over snapshot during take */
+			*peep_to = &ei->vfs_inode;
+	}
+	/* peep through access */
+	return 1;
+#endif
 }
 
 /*
@@ -259,7 +299,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 	else if (mapped)
 		*mapped = dummy.b_blocknr;
 
-	snapshot_debug_hl(5, "snapshot (%u) map_blocks "
+	snapshot_debug_hl(4, "snapshot (%u) map_blocks "
 			  "[%lld/%lld] = [%lld/%lld] "
 			  "cmd=%d, maxblocks=%lu, mapped=%d\n",
 			  inode->i_generation,
@@ -822,7 +862,7 @@ test_pending_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	if (sbh)
 		/* wait for pending COW to complete */
-		next3_snapshot_test_pending_cow(sbh, bh);
+		next3_snapshot_test_pending_cow(sbh, block);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	if (sbh && !blk)

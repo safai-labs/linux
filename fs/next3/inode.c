@@ -1441,7 +1441,6 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	int peep = 0;
 	struct buffer_head *sbh = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
-	struct list_head *prev;
 	struct inode *prev_snapshot;
 
 retry:
@@ -1451,42 +1450,21 @@ retry:
 	ei = NEXT3_I(inode);
 	prev_snapshot = NULL;
 #endif
-	if (!next3_snapshot_file(inode))
-		goto no_snapshot_file;
-	/* snapshot file access */
-	peep = next3_snapshot_get_inode_access(handle, inode, iblock,
-					       maxblocks, create);
+	if (next3_snapshot_file(inode))
+		/* snapshot file access */
+		peep = next3_snapshot_get_inode_access(handle, inode, iblock,
+				maxblocks, create, &prev_snapshot);
+	else if (peep)
+		/* trying to peep to non snapshot file */
+		goto out;
 	if (peep < 0) {
 		err = peep;
 		goto out;
 	}
-	if (!peep)
-		goto no_snapshot_file;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
-	/*
-	 * Snapshot list add/delete is protected by lock_super() and we
-	 * don't take lock_super() here.  However, since only
-	 * old/unused/disabled snapshots are deleted, then we cannot be
-	 * affected by deletes here.  If we are following the list during
-	 * snapshot take, then we have 3 cases:
-	 *
-	 * 1. we got here before it was added to list - no problem;
-	 * 2. we got here after it was added to list and after it was
-	 *    activated - no problem;
-	 * 3. we got here after it was added to list and before it was
-	 *    activated - we skip it.
-	 */
-	prev = ei->i_orphan.prev;
-	if (!peep || list_empty(prev)) {
-		/* not in snapshots list */
-		peep = 0;
-	} else if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
-		/* last snapshot */
-		prev_snapshot = NULL;
-		if (!next3_snapshot_is_active(inode))
-			goto out;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
+	if (peep && !prev_snapshot) {
 		/*
+		 * Possible peep through to block device.
 		 * Start tracked read before checking if block is mapped to
 		 * avoid race condition with COW that maps the block after
 		 * we checked if the block is mapped.  If we find that the
@@ -1503,18 +1481,9 @@ retry:
 			goto out;
 		}
 		err = -EIO;
-#endif
-	} else {
-		/* non last snapshot */
-		prev_snapshot = &list_entry(prev, struct next3_inode_info,
-					    i_orphan)->vfs_inode;
-		if (NEXT3_I(prev_snapshot)->i_flags & NEXT3_SNAPFILE_TAKE_FL)
-			/* skip over snapshot during take */
-			prev_snapshot = NULL;
 	}
 #endif
 #endif
-no_snapshot_file:
 	J_ASSERT(handle != NULL || create == 0);
 	depth = next3_block_to_path(inode,iblock,offsets,&blocks_to_boundary);
 
@@ -1729,7 +1698,7 @@ got_it:
 		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
 	if (peep && sbh) {
 		/* wait for pending COW to complete */
-		next3_snapshot_test_pending_cow(sbh, bh_result);
+		next3_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
 		if (buffer_dirty(sbh))
 			/* sync fresh COW buffer to disk */
 			sync_dirty_buffer(sbh);

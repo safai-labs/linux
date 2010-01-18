@@ -435,11 +435,11 @@ static int next3_snapshot_create(struct inode *inode)
 	struct next3_group_desc *desc;
 	unsigned long ino;
 	struct next3_iloc iloc;
-	next3_fsblk_t bmap_blk = 0, imap_blk = 0, inode_blk = 0,
-		prev_inode_blk = 0;
+	next3_fsblk_t bmap_blk = 0, imap_blk = 0, inode_blk = 0;
+	next3_fsblk_t prev_inode_blk = 0;
 	loff_t snapshot_blocks = le32_to_cpu(NEXT3_SB(inode->i_sb)->
 					     s_es->s_blocks_count);
-	static struct next3_inode_info dummy_inode;
+	static struct inode dummy_inode;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct list_head *l, *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
 
@@ -584,99 +584,80 @@ static int next3_snapshot_create(struct inode *inode)
 	}
 
 	/*
-	 * start with root inode and continue with snapshot list
+	 * start with journal inode and continue with snapshot list
 	 * snapshot inode points to a dummy empty inode so
-	 * root inode directs block won't be alloacted
+	 * journal inode direct block won't be alloacted
 	 */
-	snapshot = &dummy_inode.vfs_inode;
-	ino = NEXT3_ROOT_INO;
+	snapshot = &dummy_inode;
+	ino = NEXT3_JOURNAL_INO;
 alloc_self_inode:
 	/*
 	 * pre-allocate for every snapshot inode including this one:
 	 * - inode's group block and inode bitmap blocks
 	 * - inode's own block
-	 * - inode's direct blocks (HEADER, ZERO, DIND, TIND)
 	 */
 	err = extend_or_restart_transaction_inode(handle, inode,
-			7 * NEXT3_DATA_TRANS_BLOCKS(inode->i_sb));
+			3 * NEXT3_DATA_TRANS_BLOCKS(inode->i_sb));
 	if (err)
 		goto out_handle;
+
 	iloc.block_group = 0;
 	inode_blk = next3_get_inode_block(inode->i_sb, ino, &iloc);
-	if (!prev_inode_blk || inode_blk != prev_inode_blk) {
-		/* not same inode and bitmap blocks as prev snapshot */
-		err = -EIO;
-		bmap_blk = 0;
-		imap_blk = 0;
-		desc = NULL;
-		if (inode_blk)
-			desc = next3_get_group_desc(inode->i_sb,
-						    iloc.block_group, NULL);
-		if (desc) {
-			bmap_blk = le32_to_cpu(desc->bg_block_bitmap);
-			imap_blk = le32_to_cpu(desc->bg_inode_bitmap);
-		}
-		if (bmap_blk && imap_blk) {
-			count = 1;
-			if (imap_blk == bmap_blk + 1)
-				count++;
-			if (inode_blk == imap_blk + 1)
-				count++;
-			err = next3_snapshot_map_blocks(handle, inode,
-							bmap_blk, count,
-							NULL, SNAPSHOT_WRITE);
-			count = err;
-			if (err > 0 && count < 2)
-				err = next3_snapshot_map_blocks(handle, inode,
-								imap_blk, 1,
-								NULL,
-								SNAPSHOT_WRITE);
-			if (err > 0 && count < 3)
-				err = next3_snapshot_map_blocks(handle, inode,
-								inode_blk, 1,
-								NULL,
-								SNAPSHOT_WRITE);
-		}
-		if (err < 0) {
-			next3_fsblk_t blk0 = iloc.block_group *
-				NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
-			snapshot_debug(1, "failed to allocate self inode and "
-				       "bitmap blocks of snapshot (%u) "
-				       "(%lu,%lu,%lu/%lu) for snapshot (%u)\n",
-				       snapshot->i_generation, bmap_blk - blk0,
-				       imap_blk - blk0, inode_blk - blk0,
-				       iloc.block_group, inode->i_generation);
-			goto out_handle;
-		}
-	}
-	/* alloc and zero out all inode's direct blocks */
-	for (i = 0; err >= 0 && i <= NEXT3_TIND_BLOCK; i++) {
-		next3_fsblk_t blocknr,
-			blk = le32_to_cpu(NEXT3_I(snapshot)->i_data[i]);
-		if (blk) {
-			err = next3_snapshot_map_blocks(handle, inode, blk, 1,
-							&blocknr,
-							SNAPSHOT_WRITE);
-			if (err < 0)
-				break;
-			err = next3_snapshot_zero_data_buffer(handle, inode,
-							      blk, blocknr);
-		}
-		if (err < 0) {
-			snapshot_debug(1, "failed to allocate direct block #%d "
-				       "(%lu) of snapshot (%u) for snapshot "
-				       "(%u)\n", i, blk, snapshot->i_generation,
-				       inode->i_generation);
-			goto out_handle;
-		}
-	}
+	if (!inode_blk || inode_blk == prev_inode_blk)
+		goto next_snapshot;
 
+	/* not same inode and bitmap blocks as prev snapshot */
+	prev_inode_blk = inode_blk;
+	bmap_blk = imap_blk = 0;
+	desc = next3_get_group_desc(inode->i_sb, iloc.block_group, NULL);
+	if (!desc)
+		goto next_snapshot;
+
+	bmap_blk = le32_to_cpu(desc->bg_block_bitmap);
+	imap_blk = le32_to_cpu(desc->bg_inode_bitmap);
+	if (!bmap_blk || !imap_blk)
+		goto next_snapshot;
+
+	count = 1;
+	if (imap_blk == bmap_blk + 1)
+		count++;
+	if (inode_blk == imap_blk + 1)
+		count++;
+	/* try to allocate all blocks at once */
+	err = next3_snapshot_map_blocks(handle, inode,
+			bmap_blk, count,
+			NULL, SNAPSHOT_WRITE);
+	count = err;
+	/* allocate remaining blocks one by one */
+	if (err > 0 && count < 2)
+		err = next3_snapshot_map_blocks(handle, inode,
+				imap_blk, 1,
+				NULL,
+				SNAPSHOT_WRITE);
+	if (err > 0 && count < 3)
+		err = next3_snapshot_map_blocks(handle, inode,
+				inode_blk, 1,
+				NULL,
+				SNAPSHOT_WRITE);
+next_snapshot:
+	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
+		next3_fsblk_t blk0 = iloc.block_group *
+			NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
+		snapshot_debug(1, "failed to allocate self inode and "
+				"bitmap blocks of snapshot (%u) "
+				"(%lu,%lu,%lu/%lu) for snapshot (%u)\n",
+				snapshot->i_generation, bmap_blk - blk0,
+				imap_blk - blk0, inode_blk - blk0,
+				iloc.block_group, inode->i_generation);
+		if (!err)
+			err = -EIO;
+		goto out_handle;
+	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		snapshot = &list_entry(l, struct next3_inode_info,
 				       i_orphan)->vfs_inode;
 		ino = snapshot->i_ino;
-		prev_inode_blk = inode_blk;
 		l = l->next;
 		goto alloc_self_inode;
 	}
@@ -719,6 +700,7 @@ int next3_snapshot_take(struct inode *inode)
 	int nbhs = 0;
 	struct next3_super_block *es = NULL;
 	struct next3_iloc iloc;
+	struct next3_inode *raw_inode, temp_inode;
 	struct next3_group_desc *desc;
 	int i, err = -EIO;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
@@ -800,11 +782,16 @@ int next3_snapshot_take(struct inode *inode)
 	 */
 	lock_buffer(sbh);
 	memcpy(sbh->b_data, sbi->s_sbh->b_data, sb->s_blocksize);
-	/* convert from Next3 to Ext2 super block */
+	/*
+	 * Convert from Next3 to Ext2 super block:
+	 * Remove the has_journal flag and journal inode number.
+	 * Remove the last snapshot inode number but keep the
+	 * has_snapshot flag, to force read-only mount and prevent
+	 * fsck from clearing exclude bitmap.
+	 */ 
 	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
 	es->s_journal_inum = 0;
-	es->s_feature_ro_compat &=
-		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+	es->s_last_snapshot = 0;
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
@@ -831,9 +818,11 @@ int next3_snapshot_take(struct inode *inode)
 	}
 	/*
 	 * copy self inode and bitmap blocks to snapshot
-	 * start with root inode and continue with snapshot list
+	 * start with journal inode and continue with snapshot list
 	 */
-	snapshot = sb->s_root->d_inode;
+	snapshot = sbi->s_journal_inode;
+	/* XXX: who cares about generation of the journal inode? */
+	snapshot->i_generation = 0;
 copy_self_inode:
 	while (nbhs > 0)
 		brelse(bhs[--nbhs]);
@@ -846,7 +835,9 @@ copy_self_inode:
 		goto out_unlockfs;
 	}
 	if (iloc.bh->b_blocknr == prev_inode_blk)
-		goto blocknr_equals_prev;
+		goto fix_self_inode;
+	prev_inode_blk = iloc.bh->b_blocknr;
+	/* keep block bitmap buffer at index 0 and iloc.bh last */
 	strs[nbhs] = "self block bitmap";
 	bhs[nbhs] = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
 	nbhs++;
@@ -895,12 +886,40 @@ copy_self_inode:
 			       SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
 			       inode->i_generation);
 	}
-blocknr_equals_prev:
+fix_self_inode:
+	/* get snapshot copy of raw inode */
+	iloc.bh = sbh;
+	raw_inode = next3_raw_inode(&iloc);
+	if (snapshot->i_ino == NEXT3_JOURNAL_INO) {
+		/*
+		 * If we want the snapshot image to pass fsck with no
+		 * errors, we need to clear the copy of journal inode,
+		 * but we cannot detach these blocks, so we move them
+		 * to the copy of the last snapshot inode.
+		 */
+		memcpy(&temp_inode, raw_inode, sizeof(temp_inode));
+		memset(raw_inode, 0, sizeof(*raw_inode));
+	} else {
+		/*
+		 * Snapshot inode blocks are excluded from COW bitmap,
+		 * so they appear to be not allocated in the snapshot's
+		 * block bitmap.  If we want the snapshot image to pass
+		 * fsck with no errors, we need to detach those blocks
+		 * from the copy of the snapshot inode.
+		 */
+		raw_inode->i_size = temp_inode.i_size;
+		raw_inode->i_size_high = temp_inode.i_size_high;
+		raw_inode->i_blocks = temp_inode.i_blocks;
+		memcpy(raw_inode->i_block, temp_inode.i_block,
+				sizeof(raw_inode->i_block));
+		memset(&temp_inode, 0, sizeof(temp_inode));
+	}
+	mark_buffer_dirty(sbh);
+	sync_dirty_buffer(sbh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		snapshot = &list_entry(l, struct next3_inode_info,
 				       i_orphan)->vfs_inode;
-		prev_inode_blk = iloc.bh->b_blocknr;
 		l = l->next;
 		goto copy_self_inode;
 	}
@@ -933,12 +952,12 @@ blocknr_equals_prev:
 	/* reset COW bitmap cache */
 	next3_snapshot_reset_bitmap_cache(sb, 0);
 
-	/*
-	 * no need to sync the snapshot inode to disk
-	 * because all that changed are the snapshot flags TAKE and ACTIVE
-	 * which are fixed on load by snapshot_update()
-	 */
 out_unlockfs:
+	/*
+	 * No need to sync the snapshot inode to disk because all
+	 * that has changed are the snapshot flags TAKE and ACTIVE
+	 * which are fixed on load by snapshot_update().
+	 */
 	unlock_super(sb);
 	sb->s_op->unfreeze_fs(sb);
 

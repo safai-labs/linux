@@ -37,13 +37,14 @@ next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
 #endif
 
 /*
- * next3_snapshot_copy_to_buffer()
+ * next3_snapshot_copy_buffer_locked()
  * copy data to locked snapshot buffer and unlock it
  * 'mask' data before copying to snapshot.
  */
 static inline int
-next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
-		struct buffer_head *bh, const char *data, const char *mask)
+next3_snapshot_copy_buffer_locked(handle_t *handle,
+		struct buffer_head *sbh, struct buffer_head *bh,
+		const char *data, const char *mask, int sync)
 {
 	int err = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
@@ -76,7 +77,7 @@ next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
 	if (handle)
 		err = next3_journal_dirty_data(handle, sbh);
 	mark_buffer_dirty(sbh);
-	if (!handle)
+	if (sync)
 		sync_dirty_buffer(sbh);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
@@ -84,22 +85,6 @@ next3_snapshot_copy_to_buffer(handle_t *handle, struct buffer_head *sbh,
 	next3_snapshot_cancel_pending_cow(sbh);
 #endif
 	return err;
-}
-
-/*
- * next3_snapshot_copy_to_buffer_sync()
- * helper function for next3_snapshot_read_cow_bitmap()
- * used for initializing snapshot COW bitmaps
- * copy data to snapshot buffer and sync it to disk
- * 'mask' buffer before copying to snapshot.
- */
-static inline void
-next3_snapshot_copy_to_buffer_sync(struct buffer_head *sbh,
-				   struct buffer_head *bh,
-				   const char *data, const char *mask)
-{
-	lock_buffer(sbh);
-	next3_snapshot_copy_to_buffer(NULL, sbh, bh, data, mask);
 }
 
 /*
@@ -113,41 +98,43 @@ next3_snapshot_copy_buffer_ordered(handle_t *handle,
 				   struct buffer_head *sbh,
 				   struct buffer_head *bh)
 {
-	return next3_snapshot_copy_to_buffer(handle, sbh, bh, bh->b_data,
-					     NULL);
+	return next3_snapshot_copy_buffer_locked(handle, sbh, bh,
+			bh->b_data, NULL, 0);
 }
 
 /*
- * next3_snapshot_copy_buffer_sync()
+ * next3_snapshot_copy_buffer()
  * helper function for next3_snapshot_take()
  * used for initializing pre-allocated snapshot blocks
- * copy buffer to snapshot buffer and sync it to disk
+ * copy buffer to snapshot buffer and mark it dirty
  * 'mask' buffer before copying to snapshot.
  */
-int next3_snapshot_copy_buffer_sync(struct buffer_head *sbh,
-				    struct buffer_head *bh, const char *mask)
+int next3_snapshot_copy_buffer(struct buffer_head *sbh,
+		struct buffer_head *bh, const char *mask)
 {
 	/*
-	 * The path coming from snapshot_take() doesn't have elevated
-	 * refcount on snaphshot buffer because these blocks are
-	 * pre-allocated.
+	 * The path coming from snapshot_take() didn't start pending
+	 * COW nor did it lock the snaphshot buffer, because these
+	 * blocks are pre-allocated in snapshot_create().
 	 */
-	get_bh(sbh);
-	next3_snapshot_copy_to_buffer_sync(sbh, bh, bh->b_data, mask);
+	next3_snapshot_start_pending_cow(sbh);
+	lock_buffer(sbh);
+	next3_snapshot_copy_buffer_locked(NULL, sbh, bh,
+			bh->b_data, mask, 1);
 	return 0;
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 /*
- * next3_snapshot_zero_data_buffer()
- * helper function for next3_snapshot_create()
- * and for next3_snapshot_test_and_cow()
+ * next3_snapshot_zero_buffer()
+ * helper function for next3_snapshot_test_and_cow()
  * reset snapshot data buffer to zero and
  * add to current transaction (as dirty data)
  * 'blk' is the logical snapshot block number
  * 'blocknr' is the physical block number
  */
-int
-next3_snapshot_zero_data_buffer(handle_t *handle, struct inode *inode,
+static int
+next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
 		next3_snapblk_t blk, next3_fsblk_t blocknr)
 {
 	int err;
@@ -171,6 +158,7 @@ next3_snapshot_zero_data_buffer(handle_t *handle, struct inode *inode,
 	brelse(sbh);
 	return err;
 }
+#endif
 
 #define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
 						 handle->h_level : 0, f, ## a)
@@ -342,7 +330,9 @@ next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (jh && jh->b_committed_data)
 		data = jh->b_committed_data;
 
-	next3_snapshot_copy_to_buffer_sync(cow_bh, bitmap_bh, data, mask);
+	lock_buffer(cow_bh);
+	next3_snapshot_copy_buffer_locked(NULL, cow_bh, bitmap_bh,
+			data, mask, 1);
 
 	jbd_unlock_bh_state(bitmap_bh);
 	jbd_unlock_bh_journal_head(bitmap_bh);
@@ -839,7 +829,7 @@ test_pending_cow:
 		blk = sbh->b_blocknr;
 	if (clear && blk) {
 		/* zero out snapshot block data */
-		err = next3_snapshot_zero_data_buffer(handle, snapshot,
+		err = next3_snapshot_zero_buffer(handle, snapshot,
 						      bh->b_blocknr, blk);
 		if (err)
 			goto out;

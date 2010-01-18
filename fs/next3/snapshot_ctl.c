@@ -788,14 +788,13 @@ int next3_snapshot_take(struct inode *inode)
 	 * Remove the last snapshot inode number but keep the
 	 * has_snapshot flag, to force read-only mount and prevent
 	 * fsck from clearing exclude bitmap.
-	 */ 
+	 */
 	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
 	es->s_journal_inum = 0;
 	es->s_last_snapshot = 0;
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
-	sync_dirty_buffer(sbh);
 	/*
 	 * copy group descriptors to snapshot
 	 */
@@ -812,7 +811,7 @@ int next3_snapshot_take(struct inode *inode)
 			err = -EIO;
 			goto out_unlockfs;
 		}
-		err = next3_snapshot_copy_buffer_sync(sbh, bh, NULL);
+		err = next3_snapshot_copy_buffer(sbh, bh, NULL);
 		if (err)
 			goto out_unlockfs;
 	}
@@ -876,7 +875,7 @@ copy_self_inode:
 				err = -EIO;
 			goto out_unlockfs;
 		}
-		err = next3_snapshot_copy_buffer_sync(sbh, bh, mask);
+		err = next3_snapshot_copy_buffer(sbh, bh, mask);
 		if (err)
 			goto out_unlockfs;
 		snapshot_debug(4, "copied snapshot (%u) %s block [%lld/%lld] "
@@ -915,7 +914,6 @@ fix_self_inode:
 		memset(&temp_inode, 0, sizeof(temp_inode));
 	}
 	mark_buffer_dirty(sbh);
-	sync_dirty_buffer(sbh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		snapshot = &list_entry(l, struct next3_inode_info,
@@ -954,10 +952,12 @@ fix_self_inode:
 
 out_unlockfs:
 	/*
+	 * Sync all copied snapshot blocks.
 	 * No need to sync the snapshot inode to disk because all
 	 * that has changed are the snapshot flags TAKE and ACTIVE
 	 * which are fixed on load by snapshot_update().
 	 */
+	filemap_fdatawrite(inode->i_mapping);
 	unlock_super(sb);
 	sb->s_op->unfreeze_fs(sb);
 

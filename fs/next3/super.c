@@ -2142,6 +2142,10 @@ static journal_t *next3_get_journal(struct super_block *sb,
 	}
 	journal->j_private = sb;
 	next3_init_journal_params(sb, journal);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	/* keep a reference to journal inode for snapshot_take() */
+	NEXT3_SB(sb)->s_journal_inode = journal_inode;
+#endif
 	return journal;
 }
 

@@ -131,7 +131,7 @@ extern int next3_snapshot_get_inode_access(handle_t *handle,
 					   struct inode *inode,
 					   next3_fsblk_t iblock,
 					   int count, int cmd,
-					   struct inode **peep_to);
+					   struct inode **prev_snapshot);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS
 extern int next3_snapshot_get_undo_access(handle_t *handle,

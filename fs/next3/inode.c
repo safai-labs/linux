@@ -1438,7 +1438,7 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	int count = 0;
 	next3_fsblk_t first_block = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
-	int peep = 0;
+	int read_through = 0;
 	struct buffer_head *sbh = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	struct inode *prev_snapshot;
@@ -1452,19 +1452,19 @@ retry:
 #endif
 	if (next3_snapshot_file(inode))
 		/* snapshot file access */
-		peep = next3_snapshot_get_inode_access(handle, inode, iblock,
-				maxblocks, create, &prev_snapshot);
-	else if (peep)
-		/* trying to peep to non snapshot file */
+		read_through = next3_snapshot_get_inode_access(handle, inode,
+				iblock, maxblocks, create, &prev_snapshot);
+	else if (read_through)
+		/* unexpected read through to non snapshot file */
 		goto out;
-	if (peep < 0) {
-		err = peep;
+	if (read_through < 0) {
+		err = read_through;
 		goto out;
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-	if (peep && !prev_snapshot) {
+	if (read_through && !prev_snapshot) {
 		/*
-		 * Possible peep through to block device.
+		 * Possible read through to block device.
 		 * Start tracked read before checking if block is mapped to
 		 * avoid race condition with COW that maps the block after
 		 * we checked if the block is mapped.  If we find that the
@@ -1537,7 +1537,7 @@ retry:
 	 * peephole to the block device.  On first block write, the peephole
 	 * is patched forever.
 	 */
-	if (peep && !err) {
+	if (read_through && !err) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 		if (prev_snapshot) {
 			while (partial > chain) {
@@ -1694,9 +1694,9 @@ got_it:
 	 * completed COW operation.  Use the buffer cache to test this
 	 * condition.
 	 */
-	if (peep && next3_snapshot_is_active(inode))
+	if (read_through && next3_snapshot_is_active(inode))
 		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
-	if (peep && sbh) {
+	if (read_through && sbh) {
 		/* wait for pending COW to complete */
 		next3_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
 		if (buffer_dirty(sbh))
@@ -1711,8 +1711,8 @@ got_it:
 	partial = chain + depth - 1;	/* the whole chain */
 cleanup:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-	/* cancel tracked read on failure to peep through active snapshot */
-	if (peep && err < 0 && buffer_tracked_read(bh_result))
+	/* cancel tracked read on failure to read through active snapshot */
+	if (read_through && err < 0 && buffer_tracked_read(bh_result))
 		cancel_buffer_tracked_read(bh_result);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW

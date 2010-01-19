@@ -168,13 +168,13 @@ next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
  * on snapshot file access.
  * return value <0 indicates access not granted
  * return value 0 indicates normal inode access
- * return value 1 indicates snapshot inode read access (peep through)
- * in which case 'peep_to' is pointed to the previous snapshot
- * or set to NULL to indicate peep through to block device.
+ * return value 1 indicates snapshot inode read through access
+ * in which case 'prev_snapshot' is pointed to the previous snapshot
+ * or set to NULL to indicate read through to block device.
  */
 int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t iblock, int count, int cmd,
-		struct inode **peep_to)
+		struct inode **prev_snapshot)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
@@ -231,13 +231,13 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		 * indicates this is a direct user read
 		 */
 		if (!handle || handle->h_level == 0)
-			goto peep_access;
+			goto read_through;
 	}
 	/* normal inode access */
 	return 0;
 
-peep_access:
-	*peep_to = NULL;
+read_through:
+	*prev_snapshot = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	/*
 	 * Snapshot list add/delete is protected by lock_super() and we
@@ -257,17 +257,17 @@ peep_access:
 		/* not in snapshots list */
 		return -EIO;
 	} else if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
-		/* last snapshot - peep through to block device */
+		/* last snapshot - read through to block device */
 		if (!next3_snapshot_is_active(inode))
 			return -EIO;
 	} else {
-		/* non last snapshot - peep through to prev snapshot */
+		/* non last snapshot - read through to prev snapshot */
 		ei = list_entry(prev, struct next3_inode_info, i_orphan);
 		if (!(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
 			/* skip over snapshot during take */
-			*peep_to = &ei->vfs_inode;
+			*prev_snapshot = &ei->vfs_inode;
 	}
-	/* peep through access */
+	/* read through access */
 	return 1;
 #endif
 }

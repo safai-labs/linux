@@ -163,7 +163,7 @@ config NEXT3_FS_SNAPSHOT_FILE
 	  currently, this is the only snapshot implementation.
 
 config NEXT3_FS_SNAPSHOT_FILE_PEEP
-	bool "Next3 Snapshot File - Peep through to block device"
+	bool "Next3 Snapshot File - Read through to block device"
 	depends on NEXT3_FS_SNAPSHOT_FILE
 	help
 	  on snapshot page read, the function next3_get_block() is called
@@ -329,7 +329,7 @@ config NEXT3_FS_SNAPSHOT_LIST
 	  Multiple incremental snapshots support
 
 config NEXT3_FS_SNAPSHOT_LIST_PEEP
-	bool "Next3 Snapshot List - Peep through to previous snapshot"
+	bool "Next3 Snapshot List - Read through to previous snapshot"
 	depends on NEXT3_FS_SNAPSHOT_LIST
 	depends on NEXT3_FS_SNAPSHOT_FILE_PEEP
 	help
@@ -396,7 +396,7 @@ config NEXT3_FS_SNAPSHOT_RACE_READ
 	select BLOCK_TRACKED_READ
 	help
 	  wait for pending read I/O requests to complete.
-	  when a snapshot file readpage peeps through to the block device,
+	  when a snapshot file readpage reads through to the block device,
 	  the snapshot page buffer is added to the block tracked readers.
 	  upon completion of the async read I/O request of the snapshot page,
 	  the page buffer is removed from the block tracked readers.

@@ -1699,9 +1699,27 @@ got_it:
 	if (read_through && sbh) {
 		/* wait for pending COW to complete */
 		next3_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
-		if (buffer_dirty(sbh))
-			/* sync fresh COW buffer to disk */
-			sync_dirty_buffer(sbh);
+		if (buffer_uptodate(sbh)) {
+			/*
+			 * Avoid disk I/O and copy snapshot data buffer directly
+			 * from memeory when possible.
+			 */
+			lock_buffer(bh_result);
+			memcpy(bh_result->b_data, sbh->b_data,
+					SNAPSHOT_BLOCK_SIZE);
+			set_buffer_uptodate(bh_result);
+			unlock_buffer(bh_result);
+		} else if (buffer_dirty(sbh)) {
+			/*
+			 * If snapshot data buffer is dirty (just been COWed),
+			 * then it is not safe to read it from disk yet.
+			 * We shouldn't get here because snapshot data buffer
+			 * only becomes dirty during COW and because we waited
+			 * for pending COW to complete, which means that a
+			 * dirty snapshot data buffer should be uptodate.
+			 */
+			WARN_ON(1);
+		}
 	}
 #endif
 	if (count > blocks_to_boundary)

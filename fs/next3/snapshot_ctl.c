@@ -1351,7 +1351,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	unsigned long count = le32_to_cpu(sbi->s_es->s_blocks_count);
 	unsigned long block_groups = sbi->s_groups_count;
 	long block_group = -1;
-	next3_fsblk_t bg_boundary = le32_to_cpu(sbi->s_es->s_first_data_block);
+	next3_fsblk_t bg_boundary = 0;
 	int err;
 
 	snapshot_debug(3, "snapshot (%u-%u) shrink: "
@@ -1373,7 +1373,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			cow_bitmap.b_state = 0;
 			cow_bitmap.b_blocknr = -1000;
 			cow_bh = &cow_bitmap;
-			bg_boundary += NEXT3_BLOCKS_PER_GROUP(start->i_sb);
+			bg_boundary += SNAPSHOT_BLOCKS_PER_GROUP;
 			block_group++;
 			if (block >= snapshot_blocks)
 				/*

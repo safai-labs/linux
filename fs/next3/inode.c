@@ -669,10 +669,9 @@ int next3_snapshot_shrink_blocks(handle_t *handle,
 	struct list_head *prev;
 	struct next3_inode_info *ei;
 	struct inode *inode = start;
-	struct next3_sb_info *sbi = NEXT3_SB(inode->i_sb);
-	struct next3_super_block *es = sbi->s_es;
 	unsigned long block_group = 0;
-	next3_fsblk_t bg_first = 0, bitmap_blk = 0;
+	next3_snapblk_t block = SNAPSHOT_BLOCK(iblock);
+	sector_t bitmap_iblk = 0;
 	int shrink, iter = 0, copies = 0;
 	int bit, mapped_blocks = 0, freed_blocks = 0;
 	const char *bitmap;
@@ -681,7 +680,7 @@ shrink_snapshot:
 	err = -EIO;
 	ei = NEXT3_I(inode);
 	prev = ei->i_orphan.prev;
-	if (prev == &sbi->s_snapshot_list)
+	if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
 		/* reached last snapshot without reaching 'end' */
 		goto out;
 
@@ -705,18 +704,14 @@ shrink_snapshot:
 					   depth, offsets, (partial - chain));
 		snapshot_debug(3, "skipping snapshot (%u) blocks: block=0x%llx"
 			       ", count=0x%x\n", inode->i_generation,
-			       SNAPSHOT_BLOCK(iblock), count);
+			       block, count);
 		goto shrink_indirect_blocks;
 	}
 
 	if (copies++ > 0)
 		goto shrink_data_blocks;
 	/* find the COW bitmap block of 'start' snapshot */
-	bg_first = SNAPSHOT_IBLOCK(le32_to_cpu(es->s_first_data_block));
-	block_group = ((next3_fsblk_t)iblock - bg_first) /
-		NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
-	bg_first += block_group * NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
-
+	block_group = SNAPSHOT_BLOCK_GROUP(block);
 	if (cow_bh && buffer_mapped(cow_bh))
 		/* we cached the COW bitmap block in a previous call */
 		sbh = sb_bread(inode->i_sb, cow_bh->b_blocknr);
@@ -725,7 +720,7 @@ shrink_snapshot:
 		desc = next3_get_group_desc(inode->i_sb, block_group,
 				NULL);
 	if (desc)
-		bitmap_blk =
+		bitmap_iblk =
 			SNAPSHOT_IBLOCK(le32_to_cpu(desc->bg_block_bitmap));
 
 shrink_data_blocks:
@@ -736,7 +731,7 @@ shrink_data_blocks:
 	while (count < maxblocks && count <= blocks_to_boundary) {
 		next3_fsblk_t blk = le32_to_cpu(*(partial->p + count));
 		if (cow_bh && !sbh && copies == 1 && blk &&
-			bitmap_blk && iblock + count == bitmap_blk) {
+			bitmap_iblk && iblock + count == bitmap_iblk) {
 			/* 'blk' is the COW bitmap physical block -
 			 * cache it in cow_bh for subsequent
 			 * calls */
@@ -744,9 +739,10 @@ shrink_data_blocks:
 			set_buffer_new(cow_bh);
 			sbh = sb_bread(inode->i_sb, blk);
 			snapshot_debug(3, "COW bitmap #%lu: snapshot "
-					"(%u), bitmap_blk=(+%lu)\n",
+					"(%u), bitmap_blk=(+%lld)\n",
 					block_group, inode->i_generation,
-					bitmap_blk - bg_first);
+					SNAPSHOT_BLOCK_GROUP_OFFSET(
+						SNAPSHOT_BLOCK(bitmap_iblk)));
 		}
 		if (blk)
 			mapped_blocks++;
@@ -761,7 +757,7 @@ shrink_data_blocks:
 		goto done_shrinking;
 
 	bitmap = NULL;
-	bit = iblock - bg_first;
+	bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	if (sbh && copies == 1) {
 		if (bit < 0 || bit + count >
 				NEXT3_BLOCKS_PER_GROUP(inode->i_sb))
@@ -813,7 +809,7 @@ shrink_indirect_blocks:
 done_shrinking:
 	snapshot_debug(3, "shrinking snapshot (%u) blocks: block=0x%llx, "
 		       "count=0x%x, copies=%d, mapped=0x%x, freed=0x%x\n",
-		       inode->i_generation, SNAPSHOT_BLOCK(iblock), count,
+		       inode->i_generation, block, count,
 		       copies, mapped_blocks, freed_blocks);
 
 	/* limit shrink of prev snapshot to this shrink count */

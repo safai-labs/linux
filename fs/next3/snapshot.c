@@ -494,17 +494,9 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       next3_fsblk_t block)
 {
 	struct buffer_head *cow_bh;
-	unsigned long block_group;
-	next3_grpblk_t bit;
-	struct super_block *sb = snapshot->i_sb;
-	struct next3_sb_info *sbi = NEXT3_SB(sb);
-	struct next3_super_block *es = sbi->s_es;
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
+	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	int snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
-
-	block_group = (block - le32_to_cpu(es->s_first_data_block)) /
-		NEXT3_BLOCKS_PER_GROUP(sb);
-	bit = (block - le32_to_cpu(es->s_first_data_block)) %
-		NEXT3_BLOCKS_PER_GROUP(sb);
 
 	/* check if block is in snapshot range (maybe fs was resized) */
 	if (block >= snapshot_blocks) {
@@ -534,18 +526,10 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
 			      next3_fsblk_t block, int count)
 {
 	struct buffer_head *exclude_bitmap_bh = NULL;
-	unsigned long block_group;
-	next3_grpblk_t bit, blocks_per_group;
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
+	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	struct super_block *sb = snapshot->i_sb;
-	struct next3_sb_info *sbi = NEXT3_SB(sb);
-	struct next3_super_block *es = sbi->s_es;
 	int err = 0, n = 0, excluded = 0;
-
-	blocks_per_group = NEXT3_BLOCKS_PER_GROUP(sb);
-	block_group = (block - le32_to_cpu(es->s_first_data_block)) /
-		blocks_per_group;
-	bit = (block - le32_to_cpu(es->s_first_data_block)) %
-		blocks_per_group;
 
 	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
 	if (!exclude_bitmap_bh)
@@ -555,8 +539,9 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
 	if (err)
 		return err;
 
-	while (count > 0 && bit < blocks_per_group) {
-		if (!next3_set_bit_atomic(sb_bgl_lock(sbi, block_group),
+	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
+		if (!next3_set_bit_atomic(sb_bgl_lock(NEXT3_SB(sb),
+						block_group),
 					bit, exclude_bitmap_bh->b_data)) {
 			n++;
 		} else if (n) {
@@ -593,21 +578,20 @@ __next3_snapshot_trace_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *bh, next3_fsblk_t block,
 			   int code, const char *fn)
 {
-	struct super_block *sb = handle->h_transaction->t_journal->j_private;
-	struct next3_sb_info *sbi = NEXT3_SB(sb);
-	struct next3_super_block *es = sbi->s_es;
-	unsigned long block_group = (block -
-				     le32_to_cpu(es->s_first_data_block)) /
-		NEXT3_BLOCKS_PER_GROUP(sb);
-	next3_grpblk_t bit = (block - le32_to_cpu(es->s_first_data_block)) %
-		NEXT3_BLOCKS_PER_GROUP(sb);
-	unsigned long ino = inode ? inode->i_ino : 1;
-	unsigned long inode_group = (ino - 1) / NEXT3_INODES_PER_GROUP(sb);
-	next3_grpblk_t inode_offset = (ino - 1) % NEXT3_INODES_PER_GROUP(sb);
+	unsigned long inode_group = 0;
+	next3_grpblk_t inode_offset = 0;
 
-	snapshot_debug_hl(4, "get_%s_access(i:%d/%ld, b:%d/%ld)"
+	if (inode) {
+		inode_group = (inode->i_ino - 1) /
+			NEXT3_INODES_PER_GROUP(inode->i_sb);
+		inode_offset = (inode->i_ino - 1) %
+			NEXT3_INODES_PER_GROUP(inode->i_sb);
+	}
+	snapshot_debug_hl(4, "get_%s_access(i:%d/%ld, b:%lu/%lu)"
 			" h_ref=%d, h_level=%d, code=%d\n",
-			fn, inode_offset, inode_group, bit, block_group,
+			fn, inode_offset, inode_group,
+			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
+			SNAPSHOT_BLOCK_GROUP(block),
 			handle->h_ref, handle->h_level, code);
 }
 

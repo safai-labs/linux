@@ -29,9 +29,10 @@
 
 /*
  * We assert that snapshot must use a file system with block size == page
- * size.  Snapshot inode direct blocks are reserved for snapshot meta
- * blocks.  Snapshot inode single indirect blocks are reserved for snapshot
- * data hiding.  Snapshot image starts at the first double indirect block.
+ * size (4K) and that the first file system block is block 0.
+ * Snapshot inode direct blocks are reserved for snapshot meta blocks.
+ * Snapshot inode single indirect blocks are not used.
+ * Snapshot image starts at the first double indirect block.
  * This way, a snapshot image block group can be mapped with 1 double
  * indirect block + 32 indirect blocks.  To mount the snapshot image, the
  * loop device should be configured with:

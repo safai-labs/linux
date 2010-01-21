@@ -174,6 +174,9 @@ extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 extern int next3_snapshot_copy_buffer(struct buffer_head *sbh,
 					   struct buffer_head *bh,
 					   const char *mask);
+/* helper function for next3_snapshot_get_block() */
+extern int next3_snapshot_read_block_bitmap(struct super_block *sb,
+		unsigned int block_group, struct buffer_head *bitmap_bh);
 #endif
 
 /*

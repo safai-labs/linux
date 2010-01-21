@@ -19,13 +19,12 @@
  * helper functions
  */
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 /*
  * use 'mask' to clear exclude bitmap bits from block bitmap
  * when creating COW bitmap
  */
 static inline void
-next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
+__next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
 {
 	const u32 *ps = (const u32 *)src, *pm = (const u32 *)mask;
 	u32 *pd = (u32 *)dst;
@@ -34,34 +33,40 @@ next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
 	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
 		*pd++ = *ps++ & ~*pm++;
 }
-#endif
 
 /*
- * next3_snapshot_copy_buffer_locked()
- * copy data to locked snapshot buffer and unlock it
- * 'mask' data before copying to snapshot.
+ * copy 'data' to (locked) snapshot buffer 'sbh'
+ * 'mask' data before copying it to snapshot buffer
+ */
+static inline void
+__next3_snapshot_copy_buffer(struct buffer_head *sbh,
+		const char *data, const char *mask)
+{
+	if (mask)
+		__next3_snapshot_copy_bitmap(sbh->b_data, data, mask);
+	else
+		memcpy(sbh->b_data, data, SNAPSHOT_BLOCK_SIZE);
+	set_buffer_uptodate(sbh);
+}
+
+/*
+ * next3_snapshot_complete_cow()
+ * unlock a newly COWed snapshot buffer and complete the COW operation.
+ * optinally, sync the buffer to disk or add it to the current transaction
+ * as dirty data.
  */
 static inline int
-next3_snapshot_copy_buffer_locked(handle_t *handle,
-		struct buffer_head *sbh, struct buffer_head *bh,
-		const char *data, const char *mask, int sync)
+next3_snapshot_complete_cow(handle_t *handle,
+		struct buffer_head *sbh, struct buffer_head *bh, int sync)
 {
 	int err = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	SNAPSHOT_DEBUG_ONCE;
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (mask)
-		next3_snapshot_copy_bitmap(sbh->b_data, data, mask);
-	else
-#endif
-		memcpy(sbh->b_data, data, SNAPSHOT_BLOCK_SIZE);
-	set_buffer_uptodate(sbh);
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	/* wait for completion of tracked reads before completing COW */
-	while (buffer_tracked_readers_count(bh) > 0) {
+	while (bh && buffer_tracked_readers_count(bh) > 0) {
 		snapshot_debug_once(2, "waiting for tracked reads: "
 			    "block = [%lld/%lld], "
 			    "tracked_readers_count = %d...\n",
@@ -72,8 +77,8 @@ next3_snapshot_copy_buffer_locked(handle_t *handle,
 		yield();
 	}
 #endif
-
 	unlock_buffer(sbh);
+
 	if (handle)
 		err = next3_journal_dirty_data(handle, sbh);
 	mark_buffer_dirty(sbh);
@@ -88,18 +93,18 @@ next3_snapshot_copy_buffer_locked(handle_t *handle,
 }
 
 /*
- * next3_snapshot_copy_buffer_ordered()
+ * next3_snapshot_copy_buffer_cow()
  * helper function for next3_snapshot_test_and_cow()
- * copy buffer to locked snapshot buffer and unlock it
- * add snapshot buffer to current transaction (as dirty data)
+ * copy COWed buffer to new allocated (locked) snapshot buffer
+ * add complete the COW operation
  */
 static inline int
-next3_snapshot_copy_buffer_ordered(handle_t *handle,
+next3_snapshot_copy_buffer_cow(handle_t *handle,
 				   struct buffer_head *sbh,
 				   struct buffer_head *bh)
 {
-	return next3_snapshot_copy_buffer_locked(handle, sbh, bh,
-			bh->b_data, NULL, 0);
+	__next3_snapshot_copy_buffer(sbh, bh->b_data, NULL);
+	return next3_snapshot_complete_cow(handle, sbh, bh, 0);
 }
 
 /*
@@ -112,15 +117,10 @@ next3_snapshot_copy_buffer_ordered(handle_t *handle,
 int next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		struct buffer_head *bh, const char *mask)
 {
-	/*
-	 * The path coming from snapshot_take() didn't start pending
-	 * COW nor did it lock the snaphshot buffer, because these
-	 * blocks are pre-allocated in snapshot_create().
-	 */
-	next3_snapshot_start_pending_cow(sbh);
 	lock_buffer(sbh);
-	next3_snapshot_copy_buffer_locked(NULL, sbh, bh,
-			bh->b_data, mask, 1);
+	__next3_snapshot_copy_buffer(sbh, bh->b_data, mask);
+	unlock_buffer(sbh);
+	mark_buffer_dirty(sbh);
 	return 0;
 }
 
@@ -316,36 +316,24 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 
 /*
- * next3_snapshot_init_cow_bitmap() creates the COW bitmap on first time
- * block group access after snapshot take.
+ * next3_snapshot_init_cow_bitmap() init a new allocated (locked) COW bitmap
+ * buffer on first time block group access after snapshot take.
  * COW bitmap is created by masking the block bitmap with exclude bitmap.
- *
- * Return COW bitmap buffer_head on success or NULL in case of failure.
  */
-static struct buffer_head *
-next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot,
-			       unsigned int block_group)
+static int
+next3_snapshot_init_cow_bitmap(struct super_block *sb,
+		unsigned int block_group, struct buffer_head *cow_bh)
 {
-	struct super_block *sb = snapshot->i_sb;
-	struct buffer_head *bitmap_bh, *cow_bh = NULL;
+	struct buffer_head *bitmap_bh;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
-	next3_fsblk_t cow_bitmap_blk;
 	const char *data, *mask = NULL;
 	struct journal_head *jh;
-	int err;
 
 	bitmap_bh = read_block_bitmap(sb, block_group);
 	if (!bitmap_bh)
-		goto out;
-
-	err = next3_snapshot_map_blocks(handle, snapshot, bitmap_bh->b_blocknr,
-					1, &cow_bitmap_blk, SNAPSHOT_BITMAP);
-	if (err > 0)
-		cow_bh = sb_getblk(sb, cow_bitmap_blk);
-	if (!cow_bh)
-		goto out;
+		return -EIO;
 
 	data = bitmap_bh->b_data;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
@@ -370,28 +358,33 @@ next3_snapshot_init_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (jh && jh->b_committed_data)
 		data = jh->b_committed_data;
 
-	lock_buffer(cow_bh);
-	next3_snapshot_copy_buffer_locked(NULL, cow_bh, bitmap_bh,
-			data, mask, 1);
+	__next3_snapshot_copy_buffer(cow_bh, data, mask);
 
 	jbd_unlock_bh_state(bitmap_bh);
 	jbd_unlock_bh_journal_head(bitmap_bh);
 
-	snapshot_debug(3, "COW bitmap #%u of snapshot (%u) "
-			"mapped to block [%lu/%lu]\n",
-			block_group, snapshot->i_generation,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bitmap_blk),
-			SNAPSHOT_BLOCK_GROUP(cow_bitmap_blk));
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-	handle->h_cow_bitmaps++;
-#endif
-
-out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	brelse(exclude_bitmap_bh);
 #endif
 	brelse(bitmap_bh);
-	return cow_bh;
+	return 0;
+}
+
+/*
+ * next3_snapshot_read_block_bitmap()
+ * helper function for next3_snapshot_get_block()
+ * used for fixing the block bitmap buffer when
+ * reading through to block device.
+ */
+int next3_snapshot_read_block_bitmap(struct super_block *sb,
+		unsigned int block_group, struct buffer_head *bitmap_bh)
+{
+	int err;
+
+	lock_buffer(bitmap_bh);
+	err = next3_snapshot_init_cow_bitmap(sb, block_group, bitmap_bh);
+	unlock_buffer(bitmap_bh);
+	return err;
 }
 
 /*
@@ -412,7 +405,7 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	struct buffer_head *cow_bh;
 	next3_fsblk_t bitmap_blk;
 	next3_fsblk_t cow_bitmap_blk;
-	int err;
+	int err = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_BITMAP
 	SNAPSHOT_DEBUG_ONCE;
 #endif
@@ -465,24 +458,64 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * is not yet allocated, create the new COW bitmap block.
 	 */
 	cow_bh = next3_bread(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
-			     SNAPSHOT_READ, &err);
-	if (!cow_bh)
-		cow_bh = next3_snapshot_init_cow_bitmap(handle, snapshot,
-							block_group);
-
-	if (!cow_bh)
-		snapshot_debug(1, "failed to init COW bitmap %u of snapshot "
-			       "(%u)\n", block_group, snapshot->i_generation);
-
-	spin_lock(sb_bgl_lock(sbi, block_group));
+				SNAPSHOT_READ, &err);
 	if (cow_bh)
+		goto out;
+
+	/* allocate snapshot block for COW bitmap */
+	cow_bh = next3_getblk(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
+				SNAPSHOT_BITMAP, &err);
+	if (!cow_bh || err < 0)
+		goto out;
+	if (!err) {
+		/*
+		 * err should be 1 to indicate new allocated (locked) buffer.
+		 * if err is 0, it means that someone mapped this block
+		 * before us, while we are updating the COW bitmap cache.
+		 * the pending COW bitmap code should prevent that.
+		 */
+		WARN_ON(1);
+		err = -EIO;
+		goto out;
+	}
+
+	err = next3_snapshot_init_cow_bitmap(sb, block_group, cow_bh);
+	if (err)
+		goto out;
+	/*
+	 * complete pending COW operation. no need to wait for tracked reads
+	 * of block bitmap, because it is copied directly to page buffer by
+	 * next3_snapshot_read_block_bitmap()
+	 */
+	err = next3_snapshot_complete_cow(handle, cow_bh, NULL, 1);
+	if (err)
+		goto out;
+
+	snapshot_debug(3, "COW bitmap #%u of snapshot (%u) "
+			"mapped to block [%lld/%lld]\n",
+			block_group, snapshot->i_generation,
+			SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bh->b_blocknr),
+			SNAPSHOT_BLOCK_GROUP(cow_bh->b_blocknr));
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+	handle->h_cow_bitmaps++;
+#endif
+
+out:
+	spin_lock(sb_bgl_lock(sbi, block_group));
+	if (!err && cow_bh) {
 		/* update cow bitmap cache with snapshot cow bitmap block */
 		desc->bg_cow_bitmap = cow_bh->b_blocknr;
-	else
+	} else {
 		/* reset cow bitmap cache */
 		desc->bg_cow_bitmap = 0;
+		brelse(cow_bh);
+		cow_bh = NULL;
+	}
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 
+	if (!cow_bh)
+		snapshot_debug(1, "failed to read COW bitmap %u of snapshot "
+				"(%u)\n", block_group, snapshot->i_generation);
 	return cow_bh;
 }
 
@@ -823,7 +856,7 @@ test_cow:
 		/* sleep 1 tunable delay unit */
 		snapshot_test_delay(SNAPTEST_COW);
 #endif
-		err = next3_snapshot_copy_buffer_ordered(handle, sbh, bh);
+		err = next3_snapshot_copy_buffer_cow(handle, sbh, bh);
 		if (err)
 			goto out;
 		snapshot_debug(3, "block [%lld/%lld] of snapshot (%u) "

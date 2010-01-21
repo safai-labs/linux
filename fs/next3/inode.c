@@ -1636,8 +1636,9 @@ retry:
 		goto out_mutex;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	if (create == SNAPSHOT_COPY || create == SNAPSHOT_BITMAP) {
+	if (create >= SNAPSHOT_COPY) {
 		/*
+		 * COWing block or creating COW bitmap.
 		 * we now have exclusive access to the COW destination block
 		 * and we are about to create the snapshot block mapping
 		 * and make it public.
@@ -1828,7 +1829,8 @@ struct buffer_head *next3_getblk(handle_t *handle, struct inode *inode,
 			goto err;
 		}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-		if (create == SNAPSHOT_COPY && buffer_new(&dummy)) {
+		if (create >= SNAPSHOT_COPY && buffer_new(&dummy)) {
+			/* COWing block or creating COW bitmap */
 			lock_buffer(bh);
 			clear_buffer_uptodate(bh);
 			set_buffer_new(bh);

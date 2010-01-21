@@ -2515,6 +2515,9 @@ out_unlock:
 static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 			struct buffer_head *bh_result, int create)
 {
+	unsigned long block_group;
+	struct next3_group_desc *desc;
+	next3_fsblk_t bitmap_blk = 0;
 	int err;
 
 	BUG_ON(create != 0);
@@ -2526,16 +2529,32 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 		       "err = %d\n", iblock, buffer_mapped(bh_result) ?
 		       bh_result->b_blocknr : 0, err);
 
-	if (buffer_tracked_read(bh_result)) {
-		snapshot_debug(3, "started tracked read: block = [%lld/%lld]\n",
-				SNAPSHOT_BLOCK_GROUP_OFFSET(
-						    bh_result->b_blocknr),
-				SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr));
-		/* sleep 1 tunable delay unit */
-		snapshot_test_delay(SNAPTEST_READ);
+	if (err || !buffer_tracked_read(bh_result))
+		return err;
+
+	/* check for read through to block bitmap */
+	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
+	desc = next3_get_group_desc(inode->i_sb, block_group, NULL);
+	if (desc)
+		bitmap_blk = le32_to_cpu(desc->bg_block_bitmap);
+	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+		/* copy fixed block bitmap directly to page buffer */
+		cancel_buffer_tracked_read(bh_result);
+		/* cancel_buffer_tracked_read() clears mapped flag */
+		set_buffer_mapped(bh_result);
+		snapshot_debug(2, "fixing snapshot block bitmap #%lu\n",
+				block_group);
+		return next3_snapshot_read_block_bitmap(inode->i_sb,
+				block_group, bh_result);
 	}
 
-	return err;
+	snapshot_debug(3, "started tracked read: block = [%lld/%lu]\n",
+			SNAPSHOT_BLOCK_GROUP_OFFSET(
+				bh_result->b_blocknr),
+			block_group);
+	/* sleep 1 tunable delay unit */
+	snapshot_test_delay(SNAPTEST_READ);
+	return 0;
 }
 
 static int next3_snapshot_readpage(struct file *file, struct page *page)

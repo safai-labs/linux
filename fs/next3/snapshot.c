@@ -537,17 +537,17 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 				  "[%d/%lu] out of range (snapshot_blocks=%d)"
 				  "\n", snapshot->i_generation, bit,
 				  block_group, snapshot_blocks);
-		return 0;
+		return SNAPSHOT_OK;
 	}
 
 	cow_bh = next3_snapshot_read_cow_bitmap(handle, snapshot, block_group);
 	if (!cow_bh)
-		return -1;
+		return SNAPSHOT_FAIL;
 	/*
 	 * if the bit is set in the COW bitmap,
 	 * then this block is in use by some snapshot.
 	 */
-	return next3_test_bit(bit, cow_bh->b_data) ? 1 : 0;
+	return next3_test_bit(bit, cow_bh->b_data) ? SNAPSHOT_COW : SNAPSHOT_OK;
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
@@ -635,6 +635,59 @@ __next3_snapshot_trace_cow(handle_t *handle, struct inode *inode,
 #define next3_snapshot_trace_cow(handle, inode, bh, block, code, fn)
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+/*
+ * Journal COW cache functions.
+ * a block can only COWed once per snapshot,
+ * so a block can only COWed once per transaction,
+ * so a buffer that belongs to the current transaction
+ * and was already COWed, doesn't need to be COWed now
+ */
+static int
+next3_snapshot_test_cow_cache(handle_t *handle, struct buffer_head *bh)
+{
+	struct journal_head *jh;
+
+	/* check the COW tid in the journal head */
+	if (bh && buffer_jbd(bh)) {
+		jbd_lock_bh_state(bh);
+		jh = bh2jh(bh);
+		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid)
+			jh = NULL;
+		jbd_unlock_bh_state(bh);
+		if (jh)
+			/*
+			 * This is not the first time this block is being
+			 * COWed in the running transaction, so we don't
+			 * need to COW it again.
+			 */
+			return SNAPSHOT_OK;
+	}
+	return SNAPSHOT_COW;
+}
+
+static void
+next3_snapshot_update_cow_cache(handle_t *handle, struct buffer_head *bh)
+{
+	struct journal_head *jh;
+
+	if (bh && buffer_jbd(bh)) {
+		jbd_lock_bh_state(bh);
+		jh = bh2jh(bh);
+		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid) {
+			/*
+			 * this is the first time this block is being COWed
+			 * in the runnning transaction.
+			 * update the COW tid in the journal head
+			 * to mark that this block doesn't need to be COWed.
+			 */
+			jh->b_cow_tid = handle->h_transaction->t_tid;
+		}
+		jbd_unlock_bh_state(bh);
+	}
+}
+#endif
+
 /*
  * next3_snapshot_test_and_cow() tests if the block should be cowed
  * if the 'cmd' is SNAPSHOT_COPY, try to copy the block to the snapshot
@@ -651,13 +704,12 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 			    struct buffer_head *bh, next3_fsblk_t block,
 			    int *pcount, int cmd, const char *fn)
 {
-#warning function too long, over 300 LoC
+#warning function too long, over 250 LoC
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *snapshot = next3_snapshot_get_active(sb);
 	struct buffer_head *sbh = NULL;
-	struct journal_head *jh;
 	next3_fsblk_t blk = 0;
-	int err = -EIO;
+	int err = 0, ret = SNAPSHOT_OK;
 	int count = pcount ? *pcount : 1;
 	int clear = 0;
 
@@ -667,12 +719,12 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	if (handle->h_level++ >= SNAPSHOT_MAX_RECURSION_LEVEL) {
 		snapshot_debug_hl(1,
 			  "COW error: max recursion level exceeded!\n");
-		goto skip_cow;
+		err = -EIO;
+		goto out;
 	}
 
-	err = SNAPSHOT_OK;
 	if (!snapshot)
-		goto skip_cow;
+		goto out;
 
 	/* avoid recursion on active snapshot file updates */
 	if (handle->h_level > 1 ||
@@ -682,38 +734,27 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		(inode == snapshot && cmd != SNAPSHOT_CLEAR)) {
 		snapshot_debug_hl(4, "active snapshot file update - "
 				  "skip block cow!\n");
-		goto skip_cow;
+		goto out;
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
-	/* first check the COW tid in the journal head */
-	if (bh && buffer_jbd(bh)) {
-		jbd_lock_bh_state(bh);
-		jh = bh2jh(bh);
-		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid)
-			jh = NULL;
-		jbd_unlock_bh_state(bh);
-		if (jh) {
-			/*
-			 * This is not the first time this block is being
-			 * COWed in the running transaction, so we don't
-			 * need to COW it again.
-			 */
+	/* check if the buffer was COWed in the current transaction */
+	ret = next3_snapshot_test_cow_cache(handle, bh);
+	if (ret == SNAPSHOT_OK) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-			handle->h_cow_ok_jh++;
+		handle->h_cow_ok_jh++;
 #endif
-			goto skip_cow;
-		}
+		goto out;
 	}
 #endif
 
 	if (!inode || cmd == SNAPSHOT_READ)
 		/* skip excluded file test */
-		goto test_cow;
+		goto test_cow_bitmap;
 	clear = next3_snapshot_excluded(inode);
 	if (!clear)
 		/* file is not excluded */
-		goto test_cow;
+		goto test_cow_bitmap;
 
 	if (cmd < 0 || clear < 0) {
 		/* excluded file block move/delete/clear access
@@ -736,7 +777,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 #endif
 	}
 
-test_cow:
+test_cow_bitmap:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1)) {
 		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/user "
@@ -746,25 +787,28 @@ test_cow:
 	}
 #endif
 
-	/* first get the COW bitmap and test if the block needs to be COWed */
+	/* get the COW bitmap and test if the block needs to be COWed */
 	err = next3_snapshot_test_cow_bitmap(handle, snapshot, block);
+	if (err < 0)
+		goto out;
+	ret = err;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-	if (err == 0)
+	if (ret == SNAPSHOT_OK)
 		handle->h_cow_ok_clear++;
 #endif
-	if (err && clear < 0) {
+	if (ret == SNAPSHOT_COW && clear < 0) {
 		/* ignore COW bitmap test result for ignored file blocks */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		snapshot_debug_hl(1, "warning: file (%lu) is excluded from "
 				  "snapshot but block (%lu) is set in "
 				  "COW bitmap!\n", inode->i_ino, block);
 #endif
-		err = 0;
+		ret = SNAPSHOT_OK;
 	}
-	if (err <= 0)
-		goto out;
+	if (ret == SNAPSHOT_OK)
+		goto cowed;
 
-	/* then test if snapshot already has a private copy of the block */
+	/* test if snapshot already has a private copy of the block */
 	err = next3_snapshot_map_blocks(handle, snapshot, block, 1, &blk,
 					SNAPSHOT_READ);
 	if (err < 0)
@@ -774,10 +818,10 @@ test_cow:
 		handle->h_cow_ok_mapped++;
 #endif
 		sbh = sb_find_get_block(sb, blk);
+		ret = SNAPSHOT_OK;
 		goto test_pending_cow;
 	}
 
-	err = SNAPSHOT_COW;
 	if (cmd == SNAPSHOT_READ)
 		goto out;
 
@@ -792,33 +836,30 @@ test_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 			handle->h_cow_ok_clear++;
 #endif
-			err = 0;
-			goto out;
+			ret = SNAPSHOT_OK;
+			goto cowed;
 		}
 		/* move block from inode to snapshot */
 		err = next3_snapshot_map_blocks(handle, snapshot, block,
 						count, NULL, cmd);
-		if (err) {
-			if (err > 0) {
-				count = err;
-				if (pcount)
-					*pcount = count;
-				vfs_dq_free_block(inode, err);
-				err = SNAPSHOT_MOVED;
+		if (err > 0) {
+			count = err;
+			if (pcount)
+				*pcount = count;
+			vfs_dq_free_block(inode, count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-				/* set moved blocks in exclude bitmap */
-				clear = -1;
+			/* set moved blocks in exclude bitmap */
+			clear = -1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-				handle->h_cow_moved++;
+			handle->h_cow_moved++;
 #endif
-			}
-			goto out;
+			ret = SNAPSHOT_MOVED;
+			goto cowed;
 		}
 	}
 #endif
 
-	err = SNAPSHOT_COW;
 	if (cmd != SNAPSHOT_COPY)
 		goto out;
 
@@ -836,7 +877,7 @@ test_cow:
 			goto out;
 	}
 
-	/* next try to allocate snapshot block to make a backup copy */
+	/* try to allocate snapshot block to make a backup copy */
 	sbh = next3_getblk(handle, snapshot, SNAPSHOT_IBLOCK(block),
 			   SNAPSHOT_COPY, &err);
 	if (!sbh || err < 0)
@@ -893,47 +934,33 @@ test_pending_cow:
 	}
 #endif
 
-	err = SNAPSHOT_OK;
-out:
+	ret = SNAPSHOT_OK;
+cowed:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
-	if (bh && buffer_jbd(bh)) {
-		jbd_lock_bh_state(bh);
-		jh = bh2jh(bh);
-		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid) {
-			/*
-			 * this is the first time this block is being COWed
-			 * in the runnning transaction.
-			 * update the COW tid in the journal head
-			 * to mark that this block doesn't need to be COWed.
-			 */
-			if (!err)
-				jh->b_cow_tid = handle->h_transaction->t_tid;
-		}
-		jbd_unlock_bh_state(bh);
-	}
+	/* mark the buffer COWed in the current transaction */
+	next3_snapshot_update_cow_cache(handle, bh);
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (clear < 0) {
 		/* mark blocks in exclude bitmap */
-		count = next3_snapshot_exclude_blocks(handle, snapshot,
+		err = next3_snapshot_exclude_blocks(handle, snapshot,
 						      block, count);
-		if (count < 0)
-			err = count;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-		else if (count > 0)
+		if (err > 0)
 			handle->h_cow_cleared++;
 #endif
 	}
 #endif
 
+out:
 	brelse(sbh);
-skip_cow:
+	if (err < 0)
+		ret = err;
 	handle->h_level--;
-	snapshot_debug_hl(4, "} = %d\n", err);
+	snapshot_debug_hl(4, "} = %d\n", ret);
 	snapshot_debug_hl(4, ".\n");
-
-	return err;
+	return ret;
 }
 
 /*

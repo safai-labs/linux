@@ -683,6 +683,15 @@ out_handle:
  */
 int next3_snapshot_take(struct inode *inode)
 {
+	/*
+	 * If we call next3_getblk() with NULL handle
+	 * we will get read through access to snapshot inode.
+	 * We don't want read through access in snapshot_take(),
+	 * so we call next3_getblk() with this dummy handle.
+	 * Because we are not allocating snapshot block here
+	 * the handle will not be used anyway.
+	 */
+	static handle_t dummy_handle;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct list_head *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
 	struct list_head *l = list->next;
@@ -718,7 +727,7 @@ int next3_snapshot_take(struct inode *inode)
 		snapshot_debug(1, "warning: super block of snapshot (%u) is "
 			       "broken!\n", inode->i_generation);
 	} else
-		sbh = next3_getblk(NULL, inode, SNAPSHOT_IBLOCK(0),
+		sbh = next3_getblk(&dummy_handle, inode, SNAPSHOT_IBLOCK(0),
 				   SNAPSHOT_READ, &err);
 
 	if (!sbh || sbh->b_blocknr == 0) {
@@ -803,7 +812,8 @@ int next3_snapshot_take(struct inode *inode)
 		long iblock = SNAPSHOT_IBLOCK(bh->b_blocknr);
 
 		brelse(sbh);
-		sbh = next3_getblk(NULL, inode, iblock, SNAPSHOT_READ, &err);
+		sbh = next3_getblk(&dummy_handle, inode, iblock,
+				SNAPSHOT_READ, &err);
 		if (!sbh || sbh->b_blocknr == bh->b_blocknr) {
 			snapshot_debug(1, "warning: GDT block (%lld) of "
 				       "snapshot (%u) not allocated\n",
@@ -860,7 +870,7 @@ copy_self_inode:
 #endif
 		if (bh) {
 			brelse(sbh);
-			sbh = next3_getblk(NULL, inode,
+			sbh = next3_getblk(&dummy_handle, inode,
 					   SNAPSHOT_IBLOCK(bh->b_blocknr),
 					   SNAPSHOT_READ, &err);
 		}

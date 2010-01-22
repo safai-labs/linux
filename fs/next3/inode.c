@@ -1701,6 +1701,8 @@ got_it:
 			 * Avoid disk I/O and copy snapshot data buffer directly
 			 * from memeory when possible.
 			 */
+			BUG_ON(!sbh->b_data);
+			BUG_ON(!bh_result->b_data);
 			lock_buffer(bh_result);
 			memcpy(bh_result->b_data, sbh->b_data,
 					SNAPSHOT_BLOCK_SIZE);
@@ -2523,14 +2525,18 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 	BUG_ON(create != 0);
 	BUG_ON(buffer_tracked_read(bh_result));
 
-	err = next3_get_block(inode, iblock, bh_result, 0);
+	err = next3_get_blocks_handle(NULL, inode, iblock,
+					1, bh_result, 0);
 
 	snapshot_debug(4, "next3_snapshot_get_block(%lld): block = (%lld), "
 		       "err = %d\n", iblock, buffer_mapped(bh_result) ?
 		       bh_result->b_blocknr : 0, err);
 
-	if (err || !buffer_tracked_read(bh_result))
+	if (err < 0)
 		return err;
+
+	if (!buffer_tracked_read(bh_result))
+		return 0;
 
 	/* check for read through to block bitmap */
 	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);

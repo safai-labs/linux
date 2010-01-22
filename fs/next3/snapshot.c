@@ -227,10 +227,11 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		return -EPERM;
 	} else if (cmd == SNAPSHOT_READ) {
 		/*
-		 * Snapshot image read access: no handle or h_level == 0
-		 * indicates this is a direct user read
+		 * Snapshot image read access: no handle
+		 * indicates this is next3_snapshot_readpage()
+		 * calling next3_snapshot_get_block()
 		 */
-		if (!handle || handle->h_level == 0)
+		if (!handle)
 			goto read_through;
 	}
 	/* normal inode access */

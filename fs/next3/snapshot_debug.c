@@ -1,3 +1,4 @@
+//#pragma ezk
 /*
  * linux/fs/next3/snapshot_debug.c
  *
@@ -24,6 +25,7 @@
 
 const char *snapshot_ident = SNAPSHOT_IDENT_STR + SNAPSHOT_IDENT_MAX;
 
+#warning plz document purpose and use of these five tests and their delays (debuugging races, it looks like)
 static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
 	"test-take-delay-msec",
 	"test-delete-delay-msec",
@@ -97,6 +99,7 @@ const char *snapshot_cmd_str(int cmd)
 	}
 }
 
+#warning _ret_str doesnt seem to be used anywhere in your code
 const char *snapshot_ret_str(int ret)
 {
 	return ret ? "in-use" : "not in-use";

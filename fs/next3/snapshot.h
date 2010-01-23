@@ -1,3 +1,4 @@
+//#pragma ezk
 /*
  * linux/fs/next3/snapshot.h
  *
@@ -23,7 +24,7 @@
 
 /*
  * use signed 64bit for snapshot image addresses
- * negative addresses are used to refernce snapshot meta blocks
+ * negative addresses are used to reference snapshot meta blocks
  */
 #define next3_snapblk_t long long
 
@@ -277,6 +278,7 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
  * Ignored file metadata blocks are not COWed to snapshot.
  * Excluded file metadata blocks are zeroed in the snapshot file.
  */
+#warning this function retuns -1, 0, or +1: documentation in comment above mismatches. say exactly when it returns one of these 3 values.
 static inline int next3_snapshot_excluded(struct inode *inode)
 {
 	if (!inode || !S_ISREG(inode->i_mode))
@@ -336,6 +338,7 @@ static inline int next3_snapshot_is_active(struct inode *inode)
  */
 static inline void next3_snapshot_hide(struct next3_inode *raw_inode)
 {
+#warning locking semantics on i_data?
 	raw_inode->i_block[SNAPSHOT_META_DIND] =
 		raw_inode->i_block[NEXT3_DIND_BLOCK];
 	raw_inode->i_block[SNAPSHOT_META_TIND] =
@@ -349,6 +352,7 @@ static inline void next3_snapshot_hide(struct next3_inode *raw_inode)
  */
 static inline void next3_snapshot_unhide(struct next3_inode_info *ei)
 {
+#warning locking semantics on i_data?
 	if (ei->i_data[SNAPSHOT_META_DIND])
 		ei->i_data[NEXT3_DIND_BLOCK] = ei->i_data[SNAPSHOT_META_DIND];
 	if (ei->i_data[SNAPSHOT_META_TIND])
@@ -363,6 +367,7 @@ static inline void next3_snapshot_unhide(struct next3_inode_info *ei)
  */
 static inline void next3_snapshot_exclude_hide(struct next3_inode *raw_inode)
 {
+#warning any locking issue here and in other macros in this .h file? see my comment in exclude_expose below.
 	raw_inode->i_block[NEXT3_IND_BLOCK] = 0;
 }
 
@@ -380,9 +385,10 @@ static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
 	 * 2. No user has access to the exclude inode
 	 * 3. The exclude inode is never truncated on a mounted next3
 	 * 4. The 'expose' is only to the in-memory inode (so fsck is happy)
-	 * 5. A healthy exclude inode has blocks only on the DIND brnach
+	 * 5. A healthy exclude inode has blocks only on the DIND branch
 	 * XXX: is that a problem?
 	 */
+#warning is there any locking issues here?  can i_data be changed back or to something else by another thread? document behavior.
 	ei->i_data[NEXT3_IND_BLOCK] = ei->i_data[NEXT3_DIND_BLOCK];
 }
 #endif
@@ -403,6 +409,7 @@ static inline void next3_snapshot_start_pending_cow(struct buffer_head *sbh)
 	get_bh(sbh);
 }
 
+#warning the word "cancel" here could be confusing to imply that this is an abort operation. but its used for synchronization, to ensure that only one thread does a COW, right? if so, explain this in comment here.
 static inline void next3_snapshot_cancel_pending_cow(struct buffer_head *sbh)
 {
 	/*

@@ -33,6 +33,7 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case NEXT3_IOC_GETFLAGS:
 		next3_get_inode_flags(ei);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+#pragma ezk
 		next3_snapshot_get_flags(ei, filp);
 #endif
 		flags = ei->i_flags & NEXT3_FL_USER_VISIBLE;
@@ -61,6 +62,7 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* this may or may not be a snapshot operation
 		 * but to be on the safe side just take the mutex */
 		mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+#warning can mutex_lock be moved lower to make critical section shorter?
 #endif
 
 		/* Is it quota file? Do not allow user to mess with it */

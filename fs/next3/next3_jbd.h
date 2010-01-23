@@ -338,6 +338,7 @@ int next3_force_commit(struct super_block *sb);
 
 static inline int next3_should_journal_data(struct inode *inode)
 {
+#pragma ezk
 	if (!S_ISREG(inode->i_mode))
 		return 1;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == NEXT3_MOUNT_JOURNAL_DATA)

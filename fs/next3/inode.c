@@ -243,6 +243,9 @@ no_delete:
 	clear_inode(inode);	/* We must guarantee clearing of inode... */
 }
 
+#warning you are defining this struct twice in snapshot_ctl.c and inode.c, slightly differently each time (just order of fields differs). Plz define only once if you can, else use two different structures and explain why two similar ones are needed.
+#warning if this definition came from ext3 directly, and you need it, then mv it to common .h file
+#warning and dont use typedefs: lkml doesnt like them.
 typedef struct {
 	__le32	*p;
 	__le32	key;

@@ -1,3 +1,4 @@
+//#pragma ezk
 /*
  * include/linux/buffer_head.h
  *
@@ -275,9 +276,9 @@ extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 
 /*
- * tracked readers take a track reader reference count
+ * Tracked readers take a track reader reference count
  * on the block device buffer cache entry.
- * using upper dword of b_count to count tracked readers
+ * We use the upper dword of b_count to count tracked readers.
  */
 #define BH_TRACKED_READERS_COUNT_SHIFT 16
 
@@ -288,6 +289,7 @@ static inline void get_bh_tracked_reader(struct buffer_head *_bh)
 
 static inline void put_bh_tracked_reader(struct buffer_head *_bh)
 {
+#warning why do you need the smp mb here?
 	smp_mb__before_atomic_dec();
 	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &_bh->b_count);
 }

@@ -89,6 +89,8 @@ static void next3_snapshot_dump(struct inode *inode);
  */
 void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 {
+#pragma ezk
+#warning _get_flags fxn is only used in ioctl.c. can move it there and mk it static
 	int open_count = atomic_read(&filp->f_path.dentry->d_count);
 	/*
 	 * 1 count for ioctl (lsattr)
@@ -107,11 +109,14 @@ void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 			     unsigned int flags)
 {
+#warning _set_flags fxn is only used in ioctl.c. can move it there and mk it static
 	unsigned int oldflags = NEXT3_I(inode)->i_flags;
 	int err = 0;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 	if (flags & NEXT3_SNAPFILE_DUMP_FL) {
+#warning it seems ugly to have to save the current debug level, hardcode it to 5, then reset it.
+#warning it migh be easier to pass the level you want to snapshot_dump and let it handle it there?
 		int debug = snapshot_enable_debug;
 		snapshot_enable_debug = 5;
 		next3_snapshot_dump(inode);
@@ -975,6 +980,7 @@ out_unlockfs:
 		goto out_err;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#warning instead of this 'if' below, maybe have snapshot_dump do the check?
 	if (snapshot_enable_debug >= 5)
 		next3_snapshot_dump(inode);
 #endif
@@ -1009,7 +1015,7 @@ out_err:
  *
  * 2. take snapshot 1
  * 3. remove 'foo' - snapshot 1 now contains all 'foo' blocks
- * 4. take snapshot 2 and snaphsot 3
+ * 4. take snapshot 2 and snapshot 3
  * 5. delete snapshot 1 - 'foo' blocks are excluded from snapshot 3 and freed
  * 6. create a 100M file 'bar' in the root directory - 'foo' blocks are
  *    reallocated.
@@ -1020,7 +1026,7 @@ out_err:
  * 11. delete snapshot 4 - merge moves 'bar' blocks into snapshot 2
  *
  * At the end of this long example, snapshot 2 disk usage is ~100M, while it
- * does not actully contain any reference to such a large file.  It contains
+ * does not actually contain any reference to such a large file.  It contains
  * a reference to snapshot 1, which was 100M, but should have been excluded
  * from snapshot 2, but it wasn't, because snapshot 1 was deleted when
  * snapshot 3 was active.
@@ -1031,7 +1037,7 @@ out_err:
  * example above cannot be reclaimed until snapshot 2 is deleted.
  *
  * Called under i_mutex and snapshot_mutex, drops them after setting the
- * 'cleaning' flag and reaquires them before returning.
+ * 'cleaning' flag and reacquires them before returning.
  */
 static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 {
@@ -1611,6 +1617,7 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 		}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#warning instead of this 'if' below, maybe have snapshot_dump do the check?
 		if (snapshot_enable_debug >= 5)
 			next3_snapshot_dump(inode);
 #endif
@@ -1800,16 +1807,19 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#warning you are defining this struct twice in snapshot_ctl.c and inode.c, slightly differently each time (just order of fields differs). Plz define only once if you can, else use two different structures and explain why two similar ones are needed.
 struct Indirect {
 	struct buffer_head *bh;
 	__le32	*p;
 	__le32	key;
 };
 
+#warning add comment at top of fxn below. logic of fxn unclear. plz explain
 static void next3_snapshot_dump_ind(struct Indirect *ind,
 		int i, int n, int l,
 		int *pnmoved, int *pncopied)
 {
+#pragma ezk
 	__le32 blk, prev_key;
 	int j, b, k = 0;
 
@@ -1822,8 +1832,7 @@ static void next3_snapshot_dump_ind(struct Indirect *ind,
 			(i << SNAPSHOT_ADDR_PER_BLOCK_BITS) + j;
 		ind->key = (j < SNAPSHOT_ADDR_PER_BLOCK) ?
 			le32_to_cpu(*(ind->p)) : 0;
-		if (prev_key &&
-				(ind->key == prev_key ||
+		if (prev_key && (ind->key == prev_key ||
 				 ind->key == prev_key+1))
 			k++;
 		else
@@ -1833,8 +1842,7 @@ static void next3_snapshot_dump_ind(struct Indirect *ind,
 			goto keep_counting;
 
 		b = ((i % SNAPSHOT_IND_PER_BLOCK_GROUP)
-				<< SNAPSHOT_ADDR_PER_BLOCK_BITS)
-			+ j - 1;
+		     << SNAPSHOT_ADDR_PER_BLOCK_BITS) + j - 1;
 		if (prev_key == blk - 1)
 			snapshot_debug_l(5, l,
 					"block[%d-%d/%d]\n", b+k, b,
@@ -1862,16 +1870,20 @@ keep_counting:
 	snapshot_debug_l(5, l-1, "}\n");
 }
 
+#warning the two snapshot_dump functions are DBEUG only. shouldnt they live in debug.c?
 /*
  * next3_snapshot_dump() prints a snapshot inode block map
  * Called under i_mutex or sb_lock
  */
+#warning if this can be called under one of two locks, this could lead to odd races b/t threads which ones one lock vs. the other.
 static void next3_snapshot_dump(struct inode *inode)
 {
+#pragma ezk
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	struct Indirect chain[4] = {{NULL}, {NULL} }, *ind = chain;
 	int nmeta = 0, nind = 0, ncopied = 0, nmoved = 0;
 	int n = 0, i, l = 0;
+#warning I feel this fxn is a bit hard to follow, esp. with all of the integers you increment and decremenat all over.  can it be simplified?
 	/* print double indirect block map */
 	snapshot_debug(5, "snapshot (%u) block map:\n", inode->i_generation);
 	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
@@ -1910,9 +1922,11 @@ dump_dind:
 		snapshot_debug_l(5, l, "ind[%d] = [%u/%u]\n", i,
 				SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key),
 				SNAPSHOT_BLOCK_GROUP(ind->key));
+#warning u can swap next two lines and change next one to ind->p = ...
 		(ind+1)->p = (__le32 *)ind->bh->b_data;
 		ind++;
 		nind++;
+#warning why increment ind then decrement it after calling dump_ind; why not just pass ind+1 to it?
 		next3_snapshot_dump_ind(ind, i, n, l+1, &nmoved, &ncopied);
 		ind--;
 	}
@@ -1921,7 +1935,9 @@ dump_dind:
 	ind--;
 
 	if (ind == chain) {
-		/* print tripple indirect map */
+#warning where is the actual printing of the triple indirect maps? does it happen because you goto dump_dind on each triple indirect block?  maybe this function can be broken into several more helpers to avoid this nasty gotos up and down.
+#warning lkml wont like code that interleaves gotos going in two opposite directions. big no-no
+		/* print triple indirect map */
 		ind->key = le32_to_cpu(ei->i_data[NEXT3_TIND_BLOCK]);
 		if (!ind->key)
 			goto ind_out;
@@ -1932,6 +1948,7 @@ dump_dind:
 		snapshot_debug_l(5, l, "tind[0] = [%u/%u]\n",
 				SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key),
 				SNAPSHOT_BLOCK_GROUP(ind->key));
+#warning u can swap next two lines and change next one to ind->p = ...
 		(ind+1)->p = (__le32 *)ind->bh->b_data;
 		ind++;
 		nind++;
@@ -1940,6 +1957,7 @@ dump_dind:
 	}
 
 	if (ind > chain) {
+#warning i think u can safely eliminate the "n" variable and reuse "i" below.
 		while (n++ < SNAPSHOT_ADDR_PER_BLOCK) {
 			ind->key = le32_to_cpu(*(ind->p++));
 			if (ind->key)
@@ -1951,6 +1969,7 @@ dump_dind:
 	snapshot_debug_l(5, l, "}\n");
 	ind--;
 ind_out:
+#warning can you rename "i" below to something more descriptive, like "total_blocks"?
 	i = nmeta + nind + ncopied + nmoved;
 	snapshot_debug(5, "snapshot (%u) contains: %d (meta) + %d (indirect) "
 		       "+ %d (data) = %d blocks = %dK = %dM\n",

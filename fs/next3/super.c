@@ -48,6 +48,7 @@
 #include "snapshot.h"
 
 #ifdef CONFIG_NEXT3_DEFAULTS_TO_ORDERED
+#warning can next3 really work in to journaling modes? i thought documentation said ordered only
   #define NEXT3_MOUNT_DEFAULT_DATA_MODE NEXT3_MOUNT_ORDERED_DATA
 #else
   #define NEXT3_MOUNT_DEFAULT_DATA_MODE NEXT3_MOUNT_WRITEBACK_DATA

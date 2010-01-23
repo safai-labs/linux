@@ -1,3 +1,4 @@
+//#pragma ezk
 /*
  * linux/include/linux/jbd.h
  *
@@ -372,12 +373,12 @@ struct handle_s
 	int			h_base_credits;
 
 	/* Number of buffers the user is allowed to dirty:
-	 * (counts only h_level 0 dirty buffers) */
+	 * (counts only dirty buffers when h_level==0) */
 	int			h_user_credits;
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-	/* Statistic counters: */
+	/* Statistics counters: */
 	unsigned int h_cow_moved; /* blocks moved to snapshot */
 	unsigned int h_cow_copied; /* blocks copied to snapshot */
 	unsigned int h_cow_ok_jh; /* blocks already COWed during current

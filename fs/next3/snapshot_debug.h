@@ -1,3 +1,4 @@
+//#pragma ezk
 /*
  * linux/fs/next3/snapshot_debug.h
  *
@@ -18,6 +19,7 @@
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 #include <linux/delay.h>
 
+#warning typo? "IDENT" below should be "INDENT" with an "N". Right? if so, fix it everywhere you say "ident" instead of "indent" (e.g., snapshot_ident extern)
 #define SNAPSHOT_IDENT_MAX 4
 #define SNAPSHOT_IDENT_STR "\t\t\t\t"
 #define KERN_LEVEL_STR "<%d>"

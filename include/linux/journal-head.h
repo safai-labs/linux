@@ -1,3 +1,4 @@
+//#pragma ezk
 /*
  * include/linux/journal-head.h
  *
@@ -42,7 +43,7 @@ struct journal_head {
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 	/*
-	 * The last transcation id during which the buffer has been COWed.
+	 * The last transaction ID during which the buffer has been COWed.
 	 * if buffer was COWed during the currently running transaction,
 	 * there is no need to COW it again.
 	 * [jbd_lock_bh_state()]

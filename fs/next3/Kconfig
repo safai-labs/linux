@@ -200,16 +200,16 @@ config NEXT3_FS_SNAPSHOT_FILE_SHRINK
 	help
 	  free blocks of deleted snapshots,
 	  which are not in use by any older non-deleted snapshot.
-	  shirking helps reclaiming disk space
+	  shrinking helps reclaiming disk space
 	  while older snapshots are currently in use (enabled).
 
 config NEXT3_FS_SNAPSHOT_FILE_MERGE
-	bool "Next3 Snapshot File - Merge shrinked snapshots"
+	bool "Next3 Snapshot File - Merge shrunken snapshots"
 	depends on NEXT3_FS_SNAPSHOT_FILE
 	depends on NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	depends on NEXT3_FS_SNAPSHOT_FILE_SHRINK
 	help
-	  move blocks of deleted and shrinked snapshots
+	  move blocks of deleted and shrunken snapshots
 	  to an older non-deleted and disabled snapshot.
 	  merging helps removing (unlinking) snapshot files
 	  while older snapshots are not currently in use (disabled).
@@ -272,7 +272,7 @@ config NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	help
 	  Snapshot operations are recorded as part of the running transaction.
 	  to ensure enough buffer credits are reserved in the running transaction
-	  the amount of requested credits is muliplied with a snapshot factor.
+	  the amount of requested credits is multiplied with a snapshot factor.
 
 config NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
 	bool "Next3 Snapshot Journalled - implement journal_release_buffer()"

@@ -1,3 +1,4 @@
+//#pragma ezk
 #ifndef __LINUX_MAGIC_H__
 #define __LINUX_MAGIC_H__
 

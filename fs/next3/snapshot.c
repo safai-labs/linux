@@ -87,7 +87,7 @@ next3_snapshot_complete_cow(handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	/* COW operetion is complete */
-	next3_snapshot_cancel_pending_cow(sbh);
+	next3_snapshot_end_pending_cow(sbh);
 #endif
 	return err;
 }

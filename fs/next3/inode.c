@@ -1738,7 +1738,7 @@ cleanup:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operetion on failure to alloc snapshot block */
 	if (create && err < 0 && sbh)
-		next3_snapshot_cancel_pending_cow(sbh);
+		next3_snapshot_end_pending_cow(sbh);
 	brelse(sbh);
 #endif
 	while (partial > chain) {

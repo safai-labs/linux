@@ -401,6 +401,11 @@ static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
  * Pending COW functions
  */
 
+/*
+ * Start pending COW operation from get_blocks_handle()
+ * after allocating snapshot block and before connecting it
+ * to the snapshot inode.
+ */
 static inline void next3_snapshot_start_pending_cow(struct buffer_head *sbh)
 {
 	/*
@@ -412,8 +417,12 @@ static inline void next3_snapshot_start_pending_cow(struct buffer_head *sbh)
 	get_bh(sbh);
 }
 
-#warning the word "cancel" here could be confusing to imply that this is an abort operation. but its used for synchronization, to ensure that only one thread does a COW, right? if so, explain this in comment here.
-static inline void next3_snapshot_cancel_pending_cow(struct buffer_head *sbh)
+/*
+ * End pending COW operation started in get_blocks_handle().
+ * Called on failure to connect the new snapshot block to the inode
+ * or on successful completion of the COW operation.
+ */
+static inline void next3_snapshot_end_pending_cow(struct buffer_head *sbh)
 {
 	/*
 	 * clearing the 'new' flag from the snapshot block buffer
@@ -424,6 +433,9 @@ static inline void next3_snapshot_cancel_pending_cow(struct buffer_head *sbh)
 	put_bh(sbh);
 }
 
+/*
+ * Test for pending COW operation and wait for its completion.
+ */
 static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
 						sector_t blocknr)
 {

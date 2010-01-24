@@ -126,6 +126,7 @@ int next3_snapshot_copy_buffer(struct buffer_head *sbh,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 /*
+ * XXX: Experimental code
  * next3_snapshot_zero_buffer()
  * helper function for next3_snapshot_test_and_cow()
  * reset snapshot data buffer to zero and
@@ -767,8 +768,11 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		cmd = SNAPSHOT_READ;
 	} else {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-		/* excluded file block write access -
-		 * COW and zero out snapshot block */
+		/*
+		 * XXX: Experimental code
+		 * excluded file block write access -
+		 * COW and zero out snapshot block
+		 */
 		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
 				"zero out block (%lu) in snapshot\n",
 				inode->i_ino, block);
@@ -917,6 +921,7 @@ test_cow_bitmap:
 		handle->h_cow_ok_mapped++;
 #endif
 
+	blk = sbh->b_blocknr;
 test_pending_cow:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	if (sbh)
@@ -924,10 +929,11 @@ test_pending_cow:
 		next3_snapshot_test_pending_cow(sbh, block);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-	if (sbh && !blk)
-		blk = sbh->b_blocknr;
 	if (clear && blk) {
-		/* zero out snapshot block data */
+		/*
+		 * XXX: Experimental code
+		 * zero out snapshot block data
+		 */
 		err = next3_snapshot_zero_buffer(handle, snapshot,
 						      bh->b_blocknr, blk);
 		if (err)

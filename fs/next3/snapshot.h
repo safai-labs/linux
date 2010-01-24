@@ -270,14 +270,17 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
 /*
  * Next3_snapshot_excluded():
  * Checks if the file should be excluded from snapshot.
- * Returns non-zero for excluded file.
- * Returns < 0 for ignored file.
  *
- * Excluded/ignored file blocks are not moved to snapshot.
+ * Returns 0 for normal file.
+ * Returns < 0 for 'ignored' file.
+ * Returns > 0 for 'excluded' file.
+ *
+ * Excluded and ignored file blocks are not moved to snapshot.
  * Ignored file metadata blocks are not COWed to snapshot.
  * Excluded file metadata blocks are zeroed in the snapshot file.
+ * XXX: Excluded files code is experimental,
+ *      but ignored files code isn't.
  */
-#warning this function retuns -1, 0, or +1: documentation in comment above mismatches. say exactly when it returns one of these 3 values.
 static inline int next3_snapshot_excluded(struct inode *inode)
 {
 	if (!inode || !S_ISREG(inode->i_mode))
@@ -291,6 +294,7 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 		return -1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+	/* XXX: Experimental code */
 	if (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)
 		/* exclude zombie and deleted snapshot files */
 		return 1;

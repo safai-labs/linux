@@ -668,6 +668,8 @@ next_snapshot:
 	}
 #endif
 
+	/* sleep 1 tunable delay unit */
+	snapshot_test_delay(SNAPTEST_TAKE);
 	snapshot_debug(1, "snapshot (%u) created\n", inode->i_generation);
 	err = 0;
 out_handle:
@@ -984,6 +986,8 @@ out_unlockfs:
 	if (snapshot_enable_debug >= 5)
 		next3_snapshot_dump(inode);
 #endif
+	/* sleep 1 tunable delay unit */
+	snapshot_test_delay(SNAPTEST_TAKE);
 	snapshot_debug(1, "snapshot (%u) has been taken\n",
 			inode->i_generation);
 
@@ -1111,8 +1115,6 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 				"blocks\n",
 				inode->i_generation,
 				snapshot->i_generation);
-		/* sleep 1 tunable delay unit */
-		snapshot_test_delay(SNAPTEST_TAKE);
 	}
 
 	/*
@@ -1328,9 +1330,9 @@ out_handle:
 	if (err)
 		goto out_err;
 
-	snapshot_debug(1, "snapshot (%u) deleted\n", inode->i_generation);
 	/* sleep 1 tunable delay unit */
 	snapshot_test_delay(SNAPTEST_DELETE);
+	snapshot_debug(1, "snapshot (%u) deleted\n", inode->i_generation);
 
 	err = 0;
 out_err:

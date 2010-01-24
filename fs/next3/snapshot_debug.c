@@ -23,14 +23,22 @@
  * debugfs tunables
  */
 
-const char *snapshot_ident = SNAPSHOT_IDENT_STR + SNAPSHOT_IDENT_MAX;
+const char *snapshot_indent = SNAPSHOT_INDENT_STR + SNAPSHOT_INDENT_MAX;
 
-#warning plz document purpose and use of these five tests and their delays (debuugging races, it looks like)
+/*
+ * Tunable delay values per snapshot operation for testing of
+ * COW race conditions and master snapshot_mutex lock
+ */
 static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
+	/* delay completion of snapshot create|take */
 	"test-take-delay-msec",
+	/* delay completion of snapshot shrink|cleanup */
 	"test-delete-delay-msec",
+	/* delay completion of COW operation */
 	"test-cow-delay-msec",
+	/* delay submission of tracked read */
 	"test-read-delay-msec",
+	/* delay completion of COW bitmap operation */
 	"test-bitmap-delay-msec",
 };
 
@@ -97,12 +105,6 @@ const char *snapshot_cmd_str(int cmd)
 	default:
 		return "unknown";
 	}
-}
-
-#warning _ret_str doesnt seem to be used anywhere in your code
-const char *snapshot_ret_str(int ret)
-{
-	return ret ? "in-use" : "not in-use";
 }
 
 /*

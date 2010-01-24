@@ -192,7 +192,6 @@ extern void next3_snapshot_update(struct super_block *sb, int cleanup);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 /* next3_debug.c */
 extern const char *snapshot_cmd_str(int cmd);
-extern const char *snapshot_ret_str(int ret);
 extern int init_next3_snapshot(void);
 extern void exit_next3_snapshot(void);
 #else

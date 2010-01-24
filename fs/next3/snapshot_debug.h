@@ -19,9 +19,8 @@
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 #include <linux/delay.h>
 
-#warning typo? "IDENT" below should be "INDENT" with an "N". Right? if so, fix it everywhere you say "ident" instead of "indent" (e.g., snapshot_ident extern)
-#define SNAPSHOT_IDENT_MAX 4
-#define SNAPSHOT_IDENT_STR "\t\t\t\t"
+#define SNAPSHOT_INDENT_MAX 4
+#define SNAPSHOT_INDENT_STR "\t\t\t\t"
 #define KERN_LEVEL_STR "<%d>"
 #define SNAP_KERN_LEVEL(n) ((n)+2) /* 1 = KERN_ERR, ..., 5 = KERN_DEBUG */
 
@@ -32,7 +31,7 @@
 #define SNAPTEST_BITMAP	4
 #define SNAPSHOT_TESTS_NUM	5
 
-extern const char *snapshot_ident;
+extern const char *snapshot_indent;
 extern u8 snapshot_enable_debug;
 extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 
@@ -52,10 +51,10 @@ extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 #define snapshot_debug_l(n, l, f, a...)					\
 	do {								\
 		if ((n) <= snapshot_enable_debug &&			\
-		    (l) <= SNAPSHOT_IDENT_MAX) {			\
+		    (l) <= SNAPSHOT_INDENT_MAX) {			\
 			printk(KERN_LEVEL_STR "snapshot: %s" f,		\
 				   SNAP_KERN_LEVEL(n),			\
-			       snapshot_ident - (l),			\
+			       snapshot_indent - (l),			\
 				   ## a);				\
 		}							\
 	} while (0)

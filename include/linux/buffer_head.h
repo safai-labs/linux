@@ -289,8 +289,6 @@ static inline void get_bh_tracked_reader(struct buffer_head *_bh)
 
 static inline void put_bh_tracked_reader(struct buffer_head *_bh)
 {
-#warning why do you need the smp mb here?
-	smp_mb__before_atomic_dec();
 	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &_bh->b_count);
 }
 

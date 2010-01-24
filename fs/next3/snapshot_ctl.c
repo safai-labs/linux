@@ -428,6 +428,46 @@ out:
 #endif
 
 /*
+ * helper function for snapshot_create().
+ * places pre-allocated [d,t]ind blocks in position
+ * after they have been allocated as direct blocks.
+ */
+static inline int next3_snapshot_shift_blocks(struct next3_inode_info *ei,
+		int from, int to, int count)
+{
+	int i, err = -EIO;
+
+	BUG_ON(from < 0 || to < 0);
+	BUG_ON(from + count > NEXT3_N_BLOCKS || to + count > NEXT3_N_BLOCKS);
+	/*
+	 * truncate_mutex is held whenever allocating or freeing inode
+	 * blocks.
+	 */
+	mutex_lock(&ei->truncate_mutex);
+
+	/*
+	 * verify that 'from' blocks are allocated
+	 * and that 'to' blocks are not allocated.
+	 */
+	for (i = 0; i < count; i++)
+		if (!ei->i_data[from+i] ||
+				ei->i_data[to+i])
+			goto out;
+
+	/*
+	 * shift 'count' blocks from position 'from' to 'to'
+	 */
+	for (i = 0; i < count; i++) {
+		ei->i_data[to+i] = ei->i_data[from+i];
+		ei->i_data[from+i] = 0;
+	}
+	err = 0;
+out:	
+	mutex_unlock(&ei->truncate_mutex);
+	return err;
+}
+
+/*
  * next3_snapshot_create() initilizes a snapshot file
  * and adds it to the list of snapshots
  * Called under i_mutex and snapshot_mutex
@@ -436,6 +476,7 @@ static int next3_snapshot_create(struct inode *inode)
 {
 	handle_t *handle;
 	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	struct next3_inode_info *ei = NEXT3_I(inode);
 	int i, count, err;
 	struct next3_group_desc *desc;
 	unsigned long ino;
@@ -470,17 +511,17 @@ static int next3_snapshot_create(struct inode *inode)
 
 	/* verify that all inode's direct blocks are not allocated */
 	for (i = 0; i <= NEXT3_TIND_BLOCK; i++) {
-		if (NEXT3_I(inode)->i_data[i])
+		if (ei->i_data[i])
 			break;
 	}
 	/* Don't need i_size_read because we hold i_mutex */
 	if (i <= NEXT3_TIND_BLOCK || inode->i_size > 0 ||
-	    NEXT3_I(inode)->i_disksize > 0) {
+	    ei->i_disksize > 0) {
 		snapshot_debug(1, "failed to create snapshot file (ino=%lu) "
-			       "because it is not empty (i_data[%d], "
-			       "i_size=%lld, i_disksize=%lld\n",
+				"because it is not empty (i_data[%d], "
+				"i_size=%lld, i_disksize=%lld\n",
 				inode->i_ino, i, inode->i_size,
-			       NEXT3_I(inode)->i_disksize);
+				ei->i_disksize);
 		return -EPERM;
 	}
 
@@ -503,8 +544,8 @@ static int next3_snapshot_create(struct inode *inode)
 	 * finally, if snapshot_create() or snapshot_take() has failed,
 	 * snapshot_update() will remove it from the head of the list.
 	 */
-	NEXT3_I(inode)->i_flags |= (NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
-	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
+	ei->i_flags |= (NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
+	ei->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
 
 	/* record the new snapshot ID in the snapshot inode generation field */
 	inode->i_generation = le32_to_cpu(NEXT3_SB(inode->i_sb)->
@@ -566,7 +607,14 @@ static int next3_snapshot_create(struct inode *inode)
 		}
 	}
 	/* place pre-allocated [d,t]ind blocks in position */
-	next3_snapshot_unhide(NEXT3_I(inode));
+	err = next3_snapshot_shift_blocks(ei, 
+			SNAPSHOT_META_DIND, NEXT3_DIND_BLOCK, 2);
+	if (err) {
+		snapshot_debug(1, "failed to move pre-allocated [d,t]ind blocks "
+				"for snapshot (%u)\n",
+				inode->i_generation);
+		goto out_handle;
+	}
 
 	/* allocate super block and group descriptors for snapshot */
 	count = NEXT3_SB(inode->i_sb)->s_gdb_count + 1;
@@ -675,7 +723,7 @@ next_snapshot:
 out_handle:
 	next3_journal_stop(handle);
 	if (err)
-		NEXT3_I(inode)->i_flags &=
+		ei->i_flags &=
 			~(NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
 	return err;
 }

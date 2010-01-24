@@ -336,34 +336,6 @@ static inline int next3_snapshot_is_active(struct inode *inode)
 	return (inode == NEXT3_SB(inode->i_sb)->s_active_snapshot);
 }
 
-/*
- * next3_snapshot_hide() hides snapshot blocks from ext2/fsck
- */
-static inline void next3_snapshot_hide(struct next3_inode *raw_inode)
-{
-#warning locking semantics on i_data?
-	raw_inode->i_block[SNAPSHOT_META_DIND] =
-		raw_inode->i_block[NEXT3_DIND_BLOCK];
-	raw_inode->i_block[SNAPSHOT_META_TIND] =
-		raw_inode->i_block[NEXT3_TIND_BLOCK];
-	raw_inode->i_block[NEXT3_DIND_BLOCK] = 0;
-	raw_inode->i_block[NEXT3_TIND_BLOCK] = 0;
-}
-
-/*
- * next3_snapshot_unhide() un-hides snapshot blocks from ext2/fsck
- */
-static inline void next3_snapshot_unhide(struct next3_inode_info *ei)
-{
-#warning locking semantics on i_data?
-	if (ei->i_data[SNAPSHOT_META_DIND])
-		ei->i_data[NEXT3_DIND_BLOCK] = ei->i_data[SNAPSHOT_META_DIND];
-	if (ei->i_data[SNAPSHOT_META_TIND])
-		ei->i_data[NEXT3_TIND_BLOCK] = ei->i_data[SNAPSHOT_META_TIND];
-	ei->i_data[SNAPSHOT_META_DIND] = 0;
-	ei->i_data[SNAPSHOT_META_TIND] = 0;
-}
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 /*
  * next3_snapshot_exclude_hide() hides exclude inode indirect blocks

@@ -51,8 +51,8 @@ __next3_snapshot_copy_buffer(struct buffer_head *sbh,
 
 /*
  * next3_snapshot_complete_cow()
- * unlock a newly COWed snapshot buffer and complete the COW operation.
- * optinally, sync the buffer to disk or add it to the current transaction
+ * Unlock a newly COWed snapshot buffer and complete the COW operation.
+ * Optionally, sync the buffer to disk or add it to the current transaction
  * as dirty data.
  */
 static inline int
@@ -74,6 +74,7 @@ next3_snapshot_complete_cow(handle_t *handle,
 			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
 			    buffer_tracked_readers_count(bh));
 		/* can happen once per block/snapshot - just keep trying */
+#warning "busy" trying is not always good. maybe a short delay first?
 		yield();
 	}
 #endif
@@ -121,6 +122,7 @@ int next3_snapshot_copy_buffer(struct buffer_head *sbh,
 	__next3_snapshot_copy_buffer(sbh, bh->b_data, mask);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
+#warning u can make this a void fxn
 	return 0;
 }
 
@@ -138,6 +140,7 @@ static int
 next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
 		next3_snapblk_t blk, next3_fsblk_t blocknr)
 {
+#pragma ezk skipped this fxn
 	int err;
 	struct buffer_head *sbh;
 	sbh = sb_getblk(inode->i_sb, blocknr);
@@ -196,6 +199,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		 * Snapshot meta blocks access: h_level > 0 indicates this
 		 * is snapshot_map_blocks recursive call
 		 */
+#warning more recursion? recursion is bad.
 		if (handle && handle->h_level > 0) {
 			snapshot_debug(1, "snapshot (%u) meta block (%d)"
 					" - recursive access denied!\n",
@@ -289,6 +293,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 	int err;
 
 	dummy.b_state = 0;
+#warning why this hardcoded number -1000? should it be a macro?  explain why -1000: is it an important number for your system?
 	dummy.b_blocknr = -1000;
 	err = next3_get_blocks_handle(handle, inode, SNAPSHOT_IBLOCK(block),
 				      maxblocks, &dummy, cmd);
@@ -397,6 +402,7 @@ int next3_snapshot_read_block_bitmap(struct super_block *sb,
  *
  * Return buffer_head on success or NULL in case of failure.
  */
+#warning does the caller care what type of error occured? if so, maybe return ERR_PTR.
 static struct buffer_head *
 next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       unsigned int block_group)
@@ -447,6 +453,7 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			 * can happen once per block_group/snapshot - just
 			 * keep trying
 			 */
+#warning busy trying? check all instances of such use of yield()
 			yield();
 		}
 	}
@@ -539,6 +546,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 				  "[%d/%lu] out of range (snapshot_blocks=%d)"
 				  "\n", snapshot->i_generation, bit,
 				  block_group, snapshot_blocks);
+#warning is the debug printk above indicating an error? if so, why return OK?
 		return SNAPSHOT_OK;
 	}
 
@@ -706,7 +714,8 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 			    struct buffer_head *bh, next3_fsblk_t block,
 			    int *pcount, int cmd, const char *fn)
 {
-#warning function too long, over 250 LoC
+#warning this long function has three distinct modes, based on the cmd. it should be split into three helpers which can be called from here or directly from the caller.
+#warning make that four modes: it can also handle SNAPSHOT_READ cmd
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *snapshot = next3_snapshot_get_active(sb);
 	struct buffer_head *sbh = NULL;
@@ -725,6 +734,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		goto out;
 	}
 
+#warning if theres no snapshot, you goto out, and perform some actions like h_level-- and brrelse. is that correct?  is "!snapshot" an ok/normal condition (ie no one ever took a snapshot), or an error?
 	if (!snapshot)
 		goto out;
 
@@ -738,7 +748,6 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 				  "skip block cow!\n");
 		goto out;
 	}
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 	/* check if the buffer was COWed in the current transaction */
 	ret = next3_snapshot_test_cow_cache(handle, bh);
@@ -750,15 +759,14 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	}
 #endif
 
-	if (!inode || cmd == SNAPSHOT_READ)
-		/* skip excluded file test */
+	if (!inode || cmd == SNAPSHOT_READ) /* skip excluded file test */
 		goto test_cow_bitmap;
 	clear = next3_snapshot_excluded(inode);
-	if (!clear)
-		/* file is not excluded */
+	if (!clear)		/* file is not excluded */
 		goto test_cow_bitmap;
 
 	if (cmd < 0 || clear < 0) {
+#warning its confusing to test for "cmd < 0" instead of if its SNAPSHOT_MOVE|CLEAR. be more explict in code.
 		/* excluded file block move/delete/clear access
 		 * or ignored file block write access -
 		 * mark block in exclude bitmap */
@@ -778,6 +786,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 				inode->i_ino, block);
 #else
 		/* user excluded files are not supported */
+#warning how is the BUG_ON below related to the comment just above?
 		BUG_ON(clear > 0);
 #endif
 	}
@@ -789,6 +798,7 @@ test_cow_bitmap:
 				  "credits (%d/%d) for COW operation?\n",
 				  handle->h_buffer_credits,
 				  handle->h_user_credits);
+#warning the debug above seems serious enough.  maybe it should be a printk? shouldnt u return an error?
 	}
 #endif
 
@@ -807,6 +817,7 @@ test_cow_bitmap:
 		snapshot_debug_hl(1, "warning: file (%lu) is excluded from "
 				  "snapshot but block (%lu) is set in "
 				  "COW bitmap!\n", inode->i_ino, block);
+#warning msg above seems serious. so why return OK below?
 #endif
 		ret = SNAPSHOT_OK;
 	}
@@ -962,6 +973,7 @@ cowed:
 
 out:
 	brelse(sbh);
+#warning why do you need both ret and err in this fxn. can u rewrite with only one?
 	if (err < 0)
 		ret = err;
 	handle->h_level--;
@@ -1021,21 +1033,22 @@ int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
  * 1. next3_free_blocks_sb_inode() before deleting blocks
  * 2. next3_new_blocks() before allocating blocks
  */
+#warning also called from  __next3_journal_get_undo_access. maybe others too?
 int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
 {
 	int ret = next3_snapshot_test_cow(handle, bh, "undo");
 
-	if (ret != SNAPSHOT_COW)
-		return ret;
-	/*
-	 * We shouldn't get here if everything works properly because undo
-	 * access is only requested for block bitmaps which should be COW'ed
-	 * in next3_snapshot_test_cow_bitmap()
-	 */
-	snapshot_debug(1, "warning: block bitmap [%lld/%lld]"
-		       " needs to be COWed?!\n",
-		       SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-		       SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
+	if (ret == SNAPSHOT_COW)
+		/*
+		 * We shouldn't get here if everything works properly
+		 * because undo access is only requested for block bitmaps
+		 * which should be COW'ed in
+		 * next3_snapshot_test_cow_bitmap()
+		 */
+		snapshot_debug(1, "warning: block bitmap [%lld/%lld]"
+			       " needs to be COWed?!\n",
+			       SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+			       SNAPSHOT_BLOCK_GROUP(bh->b_blocknr));
 	return ret;
 }
 
@@ -1089,6 +1102,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
  * if N>0 is returned, then N blocks are used by the snapshot
  * and may not be overwritten (data should be moved)
  */
+#warning I found a possible recursion with this funcion, in the following call chain: next3_get_branch, next3_snapshot_get_move_access, next3_snapshot_mow, next3_snapshot_test_and_cow, next3_snapshot_map_blocks, next3_get_blocks_handle, next3_get_branch_cow, next3_snapshot_get_move_access!
 int next3_snapshot_get_move_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t block, int count)
 {
@@ -1130,6 +1144,7 @@ int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
  * if 0 is returned, the block may be safely accessed
  * without being COWed to snapshot
  */
+#warning this is also called from snapshot_clean (others?). fix comment.
 int next3_snapshot_get_clear_access(handle_t *handle, struct inode *inode,
 				    next3_fsblk_t block, int count)
 {

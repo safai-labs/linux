@@ -33,7 +33,6 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case NEXT3_IOC_GETFLAGS:
 		next3_get_inode_flags(ei);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
-#pragma ezk
 		next3_snapshot_get_flags(ei, filp);
 #endif
 		flags = ei->i_flags & NEXT3_FL_USER_VISIBLE;

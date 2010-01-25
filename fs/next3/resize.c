@@ -737,7 +737,7 @@ static void update_backups(struct super_block *sb,
 		if (next3_snapshot_get_active(sb))
 			/*
 			 * next3_snapshot_get_write_access() expects an
-			 * uptodate buffer do it here to supress "non
+			 * uptodate buffer. do it here to suppress "non
 			 * uptodate buffer" warning.
 			 */
 			bh = sb_bread(sb, group * bpg + blk_off);
@@ -1002,6 +1002,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		/* update exclude inode size and blocks */
 		i_size = SNAPSHOT_IBLOCK(input->group)
 				 << SNAPSHOT_BLOCK_SIZE_BITS;
+#warning do u support extending the exclude_inode, or also shrinking it.
 		i_size_write(exclude_inode, i_size);
 		NEXT3_I(exclude_inode)->i_disksize = i_size;
 		exclude_inode->i_blocks += sb->s_blocksize >> 9;

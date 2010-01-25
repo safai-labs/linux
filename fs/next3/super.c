@@ -2024,6 +2024,7 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 	next3_snapshot_load(sb, es);
 	/* TODO: check for errors during snapshot load */
+#warning just abort the mount if any snapshot errors? or allow mounting with some snapshots missing? or mount whole f/s in ro mode?
 #endif
 	/*
 	 * akpm: core read_super() calls in here with the superblock locked.
@@ -2036,6 +2037,7 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	NEXT3_SB(sb)->s_mount_state |= NEXT3_ORPHAN_FS;
 	next3_orphan_cleanup(sb, es);
 	NEXT3_SB(sb)->s_mount_state &= ~NEXT3_ORPHAN_FS;
+#warning dont say recovery complete before u have actually completed it! in several places in the next3 code, you prink a message before an action takes place. (this code is from orig ext3?)
 	if (needs_recovery)
 		printk (KERN_INFO "NEXT3-fs: recovery complete.\n");
 	next3_mark_recovery_complete(sb, es);
@@ -2145,6 +2147,7 @@ static journal_t *next3_get_journal(struct super_block *sb,
 	next3_init_journal_params(sb, journal);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 	/* keep a reference to journal inode for snapshot_take() */
+#warning dont u need to igrab the journal_inode here? someone else might iput it on you. any time you make a ptr from X to Y, you need to get(Y) first.
 	NEXT3_SB(sb)->s_journal_inode = journal_inode;
 #endif
 	return journal;

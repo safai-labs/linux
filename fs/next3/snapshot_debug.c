@@ -1,4 +1,3 @@
-//#pragma ezk
 /*
  * linux/fs/next3/snapshot_debug.c
  *

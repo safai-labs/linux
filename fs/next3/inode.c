@@ -535,6 +535,7 @@ static next3_fsblk_t next3_find_goal(struct inode *inode, long block,
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
+#pragma ezk ignored
 	/* snapshot file copied blocks are allocated close to their source */
 	if (next3_snapshot_file(inode))
 		return SNAPSHOT_BLOCK(block);
@@ -606,6 +607,7 @@ static void next3_free_data_cow(handle_t *handle, struct inode *inode,
  *
  *	return the total number of data blocks to be skipped.
  */
+#warning locking semantics?
 static int next3_blks_to_skip(struct inode *inode, long i_block,
 		unsigned long maxblocks, Indirect chain[4], int depth,
 		int *offsets, int k)
@@ -659,11 +661,13 @@ static int next3_blks_to_skip(struct inode *inode, long i_block,
  * Returns number of shrunk blocks.
  * Maps 'cow_bh' to the COW bitmap block of snapshot 'start'.
  */
+#warning locking semantics?
 int next3_snapshot_shrink_blocks(handle_t *handle,
 		struct inode *start, struct inode *end,
 		sector_t iblock, unsigned long maxblocks,
 		struct buffer_head *cow_bh)
 {
+#warning this is a long helper function (~200 LoC) which multiple goto labels, some going forward, some going back.  its hard to understand the code, let alone debug it.  i suggest you break this into several MORE helper functions.
 	int offsets[4];
 	Indirect chain[4], *partial;
 	int err, blocks_to_boundary, depth, count;
@@ -884,6 +888,7 @@ static int next3_count_branch_blocks(handle_t *handle, struct inode *inode,
 
 	p = (__le32 *)(branch->bh->b_data);
 	for (i = 0; i < ptrs; i++, p++) {
+#warning no recursion allowed in kernel code!
 		if (*p)
 			n += next3_count_branch_blocks(handle, inode,
 						       le32_to_cpu(*p),
@@ -900,6 +905,7 @@ static int next3_count_branch_blocks(handle_t *handle, struct inode *inode,
  * and stopping at the first branch that needs to be merged at higher level.
  * 'moved' returns the total number of blocks that have been moved.
  */
+#warning describe meaning of return value (no. of moved blocks/branches?)
 static int next3_move_branches(handle_t *handle, struct inode *src,
 		Indirect *pS, Indirect *pD, int depth,
 		int count, int *moved)
@@ -937,6 +943,7 @@ static int next3_move_branches(handle_t *handle, struct inode *src,
  * Merges 'maxblocks' blocks starting at 'iblock'.
  * Returns number of merged blocks.
  */
+#warning what is returned on error (-1?) and what does it mean?
 int next3_snapshot_merge_blocks(handle_t *handle,
 		struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks)
@@ -1025,7 +1032,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 			goto out;
 	}
 
-	/* we merged at least 1 partial branch and optinaly count-1 full
+	/* we merged at least 1 partial branch and optionally count-1 full
 	   branches */
 	err = (count << data_ptrs_bits) -
 		(SNAPSHOT_BLOCK(iblock) & data_ptrs_mask);
@@ -1165,6 +1172,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 			if (err)
 				return err;
 		}
+#warning who gets charged for quota?
 		/* Check quota for mapping of *blks blocks */
 		if (vfs_dq_alloc_block(inode, *blks)) {
 			err = -EDQUOT;
@@ -1194,6 +1202,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 		lock_buffer(bh);
 		BUFFER_TRACE(bh, "call get_create_access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
+# warning u can change code to "if (cmd != SNAPSHOT_BITMAP)" and avoid the hanging "else"
 		if (cmd == SNAPSHOT_BITMAP) {
 			/* don't journal snapshot bitmap indirect blocks */
 		} else
@@ -1251,6 +1260,7 @@ failed:
 	for (i = 1; i <= n ; i++) {
 		BUFFER_TRACE(branch[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
+# warning u can change code to "if (cmd != SNAPSHOT_BITMAP)" and avoid the hanging "else"
 		if (cmd == SNAPSHOT_BITMAP) {
 			/* don't journal snapshot bitmap indirect blocks */
 		} else
@@ -1337,6 +1347,7 @@ static int next3_splice_branch(handle_t *handle, struct inode *inode,
 	 * allocation
 	 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+# warning u can change code to "if (cmd != SNAPSHOT_MOVE)" and avoid the hanging "else"
 	if (cmd == SNAPSHOT_MOVE) {
 		/* mapping data blocks */
 	} else
@@ -1380,6 +1391,7 @@ err_out:
 	for (i = 1; i <= num; i++) {
 		BUFFER_TRACE(where[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
+# warning u can change code to "if (cmd != SNAPSHOT_BITMAP)" and avoid the hanging "else"
 		if (cmd == SNAPSHOT_BITMAP) {
 			/* don't journal snapshot bitmap indirect block */
 		} else
@@ -1534,7 +1546,7 @@ retry:
 	 * On read of snapshot file, an unmapped block is a peephole to prev
 	 * snapshot.  On read of active snapshot, an unmapped block is a
 	 * peephole to the block device.  On first block write, the peephole
-	 * is patched forever.
+	 * is filled forever.
 	 */
 	if (read_through && !err) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
@@ -1639,6 +1651,7 @@ retry:
 		goto out_mutex;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+#warning why do u check if 'create' is GREATER-THAN a fixed macro value?  its better to check if its equal to any specific values u care about.
 	if (create >= SNAPSHOT_COPY) {
 		/*
 		 * COWing block or creating COW bitmap.
@@ -1834,7 +1847,9 @@ struct buffer_head *next3_getblk(handle_t *handle, struct inode *inode,
 			goto err;
 		}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+#warning again, bad to compare a value "create" against a macro
 		if (create >= SNAPSHOT_COPY && buffer_new(&dummy)) {
+#warning why do you need to pass "&dummy" above?
 			/* COWing block or creating COW bitmap */
 			lock_buffer(bh);
 			clear_buffer_uptodate(bh);
@@ -1969,6 +1984,7 @@ static int do_journal_get_write_access(handle_t *handle,
 /* Used to quickly unmap all buffers in a page for COWing -znjp */
 static int next3_clear_buffer_mapped(handle_t *handle, struct buffer_head *bh)
 {
+#warning this can be a void fxn
 	clear_buffer_mapped(bh);
 	return 0;
 }
@@ -3282,6 +3298,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			/* This zaps the entire block.  Bottom up. */
 			BUFFER_TRACE(bh, "free child branches");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#warning never, ever, use recurion in kernel code.  you can easily blow up the kernel stack, even if you try to limit using depth. your code may be used in conjunction with lvm/nfs/etc and any additional pressure u put on the stack is bad.  lkml will also consider it bad coding style to depend on recursion.
 			next3_free_branches_cow(handle, inode, bh,
 						(__le32 *)bh->b_data,
 						(__le32 *)bh->b_data +
@@ -3910,6 +3927,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * snapshot_update() will flag only the snapshots on the list
 		 * and the rest will stay zombies.
 		 */
+#warning document why snapshot files start as zombies (here and in design doc)
 		ei->i_flags &= ~(NEXT3_SNAPFILE_FL|NEXT3_FL_SNAPSHOT_DYN_MASK);
 		ei->i_flags |= NEXT3_SNAPFILE_ZOMBIE_FL;
 		/*

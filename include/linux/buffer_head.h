@@ -1,4 +1,3 @@
-//#pragma ezk
 /*
  * include/linux/buffer_head.h
  *
@@ -280,6 +279,7 @@ extern void cancel_buffer_tracked_read(struct buffer_head *bh);
  * on the block device buffer cache entry.
  * We use the upper dword of b_count to count tracked readers.
  */
+#warning is it safe to use the upper dword? can the lower part ever spill into the upper dword? maybe make a separate counter var?
 #define BH_TRACKED_READERS_COUNT_SHIFT 16
 
 static inline void get_bh_tracked_reader(struct buffer_head *_bh)

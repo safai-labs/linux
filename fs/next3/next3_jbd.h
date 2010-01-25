@@ -271,9 +271,11 @@ static inline handle_t *next3_journal_current_handle(void)
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+#warning say briefly when/why journal_extend is needed
 static inline int __next3_journal_extend(const char *where,
 		handle_t *handle, int nblocks)
 {
+#warning i might rename this fxn to next3_journal__extend_credits
 	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits+nblocks);
 	int err = 0;
 	int missing = lower - handle->h_buffer_credits;
@@ -289,6 +291,7 @@ static inline int __next3_journal_extend(const char *where,
 	return err;
 }
 
+#warning say when journal_restart is needed
 static inline int __next3_journal_restart(const char *where,
 					  handle_t *handle, int nblocks)
 {
@@ -338,7 +341,6 @@ int next3_force_commit(struct super_block *sb);
 
 static inline int next3_should_journal_data(struct inode *inode)
 {
-#pragma ezk
 	if (!S_ISREG(inode->i_mode))
 		return 1;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == NEXT3_MOUNT_JOURNAL_DATA)

@@ -27,10 +27,11 @@
  * snapshot_clean() sets it to 0 before returning success or failure.
  */
 static int cleaning;
+#warning lkml people hate sug globals.  this global is for the entire kernel.  Make it a per next3 superblock plz.  What if i have 100 next3 mounts?
 #endif
 
 /*
- * next3_snapshot_set_active() sets the current active snapshot to inode and
+ * next3_snapshot_set_active() sets the current active snapshot to @inode and
  * returns the deactivated snapshot inode.  If inode is NULL, current active
  * snapshot is deactivated.  This function should be called under
  * journal_lock_updates() and snapshot mutex lock.
@@ -42,7 +43,7 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 
 	if (inode && NEXT3_BLOCK_SIZE(sb) != SNAPSHOT_BLOCK_SIZE) {
 		snapshot_debug(1, "failed to activate snapshot (%u)"
-				"because file system block size (%lu) != "
+			       "because file system block size (%lu) != "
 			       "page size (%lu)\n", inode->i_generation,
 			       NEXT3_BLOCK_SIZE(sb), SNAPSHOT_BLOCK_SIZE);
 		return NULL;
@@ -89,7 +90,6 @@ static void next3_snapshot_dump(struct inode *inode);
  */
 void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 {
-#pragma ezk
 #warning _get_flags fxn is only used in ioctl.c. can move it there and mk it static
 	int open_count = atomic_read(&filp->f_path.dentry->d_count);
 	/*
@@ -253,14 +253,12 @@ static struct buffer_head *next3_exclude_inode_bread(handle_t *handle,
 	if (ind_bh)
 		return ind_bh;
 
-	snapshot_debug(1, "failed to read exclude "
-			"inode indirect[%d] block\n",
+	snapshot_debug(1, "failed to read exclude inode indirect[%d] block\n",
 			dind_offset);
 	if (!create)
 		return NULL;
 
-	err = extend_or_restart_transaction(handle,
-			NEXT3_RESERVE_TRANS_BLOCKS);
+	err = extend_or_restart_transaction(handle, NEXT3_RESERVE_TRANS_BLOCKS);
 	if (err)
 		return NULL;
 	ind_bh = next3_bread(handle, inode, NEXT3_IND_BLOCK + dind_offset,
@@ -286,6 +284,7 @@ static struct buffer_head *next3_exclude_inode_bread(handle_t *handle,
  * Called under sb_lock and before snapshots are loaded, so changes made to
  * exclude inode are not COWed.
  */
+#warning document return vals of fxn on success/failure (0==bad, right?)
 static __le32 next3_exclude_inode_getblk(handle_t *handle,
 		struct inode *inode, int grp, int create)
 {
@@ -306,6 +305,7 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 	exclude_bitmap = ((__le32 *)ind_bh->b_data)[ind_offset];
 	if (exclude_bitmap)
 		goto out;
+#warning u might be getting a lot of "failed to read..." warnings below, if create==1. so maybe print the warning only if create!=1?
 	snapshot_debug(1, "failed to read exclude bitmap #%d block "
 			"from exclude inode\n", grp);
 	if (!create)
@@ -319,6 +319,7 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 
 	/* exclude bitmap blocks are mapped on the DIND branch */
 	bh = next3_getblk(handle, inode, SNAPSHOT_IBLOCK(grp), create, &err);
+#warning you r ignoring value of err if bh==NULL here. maybe debug printk to tell what specific err getblk returned?
 	if (!bh)
 		goto alloc_out;
 	brelse(bh);
@@ -348,6 +349,7 @@ out:
  *
  * Helper function for snapshot_load().  Called under sb_lock.
  */
+#warning do you really mean "when mounting EXT3" and not "when mounting NEXT3"?
 static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 {
 	struct next3_group_desc *desc;
@@ -373,10 +375,12 @@ static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 	if (IS_ERR(inode)) {
 		snapshot_debug(1, "warning: bad exclude inode - "
 			       "disabling exclude bitmap!\n");
+#warning you say "disabling" but you dont do it here. where is it?
 		return;
 	}
 	/* start large transaction that will be extended/restarted */
 	handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
+#warning bad idea to reset handle to NULL, b/c u pass it to other functions below, and who knows how its going to get used (null deref could happen).  if you cant get a handle here, then maybe consider it an error and abort immediately? or is it safe to pass a null handle, and it will get created later?
 	if (IS_ERR(handle))
 		handle = NULL;
 	if (handle) {
@@ -457,6 +461,7 @@ static inline int next3_snapshot_shift_blocks(struct next3_inode_info *ei,
 	/*
 	 * shift 'count' blocks from position 'from' to 'to'
 	 */
+#warning if the ranges you are shifting could ever overlap, then you will trash the pointers that you are trying to move.  This is the same reason why memmove() must be used for overlapping buffers, instead of memcpy().
 	for (i = 0; i < count; i++) {
 		ei->i_data[to+i] = ei->i_data[from+i];
 		ei->i_data[from+i] = 0;
@@ -513,6 +518,7 @@ static int next3_snapshot_create(struct inode *inode)
 	for (i = 0; i <= NEXT3_TIND_BLOCK; i++) {
 		if (ei->i_data[i])
 			break;
+#warning if u want to verify, then why only break out of the "for" loop. where do you check for an error and return it?
 	}
 	/* Don't need i_size_read because we hold i_mutex */
 	if (i <= NEXT3_TIND_BLOCK || inode->i_size > 0 ||
@@ -587,6 +593,7 @@ static int next3_snapshot_create(struct inode *inode)
 		bh = next3_getblk(handle, inode, i, SNAPSHOT_WRITE, &err);
 		if (bh) {
 			err = next3_journal_get_write_access(handle, bh);
+
 			if (!err) {
 				/* zero out meta block */
 				lock_buffer(bh);
@@ -696,6 +703,7 @@ next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
 		next3_fsblk_t blk0 = iloc.block_group *
 			NEXT3_BLOCKS_PER_GROUP(inode->i_sb);
+#warning what is this "self" inode?  a new term?
 		snapshot_debug(1, "failed to allocate self inode and "
 				"bitmap blocks of snapshot (%u) "
 				"(%lu,%lu,%lu/%lu) for snapshot (%u)\n",
@@ -738,6 +746,7 @@ out_handle:
  */
 int next3_snapshot_take(struct inode *inode)
 {
+#warning over 300 LoC fxn.  too long.
 	/*
 	 * If we call next3_getblk() with NULL handle
 	 * we will get read through access to snapshot inode.
@@ -951,6 +960,7 @@ copy_self_inode:
 			       inode->i_generation);
 	}
 fix_self_inode:
+#warning explain concept of "self" inode in code here (and in docs?)
 	/* get snapshot copy of raw inode */
 	iloc.bh = sbh;
 	raw_inode = next3_raw_inode(&iloc);
@@ -1103,12 +1113,14 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_clean() called with non "
 			       "snapshot file (ino=%lu)\n", inode->i_ino);
+#warning if it is not possible for a user program to ever reach here, then EINVAL might be more suitable
 		return -EPERM;
 	}
 
 	if (snapshot != inode) {
 		snapshot_debug(1, "failed to clean non active snapshot (%u)\n",
 				inode->i_generation);
+#warning EINVAL or EIO might be better?
 		return -EPERM;
 	}
 
@@ -1116,6 +1128,7 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 		snapshot_debug(1, "failed to clean snapshot (%u)"
 				" because snapshot (%d) is being cleaned\n",
 				inode->i_generation, cleaning);
+#warning EBUSY seems more suitable
 		return -EPERM;
 	}
 
@@ -1206,6 +1219,7 @@ static int next3_snapshot_enable(struct inode *inode)
 		snapshot_debug(1, "next3_snapshot_enable() called with non "
 			       "snapshot file (ino=%lu)\n",
 			       inode->i_ino);
+#warning u r using EPERM way too much in the next3 code.  this is an example where EINAVL is more appropriate.
 		return -EPERM;
 	}
 
@@ -1213,6 +1227,9 @@ static int next3_snapshot_enable(struct inode *inode)
 	    (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_TAKE_FL)) {
 		snapshot_debug(1, "failed to enable snapshot (%u) "
 			       "(deleted|take)\n", inode->i_generation);
+#warning tell me which flags caused the error.
+#warning misleading debug msg. dont say "failed to enable" b/c you didnt try to enable -- you REFUSED to enable. so say "operation not permitted".
+#warning is EPERM the right err to return?
 		return -EPERM;
 	}
 
@@ -1238,12 +1255,14 @@ static int next3_snapshot_disable(struct inode *inode)
 	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_disable() called with non "
 			       "snapshot file (ino=%lu)\n", inode->i_ino);
+#warning EINVAL is better (same as in snapshot_enable above)
 		return -EPERM;
 	}
 
 	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_OPEN_FL) {
 		snapshot_debug(1, "failed to disable mounted snapshot (%u)\n",
 				inode->i_generation);
+#warning EINVAL is better (same as in snapshot_enable above). also misleading debug msg.
 		return -EPERM;
 	}
 
@@ -1272,6 +1291,7 @@ static int next3_snapshot_delete(struct inode *inode)
 	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_ENABLED_FL) {
 		snapshot_debug(1, "failed to delete enabled snapshot (%u)\n",
 				inode->i_generation);
+#warning u didnd fail to delete, but failed to MARK it for deletion. use precise messages.
 		return -EPERM;
 	}
 
@@ -1284,7 +1304,7 @@ static int next3_snapshot_delete(struct inode *inode)
 #endif
 
 /*
- * next3_snapshot_cleanup() removes a snapshot inode from the list
+ * next3_snapshot_cleanup() removes a snapshot @inode from the list
  * of snapshots stored on disk and truncates the snapshot inode
  * Called from next3_snapshot_update() under snapshot_mutex
  */
@@ -1302,6 +1322,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 
 	if (ei->i_flags & (NEXT3_SNAPFILE_ENABLED_FL | NEXT3_SNAPFILE_INUSE_FL
 			   | NEXT3_SNAPFILE_ACTIVE_FL)) {
+#warning its nicer i u can tell me exactly which flag was on
 		snapshot_debug(4, "deferred delete of snapshot (%u) "
 			       "(inuse|enabled|active)\n", inode->i_generation);
 		goto out_err;
@@ -1323,6 +1344,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	 * there is no need to use the orphan list because
 	 * snapshot is under the protection of the snapshot list
 	 */
+#warning and is snapshot list protection guaranteed to be enough always?
 	nr = ei->i_data[NEXT3_DIND_BLOCK];
 	if (nr) {
 		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 2);
@@ -1350,7 +1372,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	 * but still on the snapshots list.
 	 * after it is removed from the list,
 	 * it must not have the SNAPFILE flag set,
-	 * but it may have the SNAPSFILE_DELETED flag set.
+	 * but it may have the SNAPFILE_DELETED flag set.
 	 * inode will be marked dirty by next3_inode_list_del()
 	 */
 	ei->i_flags &= ~NEXT3_SNAPFILE_FL;
@@ -1405,6 +1427,7 @@ out_err:
  * between 'start' and 'end' which are due for shrinking.
  * Called from next3_snapshot_update() under snapshot_mutex
  */
+#warning use kerneldoc style in comment above (and in general), e.g., mark incoing vars with @var.
 static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 int need_shrink)
 {
@@ -1420,6 +1443,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	next3_fsblk_t bg_boundary = 0;
 	int err;
 
+#warning maybe ensure/assert that we indeed got a deleted snapshot file here
 	snapshot_debug(3, "snapshot (%u-%u) shrink: "
 			"count = 0x%lx, need_shrink = %d\n",
 			start->i_generation, end->i_generation,
@@ -1437,6 +1461,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 						      block_groups);
 			/* reset COW bitmap cache */
 			cow_bitmap.b_state = 0;
+#warning what is this hardcoded -1000 number
 			cow_bitmap.b_blocknr = -1000;
 			cow_bh = &cow_bitmap;
 			bg_boundary += SNAPSHOT_BLOCKS_PER_GROUP;
@@ -1446,7 +1471,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 * Past last snapshot block group - pass NULL
 				 * cow_bh to next3_snapshot_shrink_blocks().
 				 * This will cause snapshots after resize to
-				 * shrink to start snapshot size.
+				 * shrink to the start of snapshot size.
 				 */
 				cow_bh = NULL;
 		}
@@ -1529,8 +1554,9 @@ out_err:
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+#warning "moves blocks": do you mean "removes blocks" or "moves"; if moves,  then moves them to WHERE?
 /*
- * next3_snapshot_merge() moves blocks from shrunk snapshot files.
+ * next3_snapshot_merge() moves blocks of several shrunk snapshot files.
  * 'start' is the latest non-deleted snapshot before
  * the shrunk snapshots, which are due for merging.
  * 'end' is the first non-deleted (or active) snapshot after
@@ -1539,6 +1565,7 @@ out_err:
  * between 'start' and 'end' which are due for merging.
  * Called from next3_snapshot_update() under snapshot_mutex
  */
+#warning use kerneldoc style for comment above (a good idea in general, if u want to make lkml people happy)
 static int next3_snapshot_merge(struct inode *start, struct inode *end,
 				int need_merge)
 {
@@ -1620,16 +1647,17 @@ out_err:
  */
 
 /*
- * next3_snapshot_load() loads the in-memoery snapshot list from disk
+ * next3_snapshot_load() loads the in-memory snapshot list from disk
  * Called from next3_fill_super() under sb_lock
  */
+#warning maybe rename better to next3_read_snapshot_list?
 void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 {
 	__le32 *ino_next = &es->s_last_snapshot;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (!list_empty(&NEXT3_SB(sb)->s_snapshot_list)) {
-		snapshot_debug(1, "warning: snaphots already loaded!\n");
+		snapshot_debug(1, "warning: snapshots already loaded!\n");
 		return;
 	}
 #endif
@@ -1653,6 +1681,7 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 			snapshot_debug(1, "warning: found bad inode (%u) in "
 				       "snapshots list!\n",
 				       le32_to_cpu(*ino_next));
+#warning given the above serious warning, should this be a BUG_ON or return a serious error (EIO?)
 			*ino_next = 0;
 			break;
 		}
@@ -1661,6 +1690,7 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 			snapshot_debug(1, "warning: non snapshot file (%u) in "
 				       "snapshots list!\n",
 				       le32_to_cpu(*ino_next));
+#warning also this sounds like a serious error worthy of BUG_ON or -EIO
 			*ino_next = 0;
 			iput(inode);
 			break;
@@ -1676,10 +1706,11 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 
 		if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
 			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+#warning seems bad to me to fix a missing flag. why should it be missing in the first place? if the user was supposed to set it in mkfs, then u should refuse to mount a next3 f/s unless it has ALL the flags you need.
 			/* fix missing has_snapshot flag */
 			NEXT3_SET_RO_COMPAT_FEATURE(sb,
 				    NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-			snapshot_debug(1, "warning: fixing has_snapshot "
+			snapshot_debug(1, "warning: fixed has_snapshot "
 				       "flag!\n");
 		}
 
@@ -1718,6 +1749,7 @@ void next3_snapshot_destroy(struct super_block *sb)
 		iput(inode);
 	}
 #endif
+#warning you r ignoring return from set_active, which could return NULL
 	next3_snapshot_set_active(sb, NULL);
 }
 
@@ -1727,6 +1759,7 @@ void next3_snapshot_destroy(struct super_block *sb)
  * all snapshots marked for deletion
  * Called under snapshot_mutex or sb_lock
  */
+#warning this convoluted function has multiple modes and deed nesting. best split it into several helpers so its easier to follow
 void next3_snapshot_update(struct super_block *sb, int cleanup)
 {
 	struct inode *active_snapshot;
@@ -1747,10 +1780,13 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	if (cleaning)
+#warning if the comment is true, then why not just return from this fxn and do nothing? why set cleaup=0 and continue?
 		/*
 		 * don't free old snapshot blocks while snapshot_clean()
 		 * is clearing snapshot blocks from COW bitmap
 		 */
+#warning i dont like code which changes non-pointer formal parameters pass to a fxn
+
 		cleanup = 0;
 #endif
 
@@ -1869,7 +1905,6 @@ static void next3_snapshot_dump_ind(struct Indirect *ind,
 		int i, int n, int l,
 		int *pnmoved, int *pncopied)
 {
-#pragma ezk
 	__le32 blk, prev_key;
 	int j, b, k = 0;
 
@@ -1928,7 +1963,6 @@ keep_counting:
 #warning if this can be called under one of two locks, this could lead to odd races b/t threads which ones one lock vs. the other.
 static void next3_snapshot_dump(struct inode *inode)
 {
-#pragma ezk
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	struct Indirect chain[4] = {{NULL}, {NULL} }, *ind = chain;
 	int nmeta = 0, nind = 0, ncopied = 0, nmoved = 0;

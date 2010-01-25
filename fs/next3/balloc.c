@@ -808,6 +808,7 @@ error_return:
 void next3_free_blocks(handle_t *handle, struct inode *inode,
 			next3_fsblk_t block, unsigned long count)
 {
+#warning be sure code+docs list who gets charged for snapshot blocks, exclude blocks/inode, etc.  is it the end user? root?
 	struct super_block * sb;
 	unsigned long dquot_freed_blocks;
 
@@ -986,13 +987,14 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 		ret = 1;
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+#warning "we can rest this rule" below is unclear.  what do you mean by "rest"?  typo?
 	/*
 	 * Mark excluded file block in exclude bitmap.  It would have been
 	 * better to mark the block excluded before marking it allocated or
 	 * to mark both under jbd_lock_bh_state() but we can rest this rule,
 	 * because exclude bitmap is only used for creating the COW bitmap
 	 * from commited_data and we already checked that the block is not
-	 * marked is committed_data.
+	 * marked in committed_data.
 	 */
 	if (ret && exclude_bitmap_bh &&
 		next3_set_bit_atomic(lock, block, exclude_bitmap_bh->b_data)) {
@@ -1000,6 +1002,7 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 		 * we should never get here because free blocks
 		 * should never be excluded from snapshot
 		 */
+#warning if this is a serious bug, use BUG_ON. maybe also add a debug printk?
 		WARN_ON(1);
 	}
 #endif
@@ -1734,6 +1737,7 @@ next3_fsblk_t next3_new_blocks(handle_t *handle, struct inode *inode,
 	struct next3_block_alloc_info *block_i;
 	unsigned short windowsz = 0;
 #ifdef NEXT3FS_DEBUG
+#warning why is NEXT3FS_DEBUG not a kernel config option?! fix everywhere or document.
 	static int goal_hits, goal_attempts;
 #endif
 	unsigned long ngroups;

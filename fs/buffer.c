@@ -297,6 +297,7 @@ static void free_more_memory(void)
 }
 
 #ifdef CONFIG_BLOCK_TRACKED_READ
+#warning can u document the locking conventions, if any, for these tracked-read fxns?
 /*
  * start buffer tracked read
  * called from inside get_block()
@@ -331,6 +332,7 @@ EXPORT_SYMBOL_GPL(start_buffer_tracked_read);
  */
 void cancel_buffer_tracked_read(struct buffer_head *bh)
 {
+#warning is this a "cancel" or a "put" function; if so, name it better. o/w, stay with jbd naming conventions.
 	struct buffer_head *_bh;
 
 	BUG_ON(!buffer_tracked_read(bh));
@@ -353,7 +355,6 @@ EXPORT_SYMBOL_GPL(cancel_buffer_tracked_read);
 static int submit_buffer_tracked_read(struct buffer_head *bh)
 {
 	struct buffer_head *_bh;
-
 	BUG_ON(!buffer_tracked_read(bh));
 	BUG_ON(!buffer_mapped(bh));
 	/* tracked read doesn't work with multiple buffers per page */

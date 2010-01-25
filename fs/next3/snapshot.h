@@ -1,4 +1,3 @@
-//#pragma ezk
 /*
  * linux/fs/next3/snapshot.h
  *
@@ -114,6 +113,7 @@
 	/* same as copy, but don't use journal credits */
 #define SNAPSHOT_BITMAP	3
 	/* if in use, move the block to the active snapshot */
+#warning why do you need negative values here? why cant it be an enum?
 #define SNAPSHOT_MOVE	-1
 	/* mark the block excluded from snapshot */
 #define SNAPSHOT_CLEAR	-2
@@ -250,6 +250,7 @@ extern int next3_statfs_sb(struct super_block *sb, struct kstatfs *buf);
 static inline int next3_snapshot_file(struct inode *inode)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#warning you can just change this fxn to one line "return i_flags & SNAPFILE_FL"
 	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)
 		return 1;
 #endif
@@ -258,9 +259,11 @@ static inline int next3_snapshot_file(struct inode *inode)
 
 static inline int next3_snapshot_exclude_inode(struct inode *inode)
 {
+#warning why should anyone pass null inode here?  this might be a bug and perhaps should be caught by WARN_ON/BUG_ON.
 	if (!inode)
 		return 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+#warning you can just change this fxn to one line "return inode->i_ino == NEXT3_EXCLUDE_INO"
 	if (inode->i_ino == NEXT3_EXCLUDE_INO)
 		return 1;
 #endif
@@ -324,6 +327,7 @@ static inline int next3_snapshot_should_cow_data(struct inode *inode)
  */
 static inline struct inode *next3_snapshot_get_active(struct super_block *sb)
 {
+#warning the name "get" in this fxn implies that it returns an object with refcount++ (ala iget). i assume something holds a ref on s_active_snapshot...
 	return NEXT3_SB(sb)->s_active_snapshot;
 }
 

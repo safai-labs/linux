@@ -62,6 +62,7 @@
 #define NEXT3_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define NEXT3_JOURNAL_INO	 8	/* Journal inode */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+#warning any reason u picked 10 and not some other reserved number?
 #define NEXT3_EXCLUDE_INO		10	/* Snapshot exclude inode */
 #endif
 
@@ -617,6 +618,7 @@ struct next3_super_block {
 	__u8	s_reserved_char_pad2;
 	__le16  s_reserved_pad;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#warning wrt padding, does next3 use 128 or 256-byte inodes? do u handle either (ext3 mkfs starting using 256 bytes some time ago)
 	__u32	s_reserved[159];	/* Padding to the end of the block */
 	/*
 	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT

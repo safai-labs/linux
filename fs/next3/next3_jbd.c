@@ -14,6 +14,8 @@ int __next3_journal_get_undo_access(const char *where, handle_t *handle,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 	if (!err) {
 		err = next3_snapshot_get_undo_access(handle, bh);
+#warning seems odd that get_undo_access returns a SNAPSHOT_XXX but you treat it as err
+#warning same in the various functions below
 		if (err > 0)
 			/* deny access if block should be COWed */
 			err = ((err == SNAPSHOT_COW) ? -EIO : 0);
@@ -118,6 +120,7 @@ int __next3_journal_dirty_metadata(const char *where,
 			 * == 0)
 			 */
 			jh->b_modified = 2;
+#warning why these hardcoded values of 1 and 2 for b_modified. macro-ize it?
 			handle->h_user_credits--;
 		}
 		jbd_unlock_bh_state(bh);

@@ -1,4 +1,3 @@
-//#pragma ezk
 /*
  * include/linux/journal-head.h
  *

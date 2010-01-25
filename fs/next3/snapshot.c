@@ -20,11 +20,12 @@
  */
 
 /*
- * use 'mask' to clear exclude bitmap bits from block bitmap
- * when creating COW bitmap
+ * use @mask to clear exclude bitmap bits from block bitmap
+ * when creating COW bitmap and mark snapshot buffer @sbh uptodate
  */
 static inline void
-__next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
+__next3_snapshot_copy_bitmap(struct buffer_head *sbh,
+		char *dst, const char *src, const char *mask)
 {
 	const u32 *ps = (const u32 *)src, *pm = (const u32 *)mask;
 	u32 *pd = (u32 *)dst;
@@ -32,20 +33,18 @@ __next3_snapshot_copy_bitmap(char *dst, const char *src, const char *mask)
 
 	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
 		*pd++ = *ps++ & ~*pm++;
+
+	set_buffer_uptodate(sbh);
 }
 
 /*
- * copy 'data' to (locked) snapshot buffer 'sbh'
- * 'mask' data before copying it to snapshot buffer
+ * copy buffer @bh to (locked) snapshot buffer @sbh and mark it uptodate
  */
 static inline void
 __next3_snapshot_copy_buffer(struct buffer_head *sbh,
-		const char *data, const char *mask)
+		struct buffer_head *bh)
 {
-	if (mask)
-		__next3_snapshot_copy_bitmap(sbh->b_data, data, mask);
-	else
-		memcpy(sbh->b_data, data, SNAPSHOT_BLOCK_SIZE);
+	memcpy(sbh->b_data, bh->b_data, SNAPSHOT_BLOCK_SIZE);
 	set_buffer_uptodate(sbh);
 }
 
@@ -104,7 +103,7 @@ next3_snapshot_copy_buffer_cow(handle_t *handle,
 				   struct buffer_head *sbh,
 				   struct buffer_head *bh)
 {
-	__next3_snapshot_copy_buffer(sbh, bh->b_data, NULL);
+	__next3_snapshot_copy_buffer(sbh, bh);
 	return next3_snapshot_complete_cow(handle, sbh, bh, 0);
 }
 
@@ -113,13 +112,17 @@ next3_snapshot_copy_buffer_cow(handle_t *handle,
  * helper function for next3_snapshot_take()
  * used for initializing pre-allocated snapshot blocks
  * copy buffer to snapshot buffer and mark it dirty
- * 'mask' buffer before copying to snapshot.
+ * 'mask' block bitmap with exclude bitmap before copying to snapshot.
  */
 int next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		struct buffer_head *bh, const char *mask)
 {
 	lock_buffer(sbh);
-	__next3_snapshot_copy_buffer(sbh, bh->b_data, mask);
+	if (mask)
+		__next3_snapshot_copy_bitmap(sbh,
+				sbh->b_data, bh->b_data, mask);
+	else
+		__next3_snapshot_copy_buffer(sbh, bh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
 #warning u can make this a void fxn
@@ -335,14 +338,14 @@ next3_snapshot_init_cow_bitmap(struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
-	const char *data, *mask = NULL;
+	const char *dst, *src, *mask = NULL;
 	struct journal_head *jh;
 
 	bitmap_bh = read_block_bitmap(sb, block_group);
 	if (!bitmap_bh)
 		return -EIO;
 
-	data = bitmap_bh->b_data;
+	src = bitmap_bh->b_data;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh)
@@ -363,9 +366,15 @@ next3_snapshot_init_cow_bitmap(struct super_block *sb,
 	jbd_lock_bh_state(bitmap_bh);
 	jh = bh2jh(bitmap_bh);
 	if (jh && jh->b_committed_data)
-		data = jh->b_committed_data;
+		src = jh->b_committed_data;
 
-	__next3_snapshot_copy_buffer(cow_bh, data, mask);
+	/*
+	 * in the path coming from next3_snapshot_read_block_bitmap(),
+	 * cow_bh is a user page buffer so it has to be kmapped.
+	 */
+	dst = kmap_atomic(cow_bh->b_page, KM_USER0);
+	__next3_snapshot_copy_bitmap(cow_bh, dst, src, mask);
+	kunmap_atomic(dst, KM_USER0);
 
 	jbd_unlock_bh_state(bitmap_bh);
 	jbd_unlock_bh_journal_head(bitmap_bh);
@@ -380,7 +389,7 @@ next3_snapshot_init_cow_bitmap(struct super_block *sb,
 /*
  * next3_snapshot_read_block_bitmap()
  * helper function for next3_snapshot_get_block()
- * used for fixing the block bitmap buffer when
+ * used for fixing the block bitmap user page buffer when
  * reading through to block device.
  */
 int next3_snapshot_read_block_bitmap(struct super_block *sb,

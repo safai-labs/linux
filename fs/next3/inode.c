@@ -1714,14 +1714,13 @@ got_it:
 		next3_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
 		if (buffer_uptodate(sbh)) {
 			/*
-			 * Avoid disk I/O and copy snapshot data buffer directly
-			 * from memeory when possible.
+			 * Avoid disk I/O and copy out snapshot page directly
+			 * from block device page when possible.
 			 */
-			BUG_ON(!sbh->b_data);
-			BUG_ON(!bh_result->b_data);
+			BUG_ON(!sbh->b_page);
+			BUG_ON(!bh_result->b_page);
 			lock_buffer(bh_result);
-			memcpy(bh_result->b_data, sbh->b_data,
-					SNAPSHOT_BLOCK_SIZE);
+			copy_highpage(bh_result->b_page, sbh->b_page);
 			set_buffer_uptodate(bh_result);
 			unlock_buffer(bh_result);
 		} else if (buffer_dirty(sbh)) {

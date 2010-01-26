@@ -314,19 +314,19 @@ static inline int next3_snapshot_should_cow_data(struct inode *inode)
 }
 
 /*
- * next3_snapshot_get_active() gets the current active snapshot.
+ * tests if the file system has an active snapshot and returns its inode.
  * active snapshot is only changed under journal_lock_updates(),
- * so it should be safe to use it during a transaction
+ * so it is safe to use the returned inode during a transaction.
  */
-static inline struct inode *next3_snapshot_get_active(struct super_block *sb)
+static inline struct inode *next3_snapshot_has_active(struct super_block *sb)
 {
-#warning the name "get" in this fxn implies that it returns an object with refcount++ (ala iget). i assume something holds a ref on s_active_snapshot...
 	return NEXT3_SB(sb)->s_active_snapshot;
 }
 
 /*
- * next3_snapshot_is_active() tests if inode is the current active snapshot.
- * the test result is valid only at the time of the test
+ * tests if @inode is the current active snapshot.
+ * active snapshot is only changed under journal_lock_updates(),
+ * so the test result never changes during a transaction.
  */
 static inline int next3_snapshot_is_active(struct inode *inode)
 {

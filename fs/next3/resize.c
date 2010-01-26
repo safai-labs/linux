@@ -734,7 +734,7 @@ static void update_backups(struct super_block *sb,
 			break;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
-		if (next3_snapshot_get_active(sb))
+		if (next3_snapshot_has_active(sb))
 			/*
 			 * next3_snapshot_get_write_access() expects an
 			 * uptodate buffer. do it here to suppress "non

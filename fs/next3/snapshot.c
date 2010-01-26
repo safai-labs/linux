@@ -574,13 +574,12 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
  * next3_snapshot_exclude_blocks() marks blocks in exclude bitmap
  */
 static int
-next3_snapshot_exclude_blocks(handle_t *handle, struct inode *snapshot,
+next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
 			      next3_fsblk_t block, int count)
 {
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
-	struct super_block *sb = snapshot->i_sb;
 	int err = 0, n = 0, excluded = 0;
 
 	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
@@ -726,7 +725,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 #warning this long function has three distinct modes, based on the cmd. it should be split into three helpers which can be called from here or directly from the caller.
 #warning make that four modes: it can also handle SNAPSHOT_READ cmd
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
-	struct inode *snapshot = next3_snapshot_get_active(sb);
+	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;
 	next3_fsblk_t blk = 0;
 	int err = 0, ret = SNAPSHOT_OK;
@@ -743,8 +742,8 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 		goto out;
 	}
 
-#warning if theres no snapshot, you goto out, and perform some actions like h_level-- and brrelse. is that correct?  is "!snapshot" an ok/normal condition (ie no one ever took a snapshot), or an error?
-	if (!snapshot)
+	if (!active_snapshot)
+		/* no active snapshot - no need to COW */
 		goto out;
 
 	/* avoid recursion on active snapshot file updates */
@@ -752,7 +751,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 		(inode && next3_snapshot_exclude_inode(inode)) ||
 #endif
-		(inode == snapshot && cmd != SNAPSHOT_CLEAR)) {
+		(inode == active_snapshot && cmd != SNAPSHOT_CLEAR)) {
 		snapshot_debug_hl(4, "active snapshot file update - "
 				  "skip block cow!\n");
 		goto out;
@@ -812,7 +811,7 @@ test_cow_bitmap:
 #endif
 
 	/* get the COW bitmap and test if the block needs to be COWed */
-	err = next3_snapshot_test_cow_bitmap(handle, snapshot, block);
+	err = next3_snapshot_test_cow_bitmap(handle, active_snapshot, block);
 	if (err < 0)
 		goto out;
 	ret = err;
@@ -834,7 +833,7 @@ test_cow_bitmap:
 		goto cowed;
 
 	/* test if snapshot already has a private copy of the block */
-	err = next3_snapshot_map_blocks(handle, snapshot, block, 1, &blk,
+	err = next3_snapshot_map_blocks(handle, active_snapshot, block, 1, &blk,
 					SNAPSHOT_READ);
 	if (err < 0)
 		goto out;
@@ -865,7 +864,7 @@ test_cow_bitmap:
 			goto cowed;
 		}
 		/* move block from inode to snapshot */
-		err = next3_snapshot_map_blocks(handle, snapshot, block,
+		err = next3_snapshot_map_blocks(handle, active_snapshot, block,
 						count, NULL, cmd);
 		if (err > 0) {
 			count = err;
@@ -903,7 +902,7 @@ test_cow_bitmap:
 	}
 
 	/* try to allocate snapshot block to make a backup copy */
-	sbh = next3_getblk(handle, snapshot, SNAPSHOT_IBLOCK(block),
+	sbh = next3_getblk(handle, active_snapshot, SNAPSHOT_IBLOCK(block),
 			   SNAPSHOT_COPY, &err);
 	if (!sbh || err < 0)
 		goto out;
@@ -918,7 +917,7 @@ test_cow_bitmap:
 			       "(%u)...\n",
 				SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
 				SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-				snapshot->i_generation);
+				active_snapshot->i_generation);
 		/* sleep 1 tunable delay unit */
 		snapshot_test_delay(SNAPTEST_COW);
 #endif
@@ -929,7 +928,7 @@ test_cow_bitmap:
 				"mapped to block [%lld/%lld]\n",
 				SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
 				SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-				snapshot->i_generation,
+				active_snapshot->i_generation,
 				SNAPSHOT_BLOCK_GROUP_OFFSET(sbh->b_blocknr),
 				SNAPSHOT_BLOCK_GROUP(sbh->b_blocknr));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
@@ -954,7 +953,7 @@ test_pending_cow:
 		 * XXX: Experimental code
 		 * zero out snapshot block data
 		 */
-		err = next3_snapshot_zero_buffer(handle, snapshot,
+		err = next3_snapshot_zero_buffer(handle, active_snapshot,
 						      bh->b_blocknr, blk);
 		if (err)
 			goto out;
@@ -971,7 +970,7 @@ cowed:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (clear < 0) {
 		/* mark blocks in exclude bitmap */
-		err = next3_snapshot_exclude_blocks(handle, snapshot,
+		err = next3_snapshot_exclude_blocks(handle, sb,
 						      block, count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 		if (err > 0)

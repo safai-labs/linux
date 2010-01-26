@@ -480,7 +480,8 @@ out:
 static int next3_snapshot_create(struct inode *inode)
 {
 	handle_t *handle;
-	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	struct inode *active_snapshot = next3_snapshot_has_active(inode->i_sb);
+	struct inode *snapshot;
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	int i, count, err;
 	struct next3_group_desc *desc;
@@ -498,7 +499,7 @@ static int next3_snapshot_create(struct inode *inode)
 		struct inode *last_snapshot =
 			&list_first_entry(list, struct next3_inode_info,
 					  i_orphan)->vfs_inode;
-		if (snapshot != last_snapshot) {
+		if (active_snapshot != last_snapshot) {
 			snapshot_debug(1, "failed to add snapshot because last"
 				       " snapshot (%u) is not active\n",
 				       last_snapshot->i_generation);
@@ -506,10 +507,10 @@ static int next3_snapshot_create(struct inode *inode)
 		}
 	}
 #else
-	if (snapshot) {
+	if (active_snapshot) {
 		snapshot_debug(1, "failed to add snapshot because active "
 			       "snapshot (%u) has to be deleted first\n",
-			       snapshot->i_generation);
+			       active_snapshot->i_generation);
 		return -EPERM;
 	}
 #endif
@@ -1104,7 +1105,8 @@ out_err:
 static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 {
 	struct list_head *l;
-	struct inode *snapshot = next3_snapshot_get_active(inode->i_sb);
+	struct inode *active_snapshot = next3_snapshot_has_active(inode->i_sb);
+	struct inode *snapshot;
 	struct next3_inode_info *ei;
 	struct buffer_head *bh = NULL;
 	__le32 nr;
@@ -1117,7 +1119,7 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
 		return -EPERM;
 	}
 
-	if (snapshot != inode) {
+	if (active_snapshot != inode) {
 		snapshot_debug(1, "failed to clean non active snapshot (%u)\n",
 				inode->i_generation);
 #warning EINVAL or EIO might be better?
@@ -1790,7 +1792,7 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 		cleanup = 0;
 #endif
 
-	active_snapshot = next3_snapshot_get_active(sb);
+	active_snapshot = next3_snapshot_has_active(sb);
 	if (!active_snapshot)
 		return;
 

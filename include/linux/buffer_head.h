@@ -275,11 +275,13 @@ extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 
 /*
- * Tracked readers take a track reader reference count
- * on the block device buffer cache entry.
- * We use the upper dword of b_count to count tracked readers.
+ * A tracked reader takes 0x10000 reference counts on the block device buffer.
+ * b_count is not likely to reach 0x10000 by get_bh() calls, but even if it
+ * does, that will only affect the result of buffer_tracked_readers_count().
+ * After 0x1000 subsequent calls to get_bh_tracked_reader(), b_count will
+ * overflow, but that requires 0x10000 parallel readers from 0x10000 different
+ * snapshots and very slow disk I/O...
  */
-#warning is it safe to use the upper dword? can the lower part ever spill into the upper dword? maybe make a separate counter var?
 #define BH_TRACKED_READERS_COUNT_SHIFT 16
 
 static inline void get_bh_tracked_reader(struct buffer_head *_bh)

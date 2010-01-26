@@ -297,7 +297,26 @@ static void free_more_memory(void)
 }
 
 #ifdef CONFIG_BLOCK_TRACKED_READ
-#warning can u document the locking conventions, if any, for these tracked-read fxns?
+/*
+ * Tracked read functions.
+ * When reading through a next3 snapshot file hole to a block device block,
+ * all writes to this block need to wait for completion of the async read.
+ * next3_snapshot_readpage() always calls block_read_full_page() to attach
+ * a buffer head to the page and be aware of tracked reads.
+ * next3_snapshot_get_block() calls start_buffer_tracked_read() to mark both
+ * snapshot page buffer and block device page buffer.
+ * next3_snapshot_get_block() calls cancel_buffer_tracked_read() if snapshot
+ * doesn't need to read through to the block device.
+ * block_read_full_page() calls submit_buffer_tracked_read() to submit a
+ * tracked async read.
+ * end_buffer_async_read() calls end_buffer_tracked_read() to complete the
+ * tracked read operation.
+ * The only lock needed in all these functions is PageLock on the snapshot page,
+ * which is guarentied in readpage() and verified in block_read_full_page().
+ * The block device page buffer doesn't need any lock because the operations
+ * {get|put}_bh_tracked_reader() are atomic.
+ */
+
 /*
  * start buffer tracked read
  * called from inside get_block()
@@ -332,7 +351,6 @@ EXPORT_SYMBOL_GPL(start_buffer_tracked_read);
  */
 void cancel_buffer_tracked_read(struct buffer_head *bh)
 {
-#warning is this a "cancel" or a "put" function; if so, name it better. o/w, stay with jbd naming conventions.
 	struct buffer_head *_bh;
 
 	BUG_ON(!buffer_tracked_read(bh));
@@ -360,7 +378,11 @@ static int submit_buffer_tracked_read(struct buffer_head *bh)
 	/* tracked read doesn't work with multiple buffers per page */
 	BUG_ON(bh->b_this_page != bh);
 
-	/* try to grab the buffer cache entry */
+	/*
+	 * Try to grab the buffer cache entry before submitting async read
+	 * because we cannot call blocking function __find_get_block()
+	 * in interrupt context inside end_buffer_tracked_read().
+	 */
 	_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
 	BUG_ON(!_bh || _bh == bh);
 	/* override page buffers list with reference to buffer cache entry */

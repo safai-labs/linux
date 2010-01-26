@@ -750,7 +750,7 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	/* avoid recursion on active snapshot file updates */
 	if (handle->h_level > 1 ||
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-		next3_snapshot_exclude_inode(inode) ||
+		(inode && next3_snapshot_exclude_inode(inode)) ||
 #endif
 		(inode == snapshot && cmd != SNAPSHOT_CLEAR)) {
 		snapshot_debug_hl(4, "active snapshot file update - "

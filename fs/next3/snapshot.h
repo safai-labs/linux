@@ -247,28 +247,19 @@ struct kstatfs;
 extern int next3_statfs_sb(struct super_block *sb, struct kstatfs *buf);
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 static inline int next3_snapshot_file(struct inode *inode)
 {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-#warning you can just change this fxn to one line "return i_flags & SNAPFILE_FL"
-	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)
-		return 1;
-#endif
-	return 0;
+	return (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL);
 }
+#endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 static inline int next3_snapshot_exclude_inode(struct inode *inode)
 {
-#warning why should anyone pass null inode here?  this might be a bug and perhaps should be caught by WARN_ON/BUG_ON.
-	if (!inode)
-		return 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-#warning you can just change this fxn to one line "return inode->i_ino == NEXT3_EXCLUDE_INO"
-	if (inode->i_ino == NEXT3_EXCLUDE_INO)
-		return 1;
-#endif
-	return 0;
+	return (inode->i_ino == NEXT3_EXCLUDE_INO);
 }
+#endif
 
 /*
  * Next3_snapshot_excluded():
@@ -288,9 +279,11 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 {
 	if (!inode || !S_ISREG(inode->i_mode))
 		return 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_file(inode))
 		/* ignore snapshot file */
 		return -1;
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (next3_snapshot_exclude_inode(inode))
 		/* ignore exclude inode */

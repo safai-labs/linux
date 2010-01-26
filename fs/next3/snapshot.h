@@ -333,38 +333,6 @@ static inline int next3_snapshot_is_active(struct inode *inode)
 	return (inode == NEXT3_SB(inode->i_sb)->s_active_snapshot);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-/*
- * next3_snapshot_exclude_hide() hides exclude inode indirect blocks
- */
-static inline void next3_snapshot_exclude_hide(struct next3_inode *raw_inode)
-{
-#warning any locking issue here and in other macros in this .h file? see my comment in exclude_expose below.
-	raw_inode->i_block[NEXT3_IND_BLOCK] = 0;
-}
-
-/*
- * next3_snapshot_exclude_expose() exposes exclude inode indirect blocks
- */
-static inline void next3_snapshot_exclude_expose(struct next3_inode_info *ei)
-{
-	/*
-	 * Link the DIND branch to the IND branch,
-	 * so we can read exclude bitmap block addresses with next3_bread().
-	 *
-	 * My reasons to justify this hack are:
-	 * 1. I like shortcuts and it helped keeping my patch small
-	 * 2. No user has access to the exclude inode
-	 * 3. The exclude inode is never truncated on a mounted next3
-	 * 4. The 'expose' is only to the in-memory inode (so fsck is happy)
-	 * 5. A healthy exclude inode has blocks only on the DIND branch
-	 * XXX: is that a problem?
-	 */
-#warning is there any locking issues here?  can i_data be changed back or to something else by another thread? document behavior.
-	ei->i_data[NEXT3_IND_BLOCK] = ei->i_data[NEXT3_DIND_BLOCK];
-}
-#endif
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 /*
  * Pending COW functions

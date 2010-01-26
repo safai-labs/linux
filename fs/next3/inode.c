@@ -3947,9 +3947,28 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 	}
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-	if (next3_snapshot_exclude_inode(inode))
-		/* expose exclude inode indirect blocks */
-		next3_snapshot_exclude_expose(ei);
+	if (next3_snapshot_exclude_inode(inode)) {
+		if (ei->i_data[NEXT3_IND_BLOCK] != 0) {
+			/* there should be no blocks on the indirect branch
+			   of exclude inode */
+			brelse (bh);
+			ret = -EIO;
+			goto bad_inode;
+		}
+		/*
+		 * Link the DIND branch to the IND branch, so we can read
+		 * exclude bitmap block addresses with next3_bread().
+		 *
+		 * My reasons to justify this hack are:
+		 * 1. I like shortcuts and it helped keeping my patch small
+		 * 2. No user has access to the exclude inode
+		 * 3. The exclude inode is never truncated on a mounted next3
+		 * 4. The 'expose' is only to the in-memory inode (so fsck is happy)
+		 * 5. A healthy exclude inode has blocks only on the DIND branch
+		 * XXX: is that a problem?
+		 */
+		ei->i_data[NEXT3_IND_BLOCK] = ei->i_data[NEXT3_DIND_BLOCK];
+	}
 #endif
 
 	INIT_LIST_HEAD(&ei->i_orphan);
@@ -4141,9 +4160,16 @@ static int next3_do_update_inode(handle_t *handle,
 	}
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-	if (next3_snapshot_exclude_inode(inode))
-		/* hide exclude inode indirect blocks */
-		next3_snapshot_exclude_hide(raw_inode);
+	if (next3_snapshot_exclude_inode(inode) &&
+			raw_inode->i_block[NEXT3_IND_BLOCK] ==
+			raw_inode->i_block[NEXT3_DIND_BLOCK])
+		/*
+		 * Remove duplicate reference to exclude inode indirect blocks
+		 * which was exposed in next3_iget() before storing to disk.
+		 * It was needed only in memory and we don't want to break
+		 * compatibility to ext2 disk format.
+		 */
+		raw_inode->i_block[NEXT3_IND_BLOCK] = 0;
 #endif
 
 	BUFFER_TRACE(bh, "call next3_journal_dirty_metadata");

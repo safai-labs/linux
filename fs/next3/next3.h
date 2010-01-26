@@ -62,7 +62,6 @@
 #define NEXT3_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define NEXT3_JOURNAL_INO	 8	/* Journal inode */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-#warning any reason u picked 10 and not some other reserved number?
 #define NEXT3_EXCLUDE_INO		10	/* Snapshot exclude inode */
 #endif
 

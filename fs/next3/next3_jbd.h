@@ -271,11 +271,18 @@ static inline handle_t *next3_journal_current_handle(void)
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-#warning say briefly when/why journal_extend is needed
+/*
+ * Next3 wrapper for journal_extend()
+ * When transaction runs out of buffer credits it is possible to try and
+ * extend the buffer credits withtout restarting the transaction.
+ * Next3 wrapper for journal_start() has increased the user requested buffer
+ * credits to include the extra credits for COW operations.
+ * This wrapper checks the remaining user credits and how many COW credits
+ * are missing and then tries to extend the transaction.
+ */
 static inline int __next3_journal_extend(const char *where,
 		handle_t *handle, int nblocks)
 {
-#warning i might rename this fxn to next3_journal__extend_credits
 	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits+nblocks);
 	int err = 0;
 	int missing = lower - handle->h_buffer_credits;
@@ -291,7 +298,13 @@ static inline int __next3_journal_extend(const char *where,
 	return err;
 }
 
-#warning say when journal_restart is needed
+/*
+ * Next3 wrapper for journal_restart()
+ * When transaction runs out of buffer credits and cannot be extended,
+ * the alternative is to restart it (start a new transaction).
+ * This wrapper increases the user requested buffer credits to include the
+ * extra credits for COW operations.
+ */
 static inline int __next3_journal_restart(const char *where,
 					  handle_t *handle, int nblocks)
 {

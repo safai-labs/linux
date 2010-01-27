@@ -106,21 +106,23 @@ int __next3_journal_dirty_metadata(const char *where,
 		next3_journal_abort_handle(where, __func__, bh, handle,err);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	if (err)
+		return err;
+	
 	if (handle->h_level == 0) {
 		struct journal_head *jh = bh2jh(bh);
 		jbd_lock_bh_state(bh);
-		if (jh->b_modified == 1) {
+		if (jh->b_modified && !jh->b_user_modified) {
 			/*
 			 * buffer_credits was decremented when buffer was
 			 * modified for the first time in the currect
 			 * transaction, which may have been during a COW
 			 * operation (h_level > 0).  we decrement
-			 * user_credits and mark modified = 2, the first
-			 * time that the buffer is modified by user (h_level
-			 * == 0)
+			 * user_credits and mark b_user_modified, the first
+			 * time that the buffer is modified not during a
+			 * COW operation (h_level == 0).
 			 */
-			jh->b_modified = 2;
-#warning why these hardcoded values of 1 and 2 for b_modified. macro-ize it?
+			jh->b_user_modified = 1;
 			handle->h_user_credits--;
 		}
 		jbd_unlock_bh_state(bh);

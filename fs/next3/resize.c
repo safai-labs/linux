@@ -999,10 +999,14 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			       "("E3FSBLK")\n", input->group, first_free);
 		next3_journal_dirty_metadata(handle, exclude_bh);
 
-		/* update exclude inode size and blocks */
+		/*
+		 * Update exclude inode size and blocks.
+		 * Online resize can only extend f/s and exclude inode.
+		 * Offline resize can shrink f/s but it doesn't shrink
+		 * exclude inode.
+		 */
 		i_size = SNAPSHOT_IBLOCK(input->group)
 				 << SNAPSHOT_BLOCK_SIZE_BITS;
-#warning do u support extending the exclude_inode, or also shrinking it.
 		i_size_write(exclude_inode, i_size);
 		NEXT3_I(exclude_inode)->i_disksize = i_size;
 		exclude_inode->i_blocks += sb->s_blocksize >> 9;

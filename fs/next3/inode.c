@@ -2771,9 +2771,15 @@ static const struct address_space_operations next3_journalled_aops = {
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /*
- * readonly aops for snapshot file:
- * always readpage (by page) with buffer tracked read
- * never writepage and never direct_IO.
+ * Snapshot file page operations:
+ * always readpage (by page) with buffer tracked read.
+ * user cannot writepage or direct_IO to a snapshot file.
+ *
+ * snapshot file pages are written to disk after a COW operation in "ordered"
+ * mode and are never changed after that again, so there is no data corruption
+ * risk when using "ordered" mode on snapshot files.
+ * some snapshot data pages are written to disk by sync_dirty_buffer(), namely
+ * the snapshot COW bitmaps and a few initial blocks copied on snapshot_take().
  */
 static const struct address_space_operations next3_snapfile_aops = {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ

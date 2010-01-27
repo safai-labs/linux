@@ -2145,8 +2145,11 @@ static journal_t *next3_get_journal(struct super_block *sb,
 	journal->j_private = sb;
 	next3_init_journal_params(sb, journal);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	/* keep a reference to journal inode for snapshot_take() */
-#warning dont u need to igrab the journal_inode here? someone else might iput it on you. any time you make a ptr from X to Y, you need to get(Y) first.
+	/*
+	 * Save the journal's reference to journal inode for snapshot_take().
+	 * no need to igrab because journal's reference is valid while the
+	 * file system is mounted (not possible to delete the journal).
+	 */
 	NEXT3_SB(sb)->s_journal_inode = journal_inode;
 #endif
 	return journal;

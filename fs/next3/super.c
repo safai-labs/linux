@@ -2037,7 +2037,6 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	NEXT3_SB(sb)->s_mount_state |= NEXT3_ORPHAN_FS;
 	next3_orphan_cleanup(sb, es);
 	NEXT3_SB(sb)->s_mount_state &= ~NEXT3_ORPHAN_FS;
-#warning dont say recovery complete before u have actually completed it! in several places in the next3 code, you prink a message before an action takes place. (this code is from orig ext3?)
 	if (needs_recovery)
 		printk (KERN_INFO "NEXT3-fs: recovery complete.\n");
 	next3_mark_recovery_complete(sb, es);

@@ -2023,8 +2023,7 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	next3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 	next3_snapshot_load(sb, es);
-	/* TODO: check for errors during snapshot load */
-#warning just abort the mount if any snapshot errors? or allow mounting with some snapshots missing? or mount whole f/s in ro mode?
+	/* TODO: force read-only mount if snapshot_load() failed */
 #endif
 	/*
 	 * akpm: core read_super() calls in here with the superblock locked.

@@ -43,6 +43,9 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		struct next3_iloc iloc;
 		unsigned int oldflags;
 		unsigned int jflag;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		unsigned int snapflags = 0;
+#endif
 
 		if (!is_owner_or_cap(inode))
 			return -EACCES;
@@ -57,12 +60,6 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		flags = next3_mask_flags(inode->i_mode, flags);
 
 		mutex_lock(&inode->i_mutex);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
-		/* this may or may not be a snapshot operation
-		 * but to be on the safe side just take the mutex */
-		mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
-#warning can mutex_lock be moved lower to make critical section shorter?
-#endif
 
 		/* Is it quota file? Do not allow user to mess with it */
 		err = -EPERM;
@@ -93,6 +90,38 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			if (!capable(CAP_SYS_RESOURCE))
 				goto flags_out;
 		}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/*
+		 * Snapshot flags and snapshot file (has snapshot flags)
+		 * flags (including non-snapshot flags) can only be changed by
+		 * the relevant capability and under snapshot_mutex lock.
+		 */
+		snapflags = ((flags | oldflags) & NEXT3_FL_SNAPSHOT_MASK);
+		if (snapflags) {
+			if (!capable(CAP_SYS_RESOURCE)) {
+				/* indicate snapshot_mutex not taken */
+				snapflags = 0;
+				goto flags_out;
+			}
+
+			/*
+			 * snapshot_mutex should be held throughout the trio
+			 * snapshot_{set_flags,take,update}().  It must be taken 
+			 * before starting the transaction, otherwise
+			 * journal_lock_updates() inside snapshot_take()
+			 * can deadlock:
+			 * A: journal_start()
+			 * A: snapshot_mutex_lock()
+			 * B: journal_start()
+			 * B: snapshot_mutex_lock() (waiting for A)
+			 * A: journal_stop()
+			 * A: snapshot_take() ->
+			 * A: 	journal_lock_updates() (waiting for B)
+			 */
+			mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+		}
+#endif
 
 		handle = next3_journal_start(inode, 1);
 		if (IS_ERR(handle)) {
@@ -131,7 +160,7 @@ flags_err:
 			goto flags_out;
 
 		if ((flags & NEXT3_SNAPFILE_FL) &&
-			(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_TAKE_FL))
+			(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
 			/* take snapshot outside transaction */
 			err = next3_snapshot_take(inode);
 
@@ -145,7 +174,8 @@ flags_err:
 #endif
 flags_out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
-		mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+		if (snapflags)
+			mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
 #endif
 		mutex_unlock(&inode->i_mutex);
 		mnt_drop_write(filp->f_path.mnt);

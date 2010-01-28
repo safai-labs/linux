@@ -12,14 +12,8 @@ int __next3_journal_get_undo_access(const char *where, handle_t *handle,
 {
 	int err = journal_get_undo_access(handle, bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
-	if (!err) {
+	if (!err)
 		err = next3_snapshot_get_undo_access(handle, bh);
-#warning seems odd that get_undo_access returns a SNAPSHOT_XXX but you treat it as err
-#warning same in the various functions below
-		if (err > 0)
-			/* deny access if block should be COWed */
-			err = ((err == SNAPSHOT_COW) ? -EIO : 0);
-	}
 #endif
 	if (err)
 		next3_journal_abort_handle(where, __func__, bh, handle,err);
@@ -39,12 +33,8 @@ int __next3_journal_get_write_access(const char *where, handle_t *handle,
 {
 	int err = journal_get_write_access(handle, bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
-	if (!err) {
+	if (!err)
 		err = next3_snapshot_get_write_access(handle, inode, bh);
-		if (err > 0)
-			/* deny access if block should be COWed */
-			err = ((err == SNAPSHOT_COW) ? -EIO : 0);
-	}
 #endif
 	if (err)
 		next3_journal_abort_handle(where, __func__, bh, handle,err);
@@ -83,12 +73,8 @@ int __next3_journal_get_create_access(const char *where,
 {
 	int err = journal_get_create_access(handle, bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
-	if (!err) {
+	if (!err)
 		err = next3_snapshot_get_create_access(handle, bh);
-		if (err > 0)
-			/* deny access if block should be COWed */
-			err = ((err == SNAPSHOT_COW) ? -EIO : 0);
-	}
 #endif
 	if (err)
 		next3_journal_abort_handle(where, __func__, bh, handle,err);

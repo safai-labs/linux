@@ -118,13 +118,6 @@
 	/* mark the block excluded from snapshot */
 #define SNAPSHOT_CLEAR	-2
 
-/* block access return codes */
-#define SNAPSHOT_FAIL	-1 /* error */
-#define SNAPSHOT_OK	0 /* the block is not in use by the active snapshot */
-#define SNAPSHOT_COW	1 /* the block is in use by the active snapshot */
-#define SNAPSHOT_MOVED	2 /* the block was moved to the active snapshot */
-#define SNAPSHOT_COPIED	3 /* the block was copied to the active snapshot */
-
 /*
  * Block access functions
  */

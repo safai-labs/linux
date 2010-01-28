@@ -1737,7 +1737,6 @@ next3_fsblk_t next3_new_blocks(handle_t *handle, struct inode *inode,
 	struct next3_block_alloc_info *block_i;
 	unsigned short windowsz = 0;
 #ifdef NEXT3FS_DEBUG
-#warning why is NEXT3FS_DEBUG not a kernel config option?! fix everywhere or document.
 	static int goal_hits, goal_attempts;
 #endif
 	unsigned long ngroups;

@@ -559,6 +559,8 @@ void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	next3_grpblk_t exclude_freed = 0;
+	int excluded_block, excluded_file = (inode &&
+			next3_snapshot_excluded(inode)) ? 1 : 0;
 #endif
 
 	*pdquot_freed_blocks = 0;
@@ -736,16 +738,36 @@ do_more:
 		}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		/*
-		 * When there is an active snapshot we only free blocks of
-		 * deleted snapshots (and maybe excluded files) so
-		 * typically, these blocks need to be cleared from exclude
-		 * bitmap.  Anyway, a free block should never be excluded
-		 * from snapshot, so we always clear exclude bitmap just to
-		 * be on the safe side.
+		 * A free block should never be excluded from snapshot, so we
+		 * always clear exclude bitmap just to be on the safe side.
 		 */
-		if (exclude_bitmap_bh &&
+		excluded_block = (exclude_bitmap_bh &&
 			next3_clear_bit_atomic(sb_bgl_lock(sbi, block_group),
-				bit + i, exclude_bitmap_bh->b_data))
+				bit + i, exclude_bitmap_bh->b_data)) ? 1 : 0;
+		if (excluded_block != excluded_file) {
+			jbd_unlock_bh_state(bitmap_bh);
+			/*
+			 * Freeing an excluded block of a non-excluded file
+			 * or a non-excluded block of an excluded file.  The
+			 * status of this block is now correct (not excluded),
+			 * but this indicates a messed up exclude bitmap.
+			 * mark that exclude bitmap needs to be fixed and call
+			 * next3_error() which commits the super block.
+			 * TODO: implement fix exclude bitmap in fsck.
+			 */
+			NEXT3_SET_RO_COMPAT_FEATURE(sb,
+					NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
+			next3_error(sb, __func__,
+				"%sexcluded file (ino=%lu) block [%lu/%lu] "
+				"was %sexcluded! - "
+				"run fsck to fix exclude bitmap.\n",
+				excluded_file ? "" : "non-",
+				inode ? inode->i_ino : 0,
+				bit + i, block_group,
+				excluded_block ? "" : "not ");
+			jbd_lock_bh_state(bitmap_bh);
+		}
+		if (excluded_block)
 			exclude_freed++;
 #endif
 	}
@@ -966,11 +988,21 @@ find_next_usable_block(next3_grpblk_t start, struct buffer_head *bh,
  * allocated and freed then clear the bit in the bitmap again and return
  * zero (failure).
  */
-static inline int
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-claim_block(spinlock_t *lock, struct buffer_head *exclude_bitmap_bh,
-			next3_grpblk_t block, struct buffer_head *bh)
+
+#define sb_group_lock(sb, group) \
+	(sb), (group), sb_bgl_lock(NEXT3_SB(sb), group)
+
+static inline int
+claim_block(struct super_block *sb, int group, spinlock_t *lock,
+		struct buffer_head *exclude_bitmap_bh,
+		next3_grpblk_t block, struct buffer_head *bh)
 #else
+
+#define sb_group_lock(sb, group) \
+	sb_bgl_lock(NEXT3_SB(sb), group)
+
+static inline int
 claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 #endif
 {
@@ -987,23 +1019,35 @@ claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 		ret = 1;
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-#warning "we can rest this rule" below is unclear.  what do you mean by "rest"?  typo?
 	/*
-	 * Mark excluded file block in exclude bitmap.  It would have been
-	 * better to mark the block excluded before marking it allocated or
-	 * to mark both under jbd_lock_bh_state() but we can rest this rule,
-	 * because exclude bitmap is only used for creating the COW bitmap
-	 * from commited_data and we already checked that the block is not
-	 * marked in committed_data.
+	 * Mark excluded file block in exclude bitmap.  Perhaps it would have
+	 * been better to mark the block excluded before marking it allocated
+	 * or to mark both under jbd_lock_bh_state(), to avoid the temporary
+	 * in-consistent state of a snapshot file block not marked excluded.
+	 * However, this kind of in-consistency can be neglected because when
+	 * the exclude bitmap is used for creating the COW bitmap it is masked
+	 * with the frozen copy of block bitmap in b_commited_data, where this
+	 * block is not marked allocated.
 	 */
 	if (ret && exclude_bitmap_bh &&
 		next3_set_bit_atomic(lock, block, exclude_bitmap_bh->b_data)) {
 		/*
-		 * we should never get here because free blocks
-		 * should never be excluded from snapshot
+		 * We should never get here because free blocks
+		 * should never be excluded from snapshot.
+		 * the status of this block is now correct (excluded),
+		 * but this indicates a messed up exclude bitmap.
+		 * mark that exclude bitmap needs to be fixed and call
+		 * next3_error() which commits the super block.
+		 * TODO: implement fix exclude bitmap in fsck.
 		 */
-#warning if this is a serious bug, use BUG_ON. maybe also add a debug printk?
-		WARN_ON(1);
+		jbd_unlock_bh_state(bh);
+		NEXT3_SET_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
+		next3_error(sb, __func__,
+			"new allocated block [%d/%d] is excluded! - "
+			"run fsck to fix exclude bitmap.\n",
+			block, group);
+		return ret;
 	}
 #endif
 	jbd_unlock_bh_state(bh);
@@ -1090,7 +1134,7 @@ repeat:
 	}
 	start = grp_goal;
 
-	if (!claim_block(sb_bgl_lock(NEXT3_SB(sb), group),
+	if (!claim_block(sb_group_lock(sb, group),
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		exclude_bitmap_bh,
 #endif
@@ -1109,7 +1153,7 @@ repeat:
 	grp_goal++;
 	while (num < *count && grp_goal < end
 		&& next3_test_allocatable(grp_goal, bitmap_bh)
-		&& claim_block(sb_bgl_lock(NEXT3_SB(sb), group),
+		&& claim_block(sb_group_lock(sb, group),
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 				exclude_bitmap_bh,
 #endif

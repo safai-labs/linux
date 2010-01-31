@@ -829,13 +829,25 @@ test_cow_bitmap:
 	if (err < 0)
 		goto out;
 	if (err && clear < 0) {
-		/* ignore COW bitmap test result for ignored file blocks */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-		snapshot_debug_hl(1, "warning: file (%lu) is excluded "
-				"from snapshot but block (%lu) is set "
-				"in COW bitmap!\n", inode->i_ino, block);
-#warning msg above seems serious. so why return OK below?
+		/*
+		 * We should never get here because snapshot file blocks should
+		 * be excluded from COW bitmap.  The block will not be COWed
+		 * anyway, but this can indicate a messed up exclude bitmap.
+		 * mark that exclude bitmap needs to be fixed and call
+		 * next3_error() which commits the super block.
+		 * TODO: implement fix exclude/COW bitmap in fsck.
+		 */
+		NEXT3_SET_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
+		next3_error(sb, __func__,
+			"snapshot file (ino=%lu) block [%lu/%lu] is not "
+			"excluded! - run fsck to fix exclude bitmap.\n",
+			inode->i_ino,
+			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
+			SNAPSHOT_BLOCK_GROUP(block));
 #endif
+		/* don't COW ignored file blocks */
 		err = 0;
 	}
 	if (!err) {

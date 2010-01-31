@@ -1316,7 +1316,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	struct next3_sb_info *sbi;
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	__le32 nr = 0;
-	int err = 0;
+	int i, err = 0;
 
 	/* elevate ref count until final cleanup */
 	if (!igrab(inode))
@@ -1347,6 +1347,13 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	 * snapshot is under the protection of the snapshot list
 	 */
 #warning and is snapshot list protection guaranteed to be enough always?
+	for (i = 0; i <= SNAPSHOT_META_BLOCKS; i++) {
+		nr = ei->i_data[i];
+		if (nr)
+			next3_free_blocks(handle, inode,
+					le32_to_cpu(nr), 1);
+		ei->i_data[i] = 0;
+	}
 	nr = ei->i_data[NEXT3_DIND_BLOCK];
 	if (nr) {
 		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 2);
@@ -1357,9 +1364,9 @@ static int next3_snapshot_cleanup(struct inode *inode)
 		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
 		ei->i_data[NEXT3_TIND_BLOCK] = 0;
 	}
-	/* only snapshot meta blocks are left after the truncate */
-	SNAPSHOT_SET_DISABLED(inode);
-	ei->i_disksize = SNAPSHOT_META_SIZE;
+	/* reset snapshot inode size */
+	i_size_write(inode, 0);
+	ei->i_disksize = 0;
 	err = next3_mark_inode_dirty(handle, inode);
 	if (err)
 		goto out_handle;

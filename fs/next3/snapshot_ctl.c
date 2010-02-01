@@ -1041,13 +1041,19 @@ out_err:
  * 2. from next3_snapshot_exclude() with @cleanup=0 to mark snapshot file
  *    blocks in exclude bitmap.
  * Called under snapshot_mutex.
+ *
+ * Return values:
+ * > 0 - no. of blocks in snapshot file (@cleanup=0)
+ * = 0 - successful cleanup (@cleanup=1)
+ * < 0 - error
  */
 static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 		int cleanup)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	__le32 *p;
-	int i;
+	int i, nblocks = 0;
+	int *pblocks = (cleanup ? NULL : &nblocks);
 
 	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "clean of non snapshot file (ino=%lu) "
@@ -1077,11 +1083,11 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 		if (!*p)
 			continue;
 		next3_free_branches_cow(handle, inode, NULL,
-				p, p+1, depth, !cleanup);
+				p, p+1, depth, pblocks);
 		if (cleanup)
 			*p = 0;
 	}
-	return 0;
+	return nblocks;
 }
 
 /*
@@ -1092,7 +1098,7 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
  */
 static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
 {
-	int err;
+	int err, nblocks;
 
 	/* extend small transaction started in next3_ioctl() */
 	err = extend_or_restart_transaction(handle, NEXT3_MAX_TRANS_DATA);
@@ -1100,8 +1106,9 @@ static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
 		return err;
 
 	err = next3_snapshot_clean(handle, inode, 0);
-	if (err)
+	if (err < 0)
 		return err;
+	nblocks = err;
 
 	/* mark snapshot 'clean' */
 	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_CLEAN_FL;
@@ -1109,8 +1116,8 @@ static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
 	if (err)
 		return err;
 
-	snapshot_debug(1, "snapshot (%u) is clean\n",
-			inode->i_generation);
+	snapshot_debug(1, "snapshot (%u) is clean (%d blocks)\n",
+			inode->i_generation, nblocks);
 	return 0;
 }
 #endif
@@ -1220,8 +1227,7 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	handle_t *handle;
 	struct next3_sb_info *sbi;
 	struct next3_inode_info *ei = NEXT3_I(inode);
-	__le32 nr = 0;
-	int i, err = 0;
+	int err = 0;
 
 	/* elevate ref count until final cleanup */
 	if (!igrab(inode))

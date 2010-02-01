@@ -586,28 +586,27 @@ static void next3_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int cow);
+			   int *pfreed_blocks, int *pblocks);
 
 #define next3_free_data(handle, inode, bh, first, last)		\
 	next3_free_data_cow(handle, inode, bh, first, last,		\
-			    NULL, 0, NULL, 0)
+			    NULL, 0, NULL, NULL)
 
 /**
- *	next3_blks_to_skip: Look up the block map and count the number
- *	of non-allocated data blocks (holes) that can be skipped
- *  for the given branch.
+ * next3_blks_to_skip - count the number blocks that can be skipped
+ * @inode: inode in question
+ * @i_block: start block number
+ * @maxblocks: max number of data blocks to be skipped
+ * @chain: chain of indirect blocks
+ * @depth: length of chain from inode to data block
+ * @offsets: array of offsets in chain blocks
+ * @k: number of allocated blocks in the chain
  *
- *	@inode: inode in question
- *	@i_block: start block number
- *	@maxblocks: max number of data blocks to be skipped
- *	@chain: chain of indirect blocks
- *	@depth: length of chain from inode to data block
- *	@offsets: array of offsets in chain blocks
- *	@k: number of allocated blocks in the chain
- *
- *	return the total number of data blocks to be skipped.
+ * Counts the number of non-allocated data blocks (holes) at offset @i_block.
+ * Called from next3_snapshot_merge_blocks() and next3_snapshot_shrink_blocks()
+ * under snapshot_mutex.
+ * Returns the total number of data blocks to be skipped.
  */
-#warning locking semantics?
 static int next3_blks_to_skip(struct inode *inode, long i_block,
 		unsigned long maxblocks, Indirect chain[4], int depth,
 		int *offsets, int k)
@@ -654,14 +653,19 @@ static int next3_blks_to_skip(struct inode *inode, long i_block,
 }
 
 /*
- * next3_snapshot_shrink_blocks() frees unused blocks from
- * deleted snapshot files between 'start' and 'end'.
- * Helper function for next3_snapshot_shrink().
- * Shrinks 'maxblocks' blocks starting at 'iblock'.
- * Returns number of shrunk blocks.
- * Maps 'cow_bh' to the COW bitmap block of snapshot 'start'.
+ * next3_snapshot_shrink_blocks - free unused blocks from deleted snapshot files
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshot group
+ * @iblock:	inode offset to first data block to shrink
+ * @maxblocks:	inode range of data blocks to shrink
+ * @cow_bh:	buffer head to store the COW bitmap block of snapshot @start
+ *
+ * Shrinks @maxblocks blocks starting at inode offset @iblock in a group of
+ * subsequent deteted snapshots starting after @start and ending before @end.
+ * Called from next3_snapshot_shrink() under snapshot_mutex.
+ * Returns the shrunk blocks range and <0 on error.
  */
-#warning locking semantics?
 int next3_snapshot_shrink_blocks(handle_t *handle,
 		struct inode *start, struct inode *end,
 		sector_t iblock, unsigned long maxblocks,
@@ -783,7 +787,7 @@ shrink_data_blocks:
 		/* free unused blocks in deleted snapshot */
 		next3_free_data_cow(handle, inode, partial->bh,
 				partial->p, partial->p + count,
-				bitmap, bit, &freed_blocks, 0);
+				bitmap, bit, &freed_blocks, NULL);
 	}
 
 shrink_indirect_blocks:
@@ -854,68 +858,29 @@ out:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
 /*
- * next3_count_branch_blocks() traverses all the blocks in a branch
- * of depth 'depth' rooted in block 'blocknr' (using DFS).
- * returns the total number of blocks in the branch.
- */
-static int next3_count_branch_blocks(handle_t *handle, struct inode *inode,
-		u32 blocknr, Indirect *branch, int depth)
-{
-	int ptrs = NEXT3_ADDR_PER_BLOCK(inode->i_sb);
-	struct buffer_head *bh;
-	__le32 *p;
-	int i, n = 1; /* count the branch root block */
-
-	if (depth == 0)
-		/* branch is a single data block */
-		return n;
-
-	if (branch->bh && branch->bh->b_blocknr != blocknr) {
-		/* the chain contains the path to a specific data block
-		 * but now we follow a different path so release the old one */
-		brelse(branch->bh);
-		branch->bh = NULL;
-	}
-	if (!branch->bh) {
-		bh = sb_bread(inode->i_sb, blocknr);
-		if (!bh)
-			/* so we missed the count, so what,
-			 * we are not going to undo the merge now
-			 * so just count the root block */
-			return 1;
-		branch->bh = bh;
-	}
-
-	p = (__le32 *)(branch->bh->b_data);
-	for (i = 0; i < ptrs; i++, p++) {
-#warning no recursion allowed in kernel code!
-		if (*p)
-			n += next3_count_branch_blocks(handle, inode,
-						       le32_to_cpu(*p),
-						       branch+1, depth-1);
-	}
-
-	return n;
-}
-
-/*
- * move a number of branches from one branch's k-th indirect block to another.
+ * next3_move_branches - move an array of branches
+ * @handle: JBD handle for this transaction
+ * @src:	inode we're moving blocks from
+ * @ps:		array of src block numbers
+ * @pd:		array of dst block numbers
+ * @depth:	depth of the branches to move
+ * @count:	max branches to move
+ * @pmoved:	pointer to counter of moved blocks
  *
  * We move whole branches from src to dst, skipping the holes in src
  * and stopping at the first branch that needs to be merged at higher level.
- * 'moved' returns the total number of blocks that have been moved.
+ * Called from next3_snapshot_merge_blocks() under snapshot_mutex.
+ * Returns the number of merged branches.
  */
-#warning describe meaning of return value (no. of moved blocks/branches?)
 static int next3_move_branches(handle_t *handle, struct inode *src,
-		Indirect *pS, Indirect *pD, int depth,
-		int count, int *moved)
+		__le32 *ps, __le32 *pd, int depth,
+		int count, int *pmoved)
 {
-	__le32 *ps = pS->p, *pd = pD->p;
-	int i, n = 0;
+	int i;
 
 	for (i = 0; i < count; i++, ps++, pd++) {
 		__le32 s = *ps, d = *pd;
-		if (s && d && depth > 1)
+		if (s && d && depth)
 			/* can't move or skip entire branch, need to merge
 			   these 2 branches */
 			break;
@@ -923,27 +888,30 @@ static int next3_move_branches(handle_t *handle, struct inode *src,
 			/* skip holes is src and mapped data blocks in dst */
 			continue;
 
+		/* count moved blocks (and verify they are excluded) */
+		next3_free_branches_cow(handle, src, NULL,
+				ps, ps+1, depth, pmoved);
+
 		/* move the entire branch from src to dst inode */
 		*pd = s;
 		*ps = 0;
-
-		/* count moved blocks */
-		n += next3_count_branch_blocks(handle, src, le32_to_cpu(s),
-				pS+1, depth-1);
 	}
-
-	if (moved)
-		*moved = n;
 	return i;
 }
 
 /*
- * next3_snapshot_merge_blocks() moves blocks from 'src' to 'dst'.
- * Helper function for next3_snapshot_merge().
- * Merges 'maxblocks' blocks starting at 'iblock'.
- * Returns number of merged blocks.
+ * next3_snapshot_merge_blocks - merge blocks from @src to @dst inode
+ * @handle: JBD handle for this transaction
+ * @src:	inode we're merging blocks from
+ * @dst:	inode we're merging blocks to
+ * @iblock:	inode offset to first data block to merge
+ * @maxblocks:	inode range of data blocks to merge
+ *
+ * Merges @maxblocks data blocks starting at @iblock and all the indirects
+ * blocks that map them.
+ * Called from next3_snapshot_merge() under snapshot_mutex.
+ * Returns the merged blocks range and <0 on error.
  */
-#warning what is returned on error (-1?) and what does it mean?
 int next3_snapshot_merge_blocks(handle_t *handle,
 		struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks)
@@ -975,7 +943,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 
 	if (ks < 1 || kd < 1) {
 		/* snapshot double and tripple tree roots are pre-allocated */
-		err = -1;
+		err = -EIO;
 		goto out;
 	}
 
@@ -1010,7 +978,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 		goto out;
 
 	/* move as many whole branches as possible */
-	err = next3_move_branches(handle, src, pS, pD, depth-kd, max_ptrs,
+	err = next3_move_branches(handle, src, pS->p, pD->p, depth-1-kd, max_ptrs,
 				  &moved);
 	if (err < 0)
 		goto out;
@@ -3017,12 +2985,15 @@ no_top:
  * next3_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
  * @bit:	bit number representing the @first block
- * @cow: 	if true, only clear blocks from COW bitmap
+ * @pblocks: 	pointer to counter of branch blocks
+ *
+ * If @pblocks is not NULL, don't free blocks, only update blocks counter and
+ * mark blocks in exclude bitmap.
  */
 static void next3_clear_blocks_cow(handle_t *handle, struct inode *inode,
 		struct buffer_head *bh, next3_fsblk_t block_to_free,
 		unsigned long count, __le32 *first, __le32 *last,
-		const char *bitmap, int bit, int cow)
+		const char *bitmap, int bit, int *pblocks)
 #else
 static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		struct buffer_head *bh, next3_fsblk_t block_to_free,
@@ -3031,7 +3002,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 {
 	__le32 *p;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if (cow)
+	if (pblocks)
 		/* we're not actually deleting any blocks */
 		bh = NULL;
 #endif
@@ -3058,9 +3029,11 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if (cow) {
+	if (pblocks) {
+		/* mark blocks excluded and update blocks counter */
 		next3_snapshot_get_clear_access(handle, inode, block_to_free,
 						count);
+		*pblocks += count;
 		return;
 	}
 #endif
@@ -3118,13 +3091,16 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
  * @bit:	bit number representing the @first block
  * @pfreed_blocks:	return number of freed blocks
- * @cow: 	if true, only clear blocks from COW bitmap
+ * @pblocks: 	pointer to counter of branch blocks
+ *
+ * If @pblocks is not NULL, don't free blocks, only update blocks counter and
+ * mark blocks in exclude bitmap.
  */
 static void next3_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int cow)
+			   int *pfreed_blocks, int *pblocks)
 #else
 static void next3_free_data(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
@@ -3142,7 +3118,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 	int err;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if (cow)
+	if (pblocks)
 		/* we're not actually deleting any blocks */
 		this_bh = NULL;
 #endif
@@ -3184,7 +3160,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 					       block_to_free, count,
 					       block_to_free_p, p, bitmap,
 					       bit - (p - block_to_free_p),
-					       cow);
+					       pblocks);
 #else
 				next3_clear_blocks(handle, inode, this_bh,
 						  block_to_free,
@@ -3206,8 +3182,8 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 		next3_clear_blocks_cow(handle, inode, this_bh,
 				block_to_free, count, block_to_free_p, p,
-				bitmap, bit - (p - block_to_free_p), cow);
-	if (cow)
+				bitmap, bit - (p - block_to_free_p), pblocks);
+	if (pblocks)
 		return;
 #else
 		next3_clear_blocks(handle, inode, this_bh, block_to_free,
@@ -3254,12 +3230,16 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 /*
- *	next3_free_branches_cow - free an array of branches (consult COW bitmap)
- *  @cow: 	if true, only clear blocks from COW bitmap
+ *	next3_free_branches_cow - free or exclude an array of branches
+ *	@pblocks: 	pointer to counter of branch blocks
+ *
+ *	If @pblocks is not NULL, don't free blocks, only update blocks counter
+ *	and mark blocks in exclude bitmap.
  */
 void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,
-			       __le32 *first, __le32 *last, int depth, int cow)
+			       __le32 *first, __le32 *last, int depth,
+			       int *pblocks)
 #else
 static void next3_free_branches(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,
@@ -3273,7 +3253,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 		return;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if (cow)
+	if (pblocks)
 		/* we're not actually deleting any blocks */
 		parent_bh = NULL;
 #endif
@@ -3303,12 +3283,10 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			/* This zaps the entire block.  Bottom up. */
 			BUFFER_TRACE(bh, "free child branches");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-#warning never, ever, use recurion in kernel code.  you can easily blow up the kernel stack, even if you try to limit using depth. your code may be used in conjunction with lvm/nfs/etc and any additional pressure u put on the stack is bad.  lkml will also consider it bad coding style to depend on recursion.
 			next3_free_branches_cow(handle, inode, bh,
-						(__le32 *)bh->b_data,
-						(__le32 *)bh->b_data +
-						addr_per_block,
-						depth, cow);
+					(__le32 *)bh->b_data,
+					(__le32 *)bh->b_data + addr_per_block,
+					depth, pblocks);
 #else
 			next3_free_branches(handle, inode, bh,
 					   (__le32*)bh->b_data,
@@ -3336,7 +3314,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 * this block's bit in the bitmaps.
 			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-			if (!cow)
+			if (!pblocks)
 				next3_forget(handle, 1, inode, bh,
 					     bh->b_blocknr);
 #else
@@ -3367,9 +3345,11 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-			if (cow) {
+			if (pblocks) {
+				/* mark block excluded and update counter */
 				next3_snapshot_get_clear_access(handle, inode,
 								nr, 1);
+				*pblocks += 1;
 				continue;
 			}
 #endif
@@ -3402,7 +3382,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 		BUFFER_TRACE(parent_bh, "free data blocks");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 		next3_free_data_cow(handle, inode, parent_bh, first, last,
-				    NULL, 0, NULL, cow);
+				    NULL, 0, NULL, pblocks);
 #else
 		next3_free_data(handle, inode, parent_bh, first, last);
 #endif

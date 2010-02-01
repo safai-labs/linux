@@ -211,11 +211,11 @@ extern next3_fsblk_t next3_get_inode_block(struct super_block *sb,
 extern void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 				    struct buffer_head *parent_bh,
 				    __le32 *first, __le32 *last,
-				    int depth, int cow);
+				    int depth, int *pblocks);
 
 #define next3_free_branches(handle, inode, bh, first, last, depth)	\
 	next3_free_branches_cow((handle), (inode), (bh),		\
-				(first), (last), (depth), 0)
+				(first), (last), (depth), NULL)
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
 extern int next3_snapshot_shrink_blocks(handle_t *handle,

@@ -484,6 +484,7 @@ static int next3_snapshot_create(struct inode *inode)
 	struct inode *snapshot;
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	int i, count, err;
+	struct buffer_head *bh = NULL;
 	struct next3_group_desc *desc;
 	unsigned long ino;
 	struct next3_iloc iloc;
@@ -589,30 +590,28 @@ static int next3_snapshot_create(struct inode *inode)
 		goto out_handle;
 	/* allocate and zero out snapshot meta blocks */
 	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
-		struct buffer_head *bh;
-		/* meta blocks are journalled as dirty meta data */
+		brelse(bh);
 		bh = next3_getblk(handle, inode, i, SNAPSHOT_WRITE, &err);
-		if (bh) {
-			err = next3_journal_get_write_access(handle, bh);
-
-			if (!err) {
-				/* zero out meta block */
-				lock_buffer(bh);
-				memset(bh->b_data, 0, bh->b_size);
-				set_buffer_uptodate(bh);
-				unlock_buffer(bh);
-				err = next3_journal_dirty_metadata(handle, bh);
-			}
-			brelse(bh);
-		}
-		if (!bh || err) {
-			snapshot_debug(1, "failed to initiate meta block (%d) "
-				       "for snapshot (%u)\n",
-					i, inode->i_generation);
-			if (err >= 0)
-				err = -EIO;
-			goto out_handle;
-		}
+		if (!bh || err)
+			break;
+		/* zero out meta block and journal as dirty metadata */
+		err = next3_journal_get_write_access(handle, bh);
+		if (err)
+			break;
+		lock_buffer(bh);
+		memset(bh->b_data, 0, bh->b_size);
+		set_buffer_uptodate(bh);
+		unlock_buffer(bh);
+		err = next3_journal_dirty_metadata(handle, bh);
+		if (err)
+			break;
+	}
+	brelse(bh);
+	if (!bh || err) {
+		snapshot_debug(1, "failed to initiate meta block (%d) "
+				"for snapshot (%u)\n",
+				i, inode->i_generation);
+		goto out_handle;
 	}
 	/* place pre-allocated [d,t]ind blocks in position */
 	err = next3_snapshot_shift_blocks(ei, 

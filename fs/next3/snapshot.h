@@ -78,14 +78,9 @@
 /*
  * snapshot meta blocks:
  */
-#define SNAPSHOT_META_HEADER	0 /* snapshot header */
-#define SNAPSHOT_META_ZERO	1 /* all 'deleted' blocks point here */
-#define SNAPSHOT_META_DIND	2 /* dind is hidden here */
-#define SNAPSHOT_META_TIND	3 /* tind is hidden here */
-#define SNAPSHOT_META_BLOCKS	4
-
-#define SNAPSHOT_ZERO_BLOCK(inode)			\
-	SNAPSHOT_META_BLOCK(inode, SNAPSHOT_META_ZERO)
+#define SNAPSHOT_META_DIND	0 /* dind is pre-allocated here */
+#define SNAPSHOT_META_TIND	1 /* tind is pre-allocated here */
+#define SNAPSHOT_META_BLOCKS	2
 
 #define SNAPSHOT_META_SIZE					\
 	(SNAPSHOT_META_BLOCKS << SNAPSHOT_BLOCK_SIZE_BITS)
@@ -98,7 +93,7 @@
 #define SNAPSHOT_SET_ENABLED(inode)				\
 	i_size_write((inode), NEXT3_I(inode)->i_disksize)
 #define SNAPSHOT_SET_DISABLED(inode)		\
-	i_size_write((inode), SNAPSHOT_META_SIZE)
+	i_size_write((inode), 0)
 
 /* maximum recursion level allowed in snapshot file updates */
 #define SNAPSHOT_MAX_RECURSION_LEVEL	2

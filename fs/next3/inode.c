@@ -1813,22 +1813,22 @@ struct buffer_head *next3_getblk(handle_t *handle, struct inode *inode,
 			*errp = -EIO;
 			goto err;
 		}
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-#warning again, bad to compare a value "create" against a macro
-		if (create >= SNAPSHOT_COPY && buffer_new(&dummy)) {
-#warning why do you need to pass "&dummy" above?
-			/* COWing block or creating COW bitmap */
-			lock_buffer(bh);
-			clear_buffer_uptodate(bh);
-			set_buffer_new(bh);
-			/* flag locked buffer */
-			*errp = 1;
-		} else
-#endif
 		if (buffer_new(&dummy)) {
 			J_ASSERT(create != 0);
 			J_ASSERT(handle != NULL);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+#warning again, bad to compare a value "create" against a macro
+			if (create >= SNAPSHOT_COPY) {
+				/* COWing block or creating COW bitmap */
+				lock_buffer(bh);
+				clear_buffer_uptodate(bh);
+				set_buffer_new(bh);
+				/* flag locked buffer and return */
+				*errp = 1;
+				return bh;
+			}
+#endif
 			/*
 			 * Now that we do not always journal data, we should
 			 * keep in mind whether this should always journal the
@@ -1947,16 +1947,6 @@ static int do_journal_get_write_access(handle_t *handle,
 	return next3_journal_get_write_access(handle, bh);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-/* Used to quickly unmap all buffers in a page for COWing -znjp */
-static int next3_clear_buffer_mapped(handle_t *handle, struct buffer_head *bh)
-{
-#warning this can be a void fxn
-	clear_buffer_mapped(bh);
-	return 0;
-}
-#endif
-
 static int next3_write_begin(struct file *file, struct address_space *mapping,
 				loff_t pos, unsigned len, unsigned flags,
 				struct page **pagep, void **fsdata)
@@ -1993,10 +1983,9 @@ retry:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 	if (next3_snapshot_should_cow_data(inode) &&
 		page_has_buffers(page))
-		/* Unset the BH_Mapped flag so get_block is always called
-		   -znjp */
-		ret = walk_page_buffers(handle, page_buffers(page),
-				from, to, NULL, next3_clear_buffer_mapped);
+		/* Unset the BH_Mapped flag so get_block is always called.
+		 * snapshots are only supported with one buffer per page */
+		clear_buffer_mapped(page_buffers(page));
 #endif
 
 	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,

@@ -832,13 +832,13 @@ int next3_snapshot_take(struct inode *inode)
 	/*
 	 * Convert from Next3 to Ext2 super block:
 	 * Remove the has_journal flag and journal inode number.
-	 * Remove the last snapshot inode number but keep the
-	 * has_snapshot flag, to force read-only mount and prevent
-	 * fsck from clearing exclude bitmap.
+	 * Remove the has_snapshot flag but keep the last snapshot
+	 * inode number, to prevent fsck from resetting exclude bitmap.
 	 */
 	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
 	es->s_journal_inum = 0;
-	es->s_last_snapshot = 0;
+	es->s_feature_ro_compat &= ~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+	//es->s_last_snapshot = 0;
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);

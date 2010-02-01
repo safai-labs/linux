@@ -15,21 +15,6 @@
 #include <linux/statfs.h>
 #include "snapshot.h"
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-/*
- * Flag to prevent freeing old snapshot blocks while snapshot_clean() is
- * marking snapshot blocks in exclude bitmap.  It may only be set/cleared by
- * the owner of snapshot_mutex.
- *
- * snapshot_clean() sets it to snapshot ID to disable cleanup in
- * snapshot_update().
- * snapshot_take() sets it to -1 to abort a running snapshot_clean().
- * snapshot_clean() sets it to 0 before returning success or failure.
- */
-static int cleaning;
-#warning lkml people hate sug globals.  this global is for the entire kernel.  Make it a per next3 superblock plz.  What if i have 100 next3 mounts?
-#endif
-
 /*
  * next3_snapshot_set_active() sets the current active snapshot to @inode and
  * returns the deactivated snapshot inode.  If inode is NULL, current active
@@ -72,7 +57,6 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 	return old;
 }
 
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 /*
  * Snapshots control functions
@@ -81,7 +65,7 @@ static int next3_snapshot_enable(struct inode *inode);
 static int next3_snapshot_disable(struct inode *inode);
 static int next3_snapshot_create(struct inode *inode);
 static int next3_snapshot_delete(struct inode *inode);
-static int next3_snapshot_clean(handle_t *handle, struct inode *inode);
+static int next3_snapshot_exclude(handle_t *handle, struct inode *inode);
 static void next3_snapshot_dump(struct inode *inode);
 
 /*
@@ -128,7 +112,7 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 	if ((flags & NEXT3_SNAPFILE_CLEAN_FL) &&
 		!(oldflags & NEXT3_SNAPFILE_CLEAN_FL))
-		err = next3_snapshot_clean(handle, inode);
+		err = next3_snapshot_exclude(handle, inode);
 	if (err)
 		goto out;
 #endif
@@ -833,16 +817,6 @@ int next3_snapshot_take(struct inode *inode)
 	}
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	/*
-	 * abort running clean of active snapshot
-	 * freeze_fs() below will wait until snapshot_clean()
-	 * has aborted and closed it's transaction
-	 */
-	if (cleaning > 0)
-		cleaning = -1;
-#endif
-
 	/*
 	 * flush journal to disk and clear the RECOVER flag
 	 * before taking the snapshot
@@ -1061,151 +1035,83 @@ out_err:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 /*
- * next3_snapshot_clean() marks old snapshots blocks in exclude bitmap.
- * This function is for sanity tests and disaster recovery only.
- * If everything works properly, all snapshot blocks should already
- * be set in exclude bitmap.
- *
- * Q: snapshot blocks are not COWed on snapshot shrink/merge/cleanup,
- *    so why is the exclude bitmap needed?
- *
- * A: the following example explains the problem of merging non-clean
- *    snapshots:
- *
- * 1. create a 100M file 'foo' in the root directory - allocated from block
- *     group 0
- *
- * 2. take snapshot 1
- * 3. remove 'foo' - snapshot 1 now contains all 'foo' blocks
- * 4. take snapshot 2 and snapshot 3
- * 5. delete snapshot 1 - 'foo' blocks are excluded from snapshot 3 and freed
- * 6. create a 100M file 'bar' in the root directory - 'foo' blocks are
- *    reallocated.
- * 7. take snapshot 4
- * 8. remove 'bar' - snapshot 4 now contains all 'bar' blocks
- * 9. take snapshot 5
- * 10. delete snapshot 3
- * 11. delete snapshot 4 - merge moves 'bar' blocks into snapshot 2
- *
- * At the end of this long example, snapshot 2 disk usage is ~100M, while it
- * does not actually contain any reference to such a large file.  It contains
- * a reference to snapshot 1, which was 100M, but should have been excluded
- * from snapshot 2, but it wasn't, because snapshot 1 was deleted when
- * snapshot 3 was active.
- *
- * To solve this problem, we must clean snapshot 2 before taking snapshot 3.
- * It is not mandatory to clean a snapshot after take, but merge will not
- * move any blocks into a non-clean snapshot, so the disk space in the
- * example above cannot be reclaimed until snapshot 2 is deleted.
- *
- * Called under i_mutex and snapshot_mutex, drops them after setting the
- * 'cleaning' flag and reacquires them before returning.
+ * next3_snapshot_clean() "cleans" snapshot file blocks in 1 of 2 ways:
+ * 1. from next3_snapshot_cleanup() with @cleanup=1 to free snapshot file
+ *    blocks, before removing snapshot file from snapshots list.
+ * 2. from next3_snapshot_exclude() with @cleanup=0 to mark snapshot file
+ *    blocks in exclude bitmap.
+ * Called under snapshot_mutex.
  */
-static int next3_snapshot_clean(handle_t *handle, struct inode *inode)
+static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
+		int cleanup)
 {
-	struct list_head *l;
-	struct inode *active_snapshot = next3_snapshot_has_active(inode->i_sb);
-	struct inode *snapshot;
-	struct next3_inode_info *ei;
-	struct buffer_head *bh = NULL;
-	__le32 nr;
-	int i, err;
+	struct next3_inode_info *ei = NEXT3_I(inode);
+	__le32 *p;
+	int i;
 
-	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
-		snapshot_debug(1, "next3_snapshot_clean() called with non "
-			       "snapshot file (ino=%lu)\n", inode->i_ino);
-#warning if it is not possible for a user program to ever reach here, then EINVAL might be more suitable
+	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
+		snapshot_debug(1, "clean of non snapshot file (ino=%lu) "
+				"is not allowed.\n",
+				inode->i_ino);
 		return -EPERM;
 	}
 
-	if (active_snapshot != inode) {
-		snapshot_debug(1, "failed to clean non active snapshot (%u)\n",
-				inode->i_generation);
-#warning EINVAL or EIO might be better?
+	if (ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL) {
+		snapshot_debug(1, "clean of active snapshot (%u) "
+			       "is not allowed.\n",
+			       inode->i_generation);
 		return -EPERM;
-	}
-
-	if (cleaning) {
-		snapshot_debug(1, "failed to clean snapshot (%u)"
-				" because snapshot (%d) is being cleaned\n",
-				inode->i_generation, cleaning);
-#warning EBUSY seems more suitable
-		return -EPERM;
-	}
-
-	/* set the 'cleaning' flag and release snapshot_mutex and inode_mutex */
-	cleaning = inode->i_generation;
-	mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
-	mutex_unlock(&inode->i_mutex);
-
-	/* iterate from oldest snapshot backwards */
-	list_for_each_prev(l, &NEXT3_SB(inode->i_sb)->s_snapshot_list) {
-		ei = list_entry(l, struct next3_inode_info, i_orphan);
-		snapshot = &ei->vfs_inode;
-		if (snapshot == inode)
-			/* no need to clear snapshot blocks from its own COW
-			 * bitmap */
-			break;
-		if (cleaning < 0)
-			/* clean of active snapshot aborted by
-			 * snapshot_take() */
-			break;
-
-		/* exclude the snapshot meta blocks */
-		for (i = 0; i <= SNAPSHOT_META_BLOCKS; i++) {
-			nr = ei->i_data[i];
-			if (nr)
-				next3_snapshot_get_clear_access(
-						handle, snapshot,
-						le32_to_cpu(nr), 1);
-		}
-		/* exclude the snapshot dind branch */
-		nr = ei->i_data[NEXT3_DIND_BLOCK];
-		if (nr) {
-			next3_free_branches_cow(handle, snapshot, NULL,
-					&nr, &nr+1, 2, 1);
-			ei->i_data[NEXT3_DIND_BLOCK] = 0;
-		}
-		/* exclude the snapshot tind branch */
-		nr = ei->i_data[NEXT3_TIND_BLOCK];
-		if (nr) {
-			next3_free_branches_cow(handle, snapshot, NULL,
-					&nr, &nr+1, 3, 1);
-			ei->i_data[NEXT3_TIND_BLOCK] = 0;
-		}
-		snapshot_debug(2, "snapshot (%u) cleaned snapshot (%u) "
-				"blocks\n",
-				inode->i_generation,
-				snapshot->i_generation);
 	}
 
 	/*
-	 * snapshot_mutex may be taken by snapshot_take(), which is trying
-	 * to abort this clean and is waiting for this transaction to close,
-	 * so unless we restart the transaction here we would be
-	 * dead-locked.
+	 * A very simplified version of next3_truncate() for snapshot files.
+	 * A non-active snapshot file never allocates new blocks and only frees
+	 * blocks under snapshot_mutex, so no need to take truncate_mutex here.
+	 * No need to add inode to orphan list for post crash truncate, because
+	 * snapshot is still on the snapshot list and marked for deletion.
 	 */
-	err = next3_journal_restart(handle, 1);
-	/* retake snapshot_mutex and inode_mutex and clear the 'cleaning'
-	 * flag */
-	mutex_lock(&inode->i_mutex);
-	mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
-	if (cleaning < 0) {
-		/* clean of active snapshot aborted by snapshot_take() */
-		snapshot_debug(1, "snapshot (%u) clean interrupted by "
-			       "snapshot take\n", inode->i_generation);
-		err = -EINTR;
-	} else if (err) {
-		snapshot_debug(1, "failed to clean active snapshot (%u) "
-			       "(err=%d)\n", inode->i_generation, err);
-	} else {
-		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_CLEAN_FL;
-		snapshot_debug(1, "snapshot (%u) is clean\n",
-			       inode->i_generation);
+	p = ei->i_data;
+	for (i = 0; i < NEXT3_N_BLOCKS; i++, p++) {
+		int depth = (i < NEXT3_NDIR_BLOCKS ? 0 :
+				i - NEXT3_NDIR_BLOCKS + 1);
+		if (!*p)
+			continue;
+		next3_free_branches_cow(handle, inode, NULL,
+				p, p+1, depth, !cleanup);
+		if (cleanup)
+			*p = 0;
 	}
-	cleaning = 0;
-	brelse(bh);
-	return err;
+	return 0;
+}
+
+/*
+ * next3_snapshot_exclude() marks snapshot file blocks in exclude bitmap.
+ * Snapshot file blocks should already be excluded if everything works properly.
+ * This function is used only to verify the correctness of exclude bitmap.
+ * Called under i_mutex and snapshot_mutex.
+ */
+static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
+{
+	int err;
+
+	/* extend small transaction started in next3_ioctl() */
+	err = extend_or_restart_transaction(handle, NEXT3_MAX_TRANS_DATA);
+	if (err)
+		return err;
+
+	err = next3_snapshot_clean(handle, inode, 0);
+	if (err)
+		return err;
+
+	/* mark snapshot 'clean' */
+	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_CLEAN_FL;
+	err = next3_mark_inode_dirty(handle, inode);
+	if (err)
+		return err;
+
+	snapshot_debug(1, "snapshot (%u) is clean\n",
+			inode->i_generation);
+	return 0;
 }
 #endif
 
@@ -1338,31 +1244,10 @@ static int next3_snapshot_cleanup(struct inode *inode)
 	sbi = NEXT3_SB(inode->i_sb);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	/*
-	 * a very simplified version of next3_truncate()
-	 * we free the snapshot blocks here, to make sure
-	 * they are excluded from the active snapshot.
-	 * there is no need to use the orphan list because
-	 * snapshot is under the protection of the snapshot list
-	 */
-#warning and is snapshot list protection guaranteed to be enough always?
-	for (i = 0; i <= SNAPSHOT_META_BLOCKS; i++) {
-		nr = ei->i_data[i];
-		if (nr)
-			next3_free_blocks(handle, inode,
-					le32_to_cpu(nr), 1);
-		ei->i_data[i] = 0;
-	}
-	nr = ei->i_data[NEXT3_DIND_BLOCK];
-	if (nr) {
-		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 2);
-		ei->i_data[NEXT3_DIND_BLOCK] = 0;
-	}
-	nr = ei->i_data[NEXT3_TIND_BLOCK];
-	if (nr) {
-		next3_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
-		ei->i_data[NEXT3_TIND_BLOCK] = 0;
-	}
+	err = next3_snapshot_clean(handle, inode, 1);
+	if (err)
+		goto out_handle;
+
 	/* reset snapshot inode size */
 	i_size_write(inode, 0);
 	ei->i_disksize = 0;
@@ -1784,18 +1669,6 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
 	int need_merge = 0;
 #endif
-#endif
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if (cleaning)
-#warning if the comment is true, then why not just return from this fxn and do nothing? why set cleaup=0 and continue?
-		/*
-		 * don't free old snapshot blocks while snapshot_clean()
-		 * is clearing snapshot blocks from COW bitmap
-		 */
-#warning i dont like code which changes non-pointer formal parameters pass to a fxn
-
-		cleanup = 0;
 #endif
 
 	active_snapshot = next3_snapshot_has_active(sb);

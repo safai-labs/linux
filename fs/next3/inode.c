@@ -1140,8 +1140,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 			if (err)
 				return err;
 		}
-#warning who gets charged for quota?
-		/* Check quota for mapping of *blks blocks */
+		/* charge snapshot file owner for moved blocks */
 		if (vfs_dq_alloc_block(inode, *blks)) {
 			err = -EDQUOT;
 			goto failed;
@@ -1240,10 +1239,10 @@ failed:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	if (cmd == SNAPSHOT_MOVE && num > 0) {
-		/* mapping data blocks */
+		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, num);
 	} else if (cmd >= SNAPSHOT_WRITE)
-			next3_free_blocks(handle, inode, new_blocks[i], num);
+		next3_free_blocks(handle, inode, new_blocks[i], num);
 #else
 	next3_free_blocks(handle, inode, new_blocks[i], num);
 #endif
@@ -1315,10 +1314,10 @@ static int next3_splice_branch(handle_t *handle, struct inode *inode,
 	 * allocation
 	 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
-# warning u can change code to "if (cmd != SNAPSHOT_MOVE)" and avoid the hanging "else"
 	if (cmd == SNAPSHOT_MOVE) {
-		/* mapping data blocks */
-	} else
+		/* don't update i_block_alloc_info with moved block */
+		block_i = NULL;
+	}
 #endif
 	if (block_i) {
 		block_i->last_alloc_logical_block = block + blks - 1;
@@ -1369,7 +1368,7 @@ err_out:
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 	if (cmd == SNAPSHOT_MOVE) {
-		/* mapping data blocks */
+		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, blks);
 	} else if (cmd >= SNAPSHOT_WRITE)
 		next3_free_blocks(handle, inode, le32_to_cpu(where[num].key),

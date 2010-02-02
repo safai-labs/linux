@@ -898,6 +898,11 @@ test_cow_bitmap:
 			goto out;
 		count = err;
 		if (count > 0) {
+			/*
+			 * User should no longer be charged for these blocks.
+			 * Snapshot file owner was charged for these blocks
+			 * when they were mapped to snapshot file.
+			 */
 			vfs_dq_free_block(inode, count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 			/* set moved blocks in exclude bitmap */

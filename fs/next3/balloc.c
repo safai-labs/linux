@@ -830,7 +830,6 @@ error_return:
 void next3_free_blocks(handle_t *handle, struct inode *inode,
 			next3_fsblk_t block, unsigned long count)
 {
-#warning be sure code+docs list who gets charged for snapshot blocks, exclude blocks/inode, etc.  is it the end user? root?
 	struct super_block * sb;
 	unsigned long dquot_freed_blocks;
 
@@ -842,6 +841,13 @@ void next3_free_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 	next3_free_blocks_sb_inode(handle, sb, inode, block, count,
 				   &dquot_freed_blocks);
+	/*
+	 * The blocks were either freed or moved to active snapshot.
+	 * In both cases the user should no longer be charged for these blocks.
+	 * In the later case, dquot_freed_blocks counts only the freed block.
+	 * The quota on account of the moved blocks has already been returned
+	 * to the user and charged from the owner of the snapshot file.
+	 */
 #else
 	next3_free_blocks_sb(handle, sb, block, count, &dquot_freed_blocks);
 #endif

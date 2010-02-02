@@ -3895,12 +3895,16 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 	if (next3_snapshot_file(inode)) {
 		/*
-		 * all snapshot files are loaded with no snapshot flag,
-		 * but with the 'zombie' flag set.
-		 * snapshot_update() will flag only the snapshots on the list
-		 * and the rest will stay zombies.
+		 * Valid snapshot files must be in the on-disk snapshots list.
+		 * At this point, we only know that the this inode has the
+		 * 'snapshot' flag, but we don't know if it is on the list.
+	         * So we clear the 'snapshot' flag and set the 'zombie' flag.
+	         * snapshot_load() loads the on-disk snapshot list to memory,
+		 * snapshot_update() validates the snapshots on the list and
+		 * non-validated snapshot files remain zombies.
+		 * Zombie snapshot files are a by-product of disconnecting the
+		 * on-disk snapshot list head with tune2fs -O ^has_snapshot.
 		 */
-#warning document why snapshot files start as zombies (here and in design doc)
 		ei->i_flags &= ~(NEXT3_SNAPFILE_FL|NEXT3_FL_SNAPSHOT_DYN_MASK);
 		ei->i_flags |= NEXT3_SNAPFILE_ZOMBIE_FL;
 		/*

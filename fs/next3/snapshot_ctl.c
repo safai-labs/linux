@@ -97,14 +97,13 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	int err = 0;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-	if (flags & NEXT3_SNAPFILE_DUMP_FL) {
-#warning it seems ugly to have to save the current debug level, hardcode it to 5, then reset it.
-#warning it migh be easier to pass the level you want to snapshot_dump and let it handle it there?
-		int debug = snapshot_enable_debug;
-		snapshot_enable_debug = 5;
-		next3_snapshot_dump(inode);
-		snapshot_enable_debug = debug;
-		flags &= ~NEXT3_SNAPFILE_DUMP_FL;
+	if ((oldflags & NEXT3_SNAPFILE_FL) &&
+		(oldflags & NEXT3_NODUMP_FL) &&
+		!(flags & NEXT3_NODUMP_FL)) {
+		/* print snapshot inode map on chattr -d */
+		next3_snapshot_dump(1, inode);
+		/* restore the 'No_Dump' flag */
+		flags |= NEXT3_NODUMP_FL;
 	}
 #endif
 
@@ -1013,11 +1012,7 @@ out_unlockfs:
 	if (err)
 		goto out_err;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-#warning instead of this 'if' below, maybe have snapshot_dump do the check?
-	if (snapshot_enable_debug >= 5)
-		next3_snapshot_dump(inode);
-#endif
+	next3_snapshot_dump(5, inode);
 	/* sleep 1 tunable delay unit */
 	snapshot_test_delay(SNAPTEST_TAKE);
 	snapshot_debug(1, "snapshot (%u) has been taken\n",
@@ -1595,11 +1590,7 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 			break;
 		}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-#warning instead of this 'if' below, maybe have snapshot_dump do the check?
-		if (snapshot_enable_debug >= 5)
-			next3_snapshot_dump(inode);
-#endif
+		next3_snapshot_dump(5, inode);
 		snapshot_debug(1, "snapshot (%u) loaded\n",
 			       inode->i_generation);
 
@@ -1690,6 +1681,8 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 		 * are not zombies */
 		ei->i_flags |= NEXT3_SNAPFILE_FL;
 		ei->i_flags &= ~NEXT3_SNAPFILE_ZOMBIE_FL;
+		/* set the 'No_Dump' flag on all snapshots */
+		ei->i_flags |= NEXT3_NODUMP_FL;
 
 		/* snapshot later than active (failed take) should be
 		 * deleted */

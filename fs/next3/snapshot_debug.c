@@ -120,11 +120,207 @@ void exit_next3_snapshot(void)
 	snapshot_remove_debugfs_entry();
 }
 
+/* snapshot dump state */
+struct next3_dump_info { 
+	struct inode *di_inode; /* snapshot inode */
+	int nmeta;	/* no. of meta blocks */
+	int nind;	/* no. of ind blocks */
+	int ncopied;	/* no. of copied data blocks */
+	int nmoved;	/* no. of moved data blocks */
+};
+
 /*
- * Dump snapshot inode blocks map
+ * next3_snapshot_dump_read_array - read array of blocks and print header
+ *	@n:	prints debug level
+ *	@l:	prints indentation level
+ *	@di:	snapshot dump state
+ *	@nr:	address of indirect block
+ *	@name:	print name of array (ind/dind/tind)
+ *	@idx:	index of indirect block
  *
- * Use stack of indirect block iterators to traverse the snapshot inode (DFS)
- * and printk(KERN_DEBUG) a snapshot inode blocks map.
+ * Sample output:
+ * 		ind[1120] = [30729/35]
+ *
+ * Returns buffer of blocks array
+ */
+static struct buffer_head *next3_snapshot_read_array(int n, int l,
+		struct next3_dump_info *di,
+		u32 nr, const char *name, int idx)
+{
+	struct buffer_head *bh;
+
+	snapshot_debug_l(n, l, "%s[%d] = [%u/%u]\n", name, idx,
+			SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
+			SNAPSHOT_BLOCK_GROUP(nr));
+	di->nind++;
+
+	bh = sb_bread(di->di_inode->i_sb, nr);
+	if (!bh)
+		snapshot_debug_l(n, l+1, "I/O error: failed to read block!!!\n");
+	return bh;
+}
+
+/*
+ * next3_snapshot_dump_ind - dump indirect block
+ *	@n:	prints debug level
+ *	@l:	prints indentation level
+ *	@di:	snapshot dump state
+ *	@nr:	address of indirect block
+ *	@idx:	index of indirect block
+ *
+ * Sample output:
+ * 		ind[1120] = [30729/35]
+ * 		{
+ * 			block[0-2/35] = [30730-30732/35]
+ * 		}
+ */
+static void next3_snapshot_dump_ind(int n, int l,
+		struct next3_dump_info *di,
+		u32 nr, int idx)
+{
+	/* buffer of data blocks array */
+	struct buffer_head *bh;
+	/* cursor to data blocks array */
+	__le32 *p;
+	/* prev and curr data block address */
+	u32 prev_key, key = 0;
+	/* logical snapshot block (inode offset) */
+	u32 blk = idx << SNAPSHOT_ADDR_PER_BLOCK_BITS;
+	/* logical snapshot block group/start */
+	u32 b0 = blk - SNAPSHOT_BLOCK_GROUP_OFFSET(blk);
+	u32 grp = SNAPSHOT_BLOCK_GROUP(blk);
+	int i, k = 0;
+
+	bh = next3_snapshot_read_array(n, l, di, nr, "ind", idx);
+	if (!bh)
+		return;
+
+	snapshot_debug_l(n, l, "{\n");
+	p = (__le32 *)bh->b_data;
+	/* itertate on data blocks array */
+	for (i = 0; i <= SNAPSHOT_ADDR_PER_BLOCK; i++, p++, blk++) {
+		prev_key = key;
+		if (i < SNAPSHOT_ADDR_PER_BLOCK)
+			/* read curr mapped block address */
+			key = le32_to_cpu(*p);
+		else
+			/* terminate mapped blocks array */
+			key = 0;
+
+		if (!prev_key)
+			/* skip unmapped blocks */
+			continue;
+		if (key == prev_key+1) {
+			/* count subsequent mapped blocks */
+			k++;
+			continue;
+		}
+		
+		if (k == 0) {
+			/* (blk-1) is a group of 1 */
+			if (prev_key == blk - 1) {
+				/* print moved block */
+				snapshot_debug_l(n, l+1,
+					"block[%u/%u]\n",
+					blk-1-b0, grp);
+				di->nmoved++;
+			} else {
+				/* print copied block */
+				snapshot_debug_l(n, l+1, "block[%u/%u]"
+					" = [%u/%u]\n",
+					blk-1-b0, grp,
+					SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
+					SNAPSHOT_BLOCK_GROUP(prev_key));
+				di->ncopied++;
+			}
+			continue;
+		}
+
+		/* (blk-1)-k..(blk-1) is a group of k+1 subsequent blocks */
+		if (prev_key == blk - 1) {
+			/* print group of subsequent moved blocks */
+			snapshot_debug_l(n, l+1,
+				"block[%u-%u/%u]\n",
+				blk-1-k-b0, blk-1-b0, grp);
+			di->nmoved += k+1;
+		} else {
+			/* print group of subsequent copied blocks */
+			snapshot_debug_l(n, l+1, "block[%u-%u/%u]"
+				" = [%u-%u/%u]\n",
+				blk-1-k-b0, blk-1-b0, grp,
+				SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key)-k,
+				SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
+				SNAPSHOT_BLOCK_GROUP(prev_key));
+			di->ncopied += k+1;
+		}
+		/* reset subsequent blocks count */
+		k = 0;
+	}
+	snapshot_debug_l(n, l, "}\n");
+	brelse(bh);
+}
+
+/*
+ * next3_snapshot_dump_dind - dump double or tripple indirect block
+ *	@n:	prints debug level
+ *	@l:	prints indentation level
+ *	@di:	snapshot dump state
+ *	@nr:	address of double indirect block
+ *	@idx:	index of double indirect block
+ *	@tind:	recursive dump of tripple indirect block
+ *
+ * Sample output:
+ * 	dind[1] = [30728/35]
+ * 	{
+ * 		ind[1120] = [30729/35]
+ * 		{
+ * 			block[0-2/35] = [30730-30732/35]
+ * 		}
+ * 		...
+ */
+static void next3_snapshot_dump_dind(int n, int l,
+		struct next3_dump_info *di,
+		u32 nr, int idx, int tind)
+{
+	/* buffer of indirect blocks array */
+	struct buffer_head *bh;
+	/* cursor to indirect blocks array */
+	__le32 *p;
+	/* curr indirect block address */
+	u32 key;
+	int i;
+
+	bh = next3_snapshot_read_array(n, l, di, nr, tind ? "tind" : "dind", idx);
+	if (!bh)
+		return;
+
+	snapshot_debug_l(n, l, "{\n");
+	p = (__le32 *)bh->b_data;
+	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++, p++) {
+		key = le32_to_cpu(*p);
+		if (!key)
+			continue;
+		if (tind)
+			/* 1-level recursion */
+			next3_snapshot_dump_dind(n, l+1, di, key, i+1, 0);
+		else
+			next3_snapshot_dump_ind(n, l+1, di, key,
+				(idx << SNAPSHOT_ADDR_PER_BLOCK_BITS) + i);
+	}
+	snapshot_debug_l(n, l, "}\n");
+	brelse(bh);
+}
+
+/*
+ * next3_snapshot_dump - dump snapshot inode blocks map
+ *	@n:	prints debug level
+ *	@inode:	snapshot inode
+ *
+ * Called from snapshot_load() for all snapshots under sb_lock, on f/s mount.
+ * Called from snapshot_take() under i_mutex and snapshot_mutex.
+ * Called from snapshot_set_flags() under i_mutex and snapshot_mutex,
+ * when setting the 'No_Dump' flag of a snapshot file (chattr +d).
+ * The 'No_Dump' flag is cleared at the end of snapshot_dump().
  *
  * Sample output:
  * snapshot (4) block map:
@@ -155,257 +351,52 @@ void exit_next3_snapshot(void)
  * snapshot (4) contains: 0 (meta) + 6 (indirect) + 11 (data) = 17 blocks = 68K = 0M
  * snapshot (4) maps: 9 (copied) + 2 (moved) = 11 blocks
  */
-
-/* next3 indirect block iterator */
-struct next3_ind {
-	__le32	*p;	/* cursor to mapped blocks array */
-	u32	key;	/* address of current mapped block */
-	struct buffer_head *bh; /* data of current mapped block */
-};
-
-/* snapshot dump state */
-struct next3_dump_info { 
-	struct inode *di_inode; /* snapshot inode */
-	int nmeta;	/* no. of meta blocks */
-	int nind;	/* no. of ind blocks */
-	int ncopied;	/* no. of copied data blocks */
-	int nmoved;	/* no. of moved data blocks */
-};
-
-/*
- * next3_snapshot_dump_ind - dump indirect block
- *	@di:	snapshot dump state
- *	@nr:	address of indirect block
- *	@idx:	index of indirect block
- *	@l:	level of indentation for debug prints
- *
- * Sample output:
- * 		ind[1120] = [30729/35]
- * 		{
- * 			block[0-2/35] = [30730-30732/35]
- * 		}
- */
-static int next3_snapshot_dump_ind(struct next3_dump_info *di,
-		u32 nr, int idx, int l)
+void next3_snapshot_dump(int n, struct inode *inode)
 {
-	/* buffer of data blocks array */
-	struct buffer_head *bh = NULL;
-	/* cursor to data blocks array */
-	__le32 *p;
-	/* prev and curr data block address */
-	u32 prev_key, key = 0;
-	/* logical snapshot block (inode offset) */
-	u32 blk = idx << SNAPSHOT_ADDR_PER_BLOCK_BITS;
-	/* logical snapshot block group/start */
-	u32 b0 = blk - SNAPSHOT_BLOCK_GROUP_OFFSET(blk);
-	u32 grp = SNAPSHOT_BLOCK_GROUP(blk);
-	int i, k = 0;
-
-	snapshot_debug_l(5, l, "ind[%d] = [%u/%u]\n", idx,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
-			SNAPSHOT_BLOCK_GROUP(nr));
-	di->nind++;
-
-	bh = sb_bread(di->di_inode->i_sb, nr);
-	if (!bh)
-		return -EIO;
-
-	snapshot_debug_l(5, l, "{\n");
-	p = (__le32 *)bh->b_data;
-	/* itertate on data blocks array */
-	for (i = 0; i <= SNAPSHOT_ADDR_PER_BLOCK; i++, p++, blk++) {
-		prev_key = key;
-		if (i < SNAPSHOT_ADDR_PER_BLOCK)
-			/* read curr mapped block address */
-			key = le32_to_cpu(*p);
-		else
-			/* terminate mapped blocks array */
-			key = 0;
-
-		if (!prev_key)
-			/* skip unmapped blocks */
-			continue;
-		if (key == prev_key+1) {
-			/* count subsequent mapped blocks */
-			k++;
-			continue;
-		}
-		
-		if (k == 0) {
-			/* (blk-1) is a group of 1 */
-			if (prev_key == blk - 1) {
-				/* print moved block */
-				snapshot_debug_l(5, l+1,
-					"block[%u/%u]\n",
-					blk-1-b0, grp);
-				di->nmoved++;
-			} else {
-				/* print copied block */
-				snapshot_debug_l(5, l+1, "block[%u/%u]"
-					" = [%u/%u]\n",
-					blk-1-b0, grp,
-					SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
-					SNAPSHOT_BLOCK_GROUP(prev_key));
-				di->ncopied++;
-			}
-			continue;
-		}
-
-		/* (blk-1)-k..(blk-1) is a group of k+1 subsequent blocks */
-		if (prev_key == blk - 1) {
-			/* print group of subsequent moved blocks */
-			snapshot_debug_l(5, l+1,
-				"block[%u-%u/%u]\n",
-				blk-1-k-b0, blk-1-b0, grp);
-			di->nmoved += k+1;
-		} else {
-			/* print group of subsequent copied blocks */
-			snapshot_debug_l(5, l+1, "block[%u-%u/%u]"
-				" = [%u-%u/%u]\n",
-				blk-1-k-b0, blk-1-b0, grp,
-				SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key)-k,
-				SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
-				SNAPSHOT_BLOCK_GROUP(prev_key));
-			di->ncopied += k+1;
-		}
-		/* reset subsequent blocks count */
-		k = 0;
-	}
-	snapshot_debug_l(5, l, "}\n");
-	brelse(bh);
-	return 0;
-}
-
-/*
- * next3_snapshot_dump_dind - dump double indirect block
- *	@di:	snapshot dump state
- *	@nr:	address of double indirect block
- *	@idx:	index of double indirect block
- *	@l:	level of indentation for debug prints
- *
- * Sample output:
- * 	dind[1] = [30728/35]
- * 	{
- * 		ind[1120] = [30729/35]
- * 		{
- * 			block[0-2/35] = [30730-30732/35]
- * 		}
- * 		...
- */
-static int next3_snapshot_dump_dind(struct next3_dump_info *di,
-		u32 nr, int idx, int l)
-{
-	/* buffer of indirect blocks array */
-	struct buffer_head *bh = NULL;
-	/* cursor to indirect blocks array */
-	__le32 *p;
-	int i, err = 0;
-
-	snapshot_debug_l(5, l, "dind[%d] = [%u/%u]\n", idx,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
-			SNAPSHOT_BLOCK_GROUP(nr));
-	di->nind++;
-
-	bh = sb_bread(di->di_inode->i_sb, nr);
-	if (!bh)
-		return -EIO;
-
-	snapshot_debug_l(5, l, "{\n");
-	p = (__le32 *)bh->b_data;
-	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++, p++) {
-		if (!*p)
-			continue;
-		err = next3_snapshot_dump_ind(di, le32_to_cpu(*p),
-				(idx << SNAPSHOT_ADDR_PER_BLOCK_BITS) + i,
-				l+1);
-		if (err)
-			break;
-	}
-	snapshot_debug_l(5, l, "}\n");
-	brelse(bh);
-	return err;
-}
-
-/*
- * next3_snapshot_dump - print a snapshot @inode block map
- * Called from snapshot_load() on mount time under sb_lock
- * Called from snapshot_set_flags() under i_mutex
- */
-void next3_snapshot_dump(struct inode *inode)
-{
-	/* indirect blocks stack/pointer */
-	struct next3_ind ind_stack[4];
-	struct next3_ind *ind = ind_stack;
-	struct next3_dump_info di;
 	struct next3_inode_info *ei = NEXT3_I(inode);
-	int nblocks, i, n = 0, l = 0;
+	struct next3_dump_info di;
+	u32 nr;
+	int i, nblocks;
 
-	memset(ind_stack, 0, sizeof(ind_stack));
+	if (n > snapshot_enable_debug)
+		return;
+
 	memset(&di, 0, sizeof(di));
 	di.di_inode = inode;
 
-	snapshot_debug(5, "snapshot (%u) block map:\n", inode->i_generation);
-	/* print direct (meta) blocks */
+	snapshot_debug(n, "snapshot (%u) block map:\n", inode->i_generation);
+	/* print direct blocks (snapshot meta blocks) */
 	for (i = 0; i < NEXT3_NDIR_BLOCKS; i++) {
 		if (ei->i_data[i]) {
-			ind->key = le32_to_cpu(ei->i_data[i]);
-			snapshot_debug_l(5, l, "meta[%d] = [%u/%u]\n", i,
-					SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key),
-					SNAPSHOT_BLOCK_GROUP(ind->key));
+			nr = le32_to_cpu(ei->i_data[i]);
+			snapshot_debug_l(n, 0, "meta[%d] = [%u/%u] !!!\n", i,
+					SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
+					SNAPSHOT_BLOCK_GROUP(nr));
 			di.nmeta++;
 		}
 	}
-	ind->key = le32_to_cpu(ei->i_data[NEXT3_DIND_BLOCK]);
-	if (!ind->key)
-		goto ind_out;
-dump_dind:
-	if (next3_snapshot_dump_dind(&di, ind->key, n, l))
-		goto ind_out;
+	/* print indirect branch (snapshot reserved blocks) */
+	nr = le32_to_cpu(ei->i_data[i++]);
+	if (nr)
+		snapshot_debug_l(n, 0, "ind[-1] = [%u/%u] !!!\n",
+				SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
+				SNAPSHOT_BLOCK_GROUP(nr));
+	/* print double indirect branch (start of snapshot image) */
+	nr = le32_to_cpu(ei->i_data[i++]);
+	if (nr)
+		next3_snapshot_dump_dind(n, 0, &di, nr, 0, 0);
+	/* print tripple indirect branch (rest of snapshot image) */
+	nr = le32_to_cpu(ei->i_data[i++]);
+	if (nr)
+		next3_snapshot_dump_dind(n, 0, &di, nr, 0, 1);
 
-	if (ind == ind_stack) {
-		/* print triple indirect map */
-		ind->key = le32_to_cpu(ei->i_data[NEXT3_TIND_BLOCK]);
-		if (!ind->key)
-			goto ind_out;
-		brelse(ind->bh);
-		ind->bh = sb_bread(inode->i_sb, ind->key);
-		if (!ind->bh)
-			goto ind_out;
-		snapshot_debug_l(5, l, "tind[0] = [%u/%u]\n",
-				SNAPSHOT_BLOCK_GROUP_OFFSET(ind->key),
-				SNAPSHOT_BLOCK_GROUP(ind->key));
-#warning u can swap next two lines and change next one to ind->p = ...
-		(ind+1)->p = (__le32 *)ind->bh->b_data;
-		ind++;
-		di.nind++;
-		snapshot_debug_l(5, l, "{\n");
-		l++;
-	}
-
-	if (ind > ind_stack) {
-#warning i think u can safely eliminate the "n" variable and reuse "i" below.
-		while (n++ < SNAPSHOT_ADDR_PER_BLOCK) {
-			ind->key = le32_to_cpu(*(ind->p++));
-			if (ind->key)
-				goto dump_dind;
-		}
-	}
-
-	l--;
-	snapshot_debug_l(5, l, "}\n");
-	ind--;
-ind_out:
 	nblocks = di.nmeta + di.nind + di.ncopied + di.nmoved;
-	snapshot_debug(5, "snapshot (%u) contains: %d (meta) + %d (indirect) "
+	snapshot_debug(n, "snapshot (%u) contains: %d (meta) + %d (indirect) "
 		       "+ %d (data) = %d blocks = %dK = %dM\n",
 		       inode->i_generation, di.nmeta, di.nind, di.ncopied + di.nmoved,
 		       nblocks, nblocks << (SNAPSHOT_BLOCK_SIZE_BITS - 10),
 		       nblocks >> (20 - SNAPSHOT_BLOCK_SIZE_BITS));
-	snapshot_debug(5, "snapshot (%u) maps: %d (copied) + %d (moved) = "
+	snapshot_debug(n, "snapshot (%u) maps: %d (copied) + %d (moved) = "
 		       "%d blocks\n",
 		       inode->i_generation, di.ncopied, di.nmoved, di.ncopied + di.nmoved);
-	while (ind > ind_stack) {
-		ind--;
-		brelse(ind->bh);
-	}
 }

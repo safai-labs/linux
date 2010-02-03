@@ -177,17 +177,6 @@ extern void next3_snapshot_destroy(struct super_block *sb);
 extern void next3_snapshot_update(struct super_block *sb, int cleanup);
 
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-/* next3_debug.c */
-extern const char *snapshot_cmd_str(int cmd);
-extern int init_next3_snapshot(void);
-extern void exit_next3_snapshot(void);
-extern void next3_snapshot_dump(struct inode *inode);
-#else
-static inline int init_next3_snapshot(void) { return 0; }
-static inline void exit_next3_snapshot(void) { return; }
-#endif
-
 /* balloc.c */
 extern struct buffer_head *read_block_bitmap(struct super_block *sb,
 					     unsigned int block_group);

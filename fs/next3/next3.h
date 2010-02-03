@@ -205,11 +205,6 @@ struct next3_group_desc
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 /* exclude file from snapshot (d) */
 #define NEXT3_NOSNAP_FL			NEXT3_NODUMP_FL
-
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-/* dump snapshot file map (c) */
-#define NEXT3_SNAPFILE_DUMP_FL		NEXT3_COMPR_FL
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE

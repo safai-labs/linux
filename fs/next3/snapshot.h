@@ -182,6 +182,7 @@ extern void next3_snapshot_update(struct super_block *sb, int cleanup);
 extern const char *snapshot_cmd_str(int cmd);
 extern int init_next3_snapshot(void);
 extern void exit_next3_snapshot(void);
+extern void next3_snapshot_dump(struct inode *inode);
 #else
 static inline int init_next3_snapshot(void) { return 0; }
 static inline void exit_next3_snapshot(void) { return; }

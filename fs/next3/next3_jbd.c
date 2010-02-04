@@ -95,7 +95,7 @@ int __next3_journal_dirty_metadata(const char *where,
 	if (err)
 		return err;
 	
-	if (handle->h_level == 0) {
+	if (!handle->h_cowing) {
 		struct journal_head *jh = bh2jh(bh);
 		jbd_lock_bh_state(bh);
 		if (jh->b_modified && !jh->b_user_modified) {
@@ -103,10 +103,9 @@ int __next3_journal_dirty_metadata(const char *where,
 			 * buffer_credits was decremented when buffer was
 			 * modified for the first time in the currect
 			 * transaction, which may have been during a COW
-			 * operation (h_level > 0).  we decrement
-			 * user_credits and mark b_user_modified, the first
-			 * time that the buffer is modified not during a
-			 * COW operation (h_level == 0).
+			 * operation.  We decrement user_credits and mark
+			 * b_user_modified, on the first time that the buffer
+			 * is modified not during a COW operation (!h_cowing).
 			 */
 			jh->b_user_modified = 1;
 			handle->h_user_credits--;
@@ -126,7 +125,7 @@ int __next3_journal_release_buffer(const char *where, handle_t *handle,
 {
 	int err = 0;
 
-	if (handle->h_level != 0)
+	if (handle->h_cowing)
 		goto out;
 
 	/*
@@ -140,10 +139,10 @@ int __next3_journal_release_buffer(const char *where, handle_t *handle,
 	if (err > 0) {
 		/* well, we can't say we didn't try - now lets hope
 		 * we have enough buffer credits to spare */
-		snapshot_debug_l(1, handle->h_level, "%s: warning: couldn't "
-				 "extend transaction from %s (credits=%d/%d)\n",
-				 __func__, where, handle->h_buffer_credits,
-				 handle->h_user_credits);
+		snapshot_debug(1, "%s: warning: couldn't extend transaction "
+				"from %s (credits=%d/%d)\n", __func__,
+				where, handle->h_buffer_credits,
+				handle->h_user_credits);
 		err = 0;
 	}
 	next3_journal_trace(SNAP_WARN, where, handle, -1);
@@ -162,7 +161,7 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 	int upper = NEXT3_SNAPSHOT_START_TRANS_BLOCKS(handle->h_base_credits);
 	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits);
 	int final = (nblocks == 0 && handle->h_ref == 1 &&
-		     handle->h_level == 0);
+		     !handle->h_cowing);
 
 	switch (snapshot_enable_debug) {
 	case SNAP_INFO:
@@ -176,7 +175,7 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 		 * valid if there is an active snapshot and not during COW
 		 */
 		if (handle->h_buffer_credits < lower &&
-		    has_active && handle->h_level == 0)
+		    has_active && !handle->h_cowing)
 			break;
 	case SNAP_ERR:
 		/* trace if user credits are too low */
@@ -192,14 +191,14 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 		break;
 	}
 
-	snapshot_debug_l(n, handle->h_level, "%s(%d): credits=%d, limit=%d/%d,"
+	snapshot_debug_l(n, handle->h_cowing, "%s(%d): credits=%d, limit=%d/%d,"
 			 " user=%d/%d, ref=%d, caller=%s\n", fn, nblocks,
 			 handle->h_buffer_credits, lower, upper,
 			 handle->h_user_credits, handle->h_base_credits,
 			 handle->h_ref, caller);
 	if (!final)
 		return;
-	snapshot_debug_l(n, handle->h_level, "COW stats: moved/copied=%d/%d, "
+	snapshot_debug_l(n, handle->h_cowing, "COW stats: moved/copied=%d/%d, "
 			 "mapped/clear/cached=%d/%d/%d, "
 			 "bitmaps/cleared=%d/%d\n", handle->h_cow_moved,
 			 handle->h_cow_copied, handle->h_cow_ok_mapped,

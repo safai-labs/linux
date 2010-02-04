@@ -166,7 +166,7 @@ next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
 #endif
 
 #define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
-						 handle->h_level : 0, f, ## a)
+						 handle->h_cowing : 0, f, ## a)
 
 /*
  * next3_snapshot_get_inode_access() - called from next3_get_blocks_handle()
@@ -196,14 +196,21 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 			  count, cmd);
 #endif
 	if (SNAPMAP_ISSPECIAL(cmd)) {
-		/* COWing or moving blocks to active snapshot */
+		/*
+		 * test_and_cow() COWing or moving blocks to active snapshot
+		 */
+		BUG_ON(!handle || !handle->h_cowing);
 		BUG_ON(!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
-		BUG_ON(!handle || !handle->h_level);
 		BUG_ON(iblock < SNAPSHOT_BLOCK_OFFSET);
 		return 0;
-	} else if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
-		/* snapshot_create() pre-allocating blocks or
-		 * snapshot_take() checking for pre-allocated blocks */
+	} else if (SNAPMAP_ISCREATE(cmd))
+		BUG_ON(handle && handle->h_cowing);
+
+	if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
+		/*
+		 * snapshot_create() pre-allocating blocks for new snapshot or
+		 * snapshot_take() checking for pre-allocated blocks
+		 */
 		return 0;
 	} else if (SNAPMAP_ISWRITE(cmd)) {
 		/* snapshot inode write access */
@@ -631,11 +638,11 @@ __next3_snapshot_trace_cow(handle_t *handle, struct inode *inode,
 			NEXT3_INODES_PER_GROUP(inode->i_sb);
 	}
 	snapshot_debug_hl(4, "get_%s_access(i:%d/%ld, b:%lu/%lu)"
-			" h_ref=%d, h_level=%d, code=%d\n",
+			" h_ref=%d, code=%d\n",
 			fn, inode_offset, inode_group,
 			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
 			SNAPSHOT_BLOCK_GROUP(block),
-			handle->h_ref, handle->h_level, code);
+			handle->h_ref, code);
 }
 
 #define next3_snapshot_trace_cow(handle, inode, bh, block, code, fn) \
@@ -732,39 +739,46 @@ next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 	int err = 0;
 	int clear = 0;
 
-	next3_snapshot_trace_cow(handle, inode, bh, block, cmd, fn);
-	snapshot_debug_hl(4, "{\n");
-
-	if (handle->h_level++ >= SNAPSHOT_MAX_RECURSION_LEVEL) {
-		snapshot_debug_hl(1,
-			  "COW error: max recursion level exceeded!\n");
-		err = -EIO;
-		goto out;
-	}
-
 	if (!active_snapshot)
 		/* no active snapshot - no need to COW */
-		goto out;
+		return 0;
 
-	/* avoid recursion on active snapshot file updates */
-	if (handle->h_level > 1 ||
+	next3_snapshot_trace_cow(handle, inode, bh, block, cmd, fn);
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-		(inode && next3_snapshot_exclude_inode(inode)) ||
-#endif
-		(inode == active_snapshot && cmd != SNAPSHOT_CLEAR)) {
-		snapshot_debug_hl(4, "active snapshot file update - "
+	if (inode && next3_snapshot_exclude_inode(inode)) {
+		snapshot_debug_hl(4, "exclude bitmap update - "
 				  "skip block cow!\n");
-		goto out;
+		return 0;
 	}
+#endif
+	if (handle->h_cowing) {
+		/* avoid recursion on active snapshot updates */
+		WARN_ON(inode && inode != active_snapshot);
+		snapshot_debug_hl(4, "active snapshot update - "
+				  "skip block cow!\n");
+		return 0;
+	} else if (inode == active_snapshot) {
+		/* active snapshot may only be modified during COW */
+		snapshot_debug_hl(4, "active snapshot access denied!\n");
+		return -EPERM;
+	}
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 	/* check if the buffer was COWed in the current transaction */
 	if (next3_snapshot_test_cowed(handle, bh)) {
+		snapshot_debug_hl(4, "buffer found in COW cache - "
+				  "skip block cow!\n");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 		handle->h_cow_ok_jh++;
 #endif
-		goto out;
+		return 0;
 	}
 #endif
+
+	snapshot_debug_hl(4, "{\n");
+	handle->h_cowing = 1;
+	/* BEGIN COWing */
 
 	if (!inode || cmd == SNAPSHOT_READ) /* skip excluded file test */
 		goto test_cow_bitmap;
@@ -1004,7 +1018,8 @@ cowed:
 
 out:
 	brelse(sbh);
-	handle->h_level--;
+	/* END COWing */
+	handle->h_cowing = 0;
 	snapshot_debug_hl(4, "} = %d\n", err);
 	snapshot_debug_hl(4, ".\n");
 	return err;
@@ -1120,10 +1135,10 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	/*
 	 * Never mind why we got here, we have to try to COW the new
 	 * allocated block before it is overwritten.  If allocation is for
-	 * active snapshot itself (h_level > 0), there is nothing graceful
+	 * active snapshot itself (h_cowing), there is nothing graceful
 	 * we can do, so issue an fs error.
 	 */
-	if (handle->h_level > 0)
+	if (handle->h_cowing)
 		return -EIO;
 	/*
 	 * Buffer comes here locked and should return locked but we must

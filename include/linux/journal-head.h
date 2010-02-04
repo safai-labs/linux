@@ -43,7 +43,7 @@ struct journal_head {
 	/*
 	 * This flag signals the buffer has been modified by
 	 * the currently running transaction not during
-	 * a COW operation (handle->h_level == 0).
+	 * a COW operation (!handle->h_cowing).
 	 * It is used for counting handle->h_user_credits.
 	 * [jbd_lock_bh_state()]
 	 */

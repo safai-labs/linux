@@ -1707,11 +1707,10 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 		snapshot_r_blocks =
 			le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
 		/*
-		 * only active snapshot (h_level > 0) can use snapshot
-		 * reserved blocks.
+		 * snapshot reserved blocks for COWing to active snapshot
 		 */
 		if (free_blocks < snapshot_r_blocks + 1 &&
-		    handle->h_level == 0) {
+		    !handle->h_cowing) {
 			return 0;
 		}
 		/*

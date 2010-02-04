@@ -95,9 +95,6 @@
 #define SNAPSHOT_SET_DISABLED(inode)		\
 	i_size_write((inode), 0)
 
-/* maximum recursion level allowed in snapshot file updates */
-#define SNAPSHOT_MAX_RECURSION_LEVEL	2
-
 /*
  * Block access functions
  */

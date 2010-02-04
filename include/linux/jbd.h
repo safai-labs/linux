@@ -373,7 +373,7 @@ struct handle_s
 	int			h_base_credits;
 
 	/* Number of buffers the user is allowed to dirty:
-	 * (counts only dirty buffers when h_level==0) */
+	 * (counts only buffers dirtied when !h_cowing) */
 	int			h_user_credits;
 #endif
 
@@ -401,7 +401,7 @@ struct handle_s
 	unsigned int	h_jdata:	1;	/* force data journaling */
 	unsigned int	h_aborted:	1;	/* fatal error on handle */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	unsigned int	h_level:2; /* snapshot COW recursion level */
+	unsigned int	h_cowing:	1;	/* inside test_and_cow() */
 #endif
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC

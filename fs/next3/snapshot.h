@@ -98,21 +98,6 @@
 /* maximum recursion level allowed in snapshot file updates */
 #define SNAPSHOT_MAX_RECURSION_LEVEL	2
 
-/* block access command codes */
-	/* only test if the block is in use by the active snapshot */
-#define SNAPSHOT_READ	0
-	/* if in use, allocate a private block for the active snapshot */
-#define SNAPSHOT_WRITE	1
-	/* if in use, copy the block to the active snapshot */
-#define SNAPSHOT_COPY	2
-	/* same as copy, but don't use journal credits */
-#define SNAPSHOT_BITMAP	3
-	/* if in use, move the block to the active snapshot */
-#warning why do you need negative values here? why cant it be an enum?
-#define SNAPSHOT_MOVE	-1
-	/* mark the block excluded from snapshot */
-#define SNAPSHOT_CLEAR	-2
-
 /*
  * Block access functions
  */
@@ -153,6 +138,35 @@ extern void next3_snapshot_get_flags(struct next3_inode_info *ei,
 extern int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 				    unsigned int flags);
 extern int next3_snapshot_take(struct inode *inode);
+
+/*
+ * snapshot_map_blocks() command flags passed to get_blocks_handle() on its
+ * @create argument.  All places in original code call get_blocks_handle()
+ * with @create 0 or 1.  The behavior of the function remains the same for
+ * these 2 values, while higher bits are used for mapping snapshot blocks.
+ */
+/* original meaning - only check if blocks are mapped */
+#define SNAPMAP_READ	0
+/* original meaning - allocate missing blocks and indirect blocks */
+#define SNAPMAP_WRITE	0x1
+/* creating COWed block - handle COW race conditions */
+#define SNAPMAP_COW	0x2
+/* moving blocks to snapshot - allocate only indirect blocks */
+#define SNAPMAP_MOVE	0x4
+/* bypass journal and sync allocated indirect blocks directly to disk */
+#define SNAPMAP_SYNC	0x8
+/* creating COW bitmap - handle COW races and bypass journal */
+#define SNAPMAP_BITMAP	(SNAPMAP_COW|SNAPMAP_SYNC)
+
+/* original @create flag test - only check map or create map? */
+#define SNAPMAP_ISREAD(cmd)	((cmd) == SNAPMAP_READ)
+#define SNAPMAP_ISWRITE(cmd)	((cmd) == SNAPMAP_WRITE)
+#define SNAPMAP_ISCREATE(cmd)	((cmd) != SNAPMAP_READ)
+/* test special cases when mapping snapshot blocks */
+#define SNAPMAP_ISSPECIAL(cmd)	((cmd) & ~SNAPMAP_WRITE)
+#define SNAPMAP_ISCOW(cmd)	((cmd) & SNAPMAP_COW)
+#define SNAPMAP_ISMOVE(cmd)	((cmd) & SNAPMAP_MOVE)
+#define SNAPMAP_ISSYNC(cmd)	((cmd) & SNAPMAP_SYNC)
 
 /* helper functions for next3_snapshot_create() */
 extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,

@@ -69,7 +69,6 @@ extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 		}							\
 	} while (0)
 
-extern const char *snapshot_cmd_str(int cmd);
 extern int init_next3_snapshot(void);
 extern void exit_next3_snapshot(void);
 extern void next3_snapshot_dump(int n, struct inode *inode);

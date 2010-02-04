@@ -573,7 +573,7 @@ static int next3_snapshot_create(struct inode *inode)
 	/* allocate and zero out snapshot meta blocks */
 	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
 		brelse(bh);
-		bh = next3_getblk(handle, inode, i, SNAPSHOT_WRITE, &err);
+		bh = next3_getblk(handle, inode, i, SNAPMAP_WRITE, &err);
 		if (!bh || err)
 			break;
 		/* zero out meta block and journal as dirty metadata */
@@ -614,7 +614,7 @@ static int next3_snapshot_create(struct inode *inode)
 		if (err)
 			goto out_handle;
 		err = next3_snapshot_map_blocks(handle, inode, i, count - i,
-						NULL, SNAPSHOT_WRITE);
+						NULL, SNAPMAP_WRITE);
 	}
 	if (err <= 0) {
 		snapshot_debug(1, "failed to allocate super block and %d "
@@ -668,19 +668,19 @@ alloc_self_inode:
 	/* try to allocate all blocks at once */
 	err = next3_snapshot_map_blocks(handle, inode,
 			bmap_blk, count,
-			NULL, SNAPSHOT_WRITE);
+			NULL, SNAPMAP_WRITE);
 	count = err;
 	/* allocate remaining blocks one by one */
 	if (err > 0 && count < 2)
 		err = next3_snapshot_map_blocks(handle, inode,
 				imap_blk, 1,
 				NULL,
-				SNAPSHOT_WRITE);
+				SNAPMAP_WRITE);
 	if (err > 0 && count < 3)
 		err = next3_snapshot_map_blocks(handle, inode,
 				inode_blk, 1,
 				NULL,
-				SNAPSHOT_WRITE);
+				SNAPMAP_WRITE);
 next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
 		next3_fsblk_t blk0 = iloc.block_group *
@@ -774,7 +774,7 @@ int next3_snapshot_take(struct inode *inode)
 			       "broken!\n", inode->i_generation);
 	} else
 		sbh = next3_getblk(&dummy_handle, inode, SNAPSHOT_IBLOCK(0),
-				   SNAPSHOT_READ, &err);
+				   SNAPMAP_READ, &err);
 
 	if (!sbh || sbh->b_blocknr == 0) {
 		snapshot_debug(1, "warning: super block of snapshot (%u) not "
@@ -850,7 +850,7 @@ int next3_snapshot_take(struct inode *inode)
 
 		brelse(sbh);
 		sbh = next3_getblk(&dummy_handle, inode, iblock,
-				SNAPSHOT_READ, &err);
+				SNAPMAP_READ, &err);
 		if (!sbh || sbh->b_blocknr == bh->b_blocknr) {
 			snapshot_debug(1, "warning: GDT block (%lld) of "
 				       "snapshot (%u) not allocated\n",
@@ -907,7 +907,7 @@ copy_self_inode:
 			brelse(sbh);
 			sbh = next3_getblk(&dummy_handle, inode,
 					   SNAPSHOT_IBLOCK(bh->b_blocknr),
-					   SNAPSHOT_READ, &err);
+					   SNAPMAP_READ, &err);
 		}
 		if (!bh || err || !sbh || sbh->b_blocknr == bh->b_blocknr) {
 			snapshot_debug(1, "failed to copy snapshot (%u) %s "

@@ -195,55 +195,40 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 			  "cmd=%d\n", inode->i_generation, blk, block_group,
 			  count, cmd);
 #endif
-	if (iblock < SNAPSHOT_META_BLOCKS) {
-		/*
-		 * Snapshot meta blocks access: h_level > 0 indicates this
-		 * is snapshot_map_blocks recursive call
-		 */
-#warning more recursion? recursion is bad.
-		if (handle && handle->h_level > 0) {
-			snapshot_debug(1, "snapshot (%u) meta block (%d)"
-					" - recursive access denied!\n",
-					inode->i_generation, (int)iblock);
-			return -EPERM;
-		}
-	} else if (iblock < SNAPSHOT_BLOCK_OFFSET) {
-		/* snapshot reserved blocks */
-		if (cmd != SNAPSHOT_READ) {
-			snapshot_debug(1, "snapshot (%u) reserved block (%d)"
-					" - %s access denied!\n",
-					inode->i_generation, (int)iblock,
-					snapshot_cmd_str(cmd));
-			return -EPERM;
-		}
+	if (SNAPMAP_ISSPECIAL(cmd)) {
+		/* COWing or moving blocks to active snapshot */
+		BUG_ON(!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
+		BUG_ON(!handle || !handle->h_level);
+		BUG_ON(iblock < SNAPSHOT_BLOCK_OFFSET);
+		return 0;
 	} else if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
-		/* only allocating blocks is allowed during snapshot take */
-		if (cmd != SNAPSHOT_READ && cmd != SNAPSHOT_WRITE) {
-			snapshot_debug(1, "snapshot (%u) during 'take'"
-				       " - %s access denied!\n",
-				       inode->i_generation,
-				       snapshot_cmd_str(cmd));
-			return -EPERM;
-		}
-	} else if (cmd == SNAPSHOT_WRITE) {
-		/* snapshot image write access */
+		/* snapshot_create() pre-allocating blocks or
+		 * snapshot_take() checking for pre-allocated blocks */
+		return 0;
+	} else if (SNAPMAP_ISWRITE(cmd)) {
+		/* snapshot inode write access */
 		snapshot_debug(1, "snapshot (%u) is read-only"
 				" - write access denied!\n",
 				inode->i_generation);
 		return -EPERM;
-	} else if (cmd == SNAPSHOT_READ) {
+	} else {
+		/* snapshot inode read access */
+		if (iblock < SNAPSHOT_BLOCK_OFFSET)
+			/* snapshot reserved blocks */
+			return 0;
 		/*
-		 * Snapshot image read access: no handle
-		 * indicates this is next3_snapshot_readpage()
-		 * calling next3_snapshot_get_block()
+		 * non NULL handle indicates this is test_and_cow()
+		 * checking if snapshot block is mapped
 		 */
-		if (!handle)
-			goto read_through;
+		if (handle)
+			return 0;
 	}
-	/* normal inode access */
-	return 0;
 
-read_through:
+	/*
+	 * Snapshot image read through access: (!cmd && !handle)
+	 * indicates this is next3_snapshot_readpage()
+	 * calling next3_snapshot_get_block()
+	 */
 	*prev_snapshot = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	/*
@@ -274,7 +259,6 @@ read_through:
 			/* skip over snapshot during take */
 			*prev_snapshot = &ei->vfs_inode;
 	}
-	/* read through access */
 	return 1;
 #endif
 }
@@ -298,17 +282,14 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 	int err;
 
 	dummy.b_state = 0;
-#warning why this hardcoded number -1000? should it be a macro?  explain why -1000: is it an important number for your system?
-	dummy.b_blocknr = -1000;
+	dummy.b_blocknr = 0;
 	err = next3_get_blocks_handle(handle, inode, SNAPSHOT_IBLOCK(block),
 				      maxblocks, &dummy, cmd);
 	/*
 	 * next3_get_blocks_handle() returns number of blocks
 	 * mapped. 0 in case of a HOLE.
 	 */
-	if (err <= 0)
-		dummy.b_blocknr = 0;
-	else if (mapped)
+	if (mapped && err > 0)
 		*mapped = dummy.b_blocknr;
 
 	snapshot_debug_hl(4, "snapshot (%u) map_blocks "
@@ -478,13 +459,13 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * is not yet allocated, create the new COW bitmap block.
 	 */
 	cow_bh = next3_bread(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
-				SNAPSHOT_READ, &err);
+				SNAPMAP_READ, &err);
 	if (cow_bh)
 		goto out;
 
 	/* allocate snapshot block for COW bitmap */
 	cow_bh = next3_getblk(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
-				SNAPSHOT_BITMAP, &err);
+				SNAPMAP_BITMAP, &err);
 	if (!cow_bh || err < 0)
 		goto out;
 	if (!err) {
@@ -731,6 +712,12 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
  * = 0 - @block was COWed or doesn't need to be COWed/moved
  * < 0 - error (or @block needs to be COWed)
  */
+#define SNAPSHOT_READ	0
+#define SNAPSHOT_COPY	1
+#warning why do you need negative values here? why cant it be an enum?
+#define SNAPSHOT_MOVE	-1
+#define SNAPSHOT_CLEAR	-2
+
 static int
 next3_snapshot_test_and_cow(handle_t *handle, struct inode *inode,
 			    struct buffer_head *bh, next3_fsblk_t block,
@@ -857,7 +844,7 @@ test_cow_bitmap:
 
 	/* block is in use by snapshot - check if it was already COWed */
 	err = next3_snapshot_map_blocks(handle, active_snapshot, block, 1, &blk,
-					SNAPSHOT_READ);
+					SNAPMAP_READ);
 	if (err < 0)
 		goto out;
 	if (err > 0) {
@@ -891,7 +878,7 @@ test_cow_bitmap:
 		}
 		/* try to move count block from inode to snapshot */
 		err = next3_snapshot_map_blocks(handle, active_snapshot, block,
-						count, NULL, cmd);
+						count, NULL, SNAPMAP_MOVE);
 		if (err < 0)
 			goto out;
 		count = err;
@@ -933,7 +920,7 @@ test_cow_bitmap:
 
 	/* try to allocate snapshot block to make a backup copy */
 	sbh = next3_getblk(handle, active_snapshot, SNAPSHOT_IBLOCK(block),
-			   SNAPSHOT_COPY, &err);
+			   SNAPMAP_COW, &err);
 	if (!sbh || err < 0)
 		goto out;
 

@@ -395,8 +395,8 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 	/* Are we writing and COWing any direct blocks? -znjp */
 	ret = 0;
-	if (cmd == SNAPSHOT_WRITE && depth == 1 &&
-	    next3_snapshot_should_cow_data(inode))
+	if (SNAPMAP_ISWRITE(cmd) && depth == 1 &&
+			next3_snapshot_should_cow_data(inode))
 		ret = next3_snapshot_get_move_access(handle, inode,
 						     le32_to_cpu(p->key), 1);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
@@ -426,8 +426,8 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 		/* Are we COWing any indirect blocks? -znjp */
 		ret = 0;
-		if (cmd == SNAPSHOT_WRITE && depth == 1 &&
-		    next3_snapshot_should_cow_data(inode))
+		if (SNAPMAP_ISWRITE(cmd) && depth == 1 &&
+				next3_snapshot_should_cow_data(inode))
 			ret = next3_snapshot_get_move_access(handle, inode,
 						     le32_to_cpu(p->key), 1);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
@@ -1126,7 +1126,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 	next3_fsblk_t current_block;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
-	if (cmd == SNAPSHOT_MOVE) {
+	if (SNAPMAP_ISMOVE(cmd)) {
 		/* mapping snapshot block to block device block */
 		current_block = SNAPSHOT_BLOCK(iblock);
 		num = 0;
@@ -1166,12 +1166,11 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 		lock_buffer(bh);
 		BUFFER_TRACE(bh, "call get_create_access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
-# warning u can change code to "if (cmd != SNAPSHOT_BITMAP)" and avoid the hanging "else"
-		if (cmd == SNAPSHOT_BITMAP) {
-			/* don't journal snapshot bitmap indirect blocks */
-		} else
-#endif
+		if (!SNAPMAP_ISSYNC(cmd))
+			err = next3_journal_get_create_access(handle, bh);
+#else
 		err = next3_journal_get_create_access(handle, bh);
+#endif
 		if (err) {
 			unlock_buffer(bh);
 			brelse(bh);
@@ -1208,12 +1207,14 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 		 * this is not good for performance but it only happens once
 		 * per snapshot/blockgroup.
 		 */
-		if (cmd == SNAPSHOT_BITMAP) {
+		if (SNAPMAP_ISSYNC(cmd)) {
 			mark_buffer_dirty(bh);
 			sync_dirty_buffer(bh);
 		} else
-#endif
+			err = next3_journal_dirty_metadata(handle, bh);
+#else
 		err = next3_journal_dirty_metadata(handle, bh);
+#endif
 		if (err)
 			goto failed;
 	}
@@ -1224,21 +1225,20 @@ failed:
 	for (i = 1; i <= n ; i++) {
 		BUFFER_TRACE(branch[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
-# warning u can change code to "if (cmd != SNAPSHOT_BITMAP)" and avoid the hanging "else"
-		if (cmd == SNAPSHOT_BITMAP) {
-			/* don't journal snapshot bitmap indirect blocks */
-		} else
-#endif
+		if (!SNAPMAP_ISSYNC(cmd))
+			next3_journal_forget(handle, branch[i].bh);
+#else
 		next3_journal_forget(handle, branch[i].bh);
+#endif
 	}
 	for (i = 0; i <indirect_blks; i++)
 		next3_free_blocks(handle, inode, new_blocks[i], 1);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
-	if (cmd == SNAPSHOT_MOVE && num > 0) {
+	if (SNAPMAP_ISMOVE(cmd) && num > 0)
 		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, num);
-	} else if (cmd >= SNAPSHOT_WRITE)
+	else if (num > 0)
 		next3_free_blocks(handle, inode, new_blocks[i], num);
 #else
 	next3_free_blocks(handle, inode, new_blocks[i], num);
@@ -1311,10 +1311,9 @@ static int next3_splice_branch(handle_t *handle, struct inode *inode,
 	 * allocation
 	 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
-	if (cmd == SNAPSHOT_MOVE) {
+	if (SNAPMAP_ISMOVE(cmd))
 		/* don't update i_block_alloc_info with moved block */
 		block_i = NULL;
-	}
 #endif
 	if (block_i) {
 		block_i->last_alloc_logical_block = block + blks - 1;
@@ -1355,19 +1354,18 @@ err_out:
 	for (i = 1; i <= num; i++) {
 		BUFFER_TRACE(where[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
-# warning u can change code to "if (cmd != SNAPSHOT_BITMAP)" and avoid the hanging "else"
-		if (cmd == SNAPSHOT_BITMAP) {
-			/* don't journal snapshot bitmap indirect block */
-		} else
-#endif
+		if (!SNAPMAP_ISSYNC(cmd))
+			next3_journal_forget(handle, where[i].bh);
+#else
 		next3_journal_forget(handle, where[i].bh);
+#endif
 		next3_free_blocks(handle,inode,le32_to_cpu(where[i-1].key),1);
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
-	if (cmd == SNAPSHOT_MOVE) {
+	if (SNAPMAP_ISMOVE(cmd))
 		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, blks);
-	} else if (cmd >= SNAPSHOT_WRITE)
+	else if (num > 0)
 		next3_free_blocks(handle, inode, le32_to_cpu(where[num].key),
 				  blks);
 #else
@@ -1615,8 +1613,7 @@ retry:
 		goto out_mutex;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-#warning why do u check if 'create' is GREATER-THAN a fixed macro value?  its better to check if its equal to any specific values u care about.
-	if (create >= SNAPSHOT_COPY) {
+	if (SNAPMAP_ISCOW(create)) {
 		/*
 		 * COWing block or creating COW bitmap.
 		 * we now have exclusive access to the COW destination block
@@ -1814,8 +1811,7 @@ struct buffer_head *next3_getblk(handle_t *handle, struct inode *inode,
 			J_ASSERT(handle != NULL);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-#warning again, bad to compare a value "create" against a macro
-			if (create >= SNAPSHOT_COPY) {
+			if (SNAPMAP_ISCOW(create)) {
 				/* COWing block or creating COW bitmap */
 				lock_buffer(bh);
 				clear_buffer_uptodate(bh);

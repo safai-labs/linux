@@ -88,24 +88,6 @@ static void snapshot_remove_debugfs_entry(void)
 	debugfs_remove(snapshot_debugfs_dir);
 }
 
-const char *snapshot_cmd_str(int cmd)
-{
-	switch (cmd) {
-	case SNAPSHOT_READ:
-		return "read";
-	case SNAPSHOT_WRITE:
-		return "write";
-	case SNAPSHOT_COPY:
-		return "copy";
-	case SNAPSHOT_MOVE:
-		return "move";
-	case SNAPSHOT_CLEAR:
-		return "clear";
-	default:
-		return "unknown";
-	}
-}
-
 /*
  * next snapshot module ctor/dtor
  */

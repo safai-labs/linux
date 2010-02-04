@@ -114,7 +114,7 @@ next3_snapshot_copy_buffer_cow(handle_t *handle,
  * copy buffer to snapshot buffer and mark it dirty
  * 'mask' block bitmap with exclude bitmap before copying to snapshot.
  */
-int next3_snapshot_copy_buffer(struct buffer_head *sbh,
+void next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		struct buffer_head *bh, const char *mask)
 {
 	lock_buffer(sbh);
@@ -125,8 +125,6 @@ int next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		__next3_snapshot_copy_buffer(sbh, bh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
-#warning u can make this a void fxn
-	return 0;
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
@@ -342,7 +340,7 @@ next3_snapshot_init_cow_bitmap(struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
-	const char *dst, *src, *mask = NULL;
+	char *dst, *src, *mask = NULL;
 	struct journal_head *jh;
 
 	bitmap_bh = read_block_bitmap(sb, block_group);

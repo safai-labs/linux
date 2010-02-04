@@ -160,7 +160,7 @@ extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 				     unsigned long maxblocks,
 				     next3_fsblk_t *mapped, int cmd);
 /* helper function for next3_snapshot_take() */
-extern int next3_snapshot_copy_buffer(struct buffer_head *sbh,
+extern void next3_snapshot_copy_buffer(struct buffer_head *sbh,
 					   struct buffer_head *bh,
 					   const char *mask);
 /* helper function for next3_snapshot_get_block() */

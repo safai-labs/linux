@@ -858,9 +858,7 @@ int next3_snapshot_take(struct inode *inode)
 			err = -EIO;
 			goto out_unlockfs;
 		}
-		err = next3_snapshot_copy_buffer(sbh, bh, NULL);
-		if (err)
-			goto out_unlockfs;
+		next3_snapshot_copy_buffer(sbh, bh, NULL);
 	}
 	/*
 	 * copy self inode and bitmap blocks to snapshot
@@ -922,9 +920,7 @@ copy_self_inode:
 				err = -EIO;
 			goto out_unlockfs;
 		}
-		err = next3_snapshot_copy_buffer(sbh, bh, mask);
-		if (err)
-			goto out_unlockfs;
+		next3_snapshot_copy_buffer(sbh, bh, mask);
 		snapshot_debug(4, "copied snapshot (%u) %s block [%lld/%lld] "
 			       "to snapshot (%u)\n", snapshot->i_generation,
 			       strs[i],

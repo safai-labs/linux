@@ -1156,14 +1156,17 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
 /*
  * get_move_access() is called from:
- * next3_get_branch_cow() before overwriting a data block
+ * next3_get_branch_cow() before overwriting a data block,
+ * when next3_snapshot_should_move_data(@inode) is true.
+ * Specifically, only data blocks of regular files, whose data is not being
+ * journaled are moved.  Jounraled data blocks are COWed on get_write_access().
+ * Snapshots and excluded files blocks are never moved-on-write.
  *
  * Return values:
  * > 0 - no. of blocks that were moved to snapshot and may not be overwritten
  * = 0 - @block may be deleted
  * < 0 - error
  */
-#warning I found a possible recursion with this funcion, in the following call chain: next3_get_branch, next3_snapshot_get_move_access, next3_snapshot_mow, next3_snapshot_test_and_cow, next3_snapshot_map_blocks, next3_get_blocks_handle, next3_get_branch_cow, next3_snapshot_get_move_access!
 int next3_snapshot_get_move_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t block, int count)
 {

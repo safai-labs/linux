@@ -290,17 +290,17 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 	return 0;
 }
 
-static inline int next3_snapshot_should_cow_data(struct inode *inode)
-{
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+static inline int next3_snapshot_should_move_data(struct inode *inode)
+{
 	if (next3_snapshot_excluded(inode))
 		return 0;
-	/* when data is journalled, it is already COWed as metadata */
-	if (!next3_should_journal_data(inode))
-		return 1;
-#endif
-	return 0;
+	/* when data is journaled, it is already COWed as metadata */
+	if (next3_should_journal_data(inode))
+		return 0;
+	return 1;
 }
+#endif
 
 /*
  * tests if the file system has an active snapshot and returns its inode.

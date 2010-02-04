@@ -393,10 +393,10 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 	if (!p->key)
 		goto no_block;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-	/* Are we writing and COWing any direct blocks? -znjp */
 	ret = 0;
 	if (SNAPMAP_ISWRITE(cmd) && depth == 1 &&
-			next3_snapshot_should_cow_data(inode))
+			next3_snapshot_should_move_data(inode))
+		/* move direct data block to active snapshot */
 		ret = next3_snapshot_get_move_access(handle, inode,
 						     le32_to_cpu(p->key), 1);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
@@ -407,6 +407,7 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 	}
 #endif
 	if (ret) {
+		/* block was moved to snapshot - allocate a new one */
 		*(p->p) = 0;
 		p->key = 0;
 		goto no_block;
@@ -424,10 +425,10 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 		if (!p->key)
 			goto no_block;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-		/* Are we COWing any indirect blocks? -znjp */
 		ret = 0;
 		if (SNAPMAP_ISWRITE(cmd) && depth == 1 &&
-				next3_snapshot_should_cow_data(inode))
+				next3_snapshot_should_move_data(inode))
+			/* move indirect data block to active snapshot */
 			ret = next3_snapshot_get_move_access(handle, inode,
 						     le32_to_cpu(p->key), 1);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
@@ -439,6 +440,7 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 		}
 #endif
 		if (ret) {
+			/* block was moved to snapshot - allocate a new one */
 			*(p->p) = 0;
 			p->key = 0;
 			goto no_block;
@@ -1939,6 +1941,14 @@ static int do_journal_get_write_access(handle_t *handle,
 	return next3_journal_get_write_access(handle, bh);
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+static int next3_clear_buffer_mapped(handle_t *handle, struct buffer_head *bh)
+{
+	clear_buffer_mapped(bh);
+	return 0;
+}
+#endif
+
 static int next3_write_begin(struct file *file, struct address_space *mapping,
 				loff_t pos, unsigned len, unsigned flags,
 				struct page **pagep, void **fsdata)
@@ -1973,11 +1983,22 @@ retry:
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-	if (next3_snapshot_should_cow_data(inode) &&
+	/*
+	 * XXX: We can also check next3_snapshot_has_active() here and we don't
+	 * need to unmap the buffers is there is no active snapshot, but the
+	 * result must be valid throughout the writepage() operation and to
+	 * gauranty this we have to know that the transaction is not restarted.
+	 * Can we count on that?
+	 */
+	if (next3_snapshot_should_move_data(inode) &&
 		page_has_buffers(page))
-		/* Unset the BH_Mapped flag so get_block is always called.
-		 * snapshots are only supported with one buffer per page */
-		clear_buffer_mapped(page_buffers(page));
+		/*
+		 * Unset the BH_Mapped flag so get_block is always called.
+		 * XXX: is write_begin() being called before writepage() in all
+		 * data journaling modes?
+		 */
+		ret = walk_page_buffers(handle, page_buffers(page),
+				from, to, NULL, next3_clear_buffer_mapped);
 #endif
 
 	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,

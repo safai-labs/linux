@@ -115,7 +115,7 @@ extern int next3_snapshot_get_create_access(handle_t *handle,
 					    struct buffer_head *bh);
 extern int next3_snapshot_get_move_access(handle_t *handle,
 					  struct inode *inode,
-					  next3_fsblk_t block, int count);
+					  next3_fsblk_t block, int move);
 extern int next3_snapshot_get_delete_access(handle_t *handle,
 					    struct inode *inode,
 					    next3_fsblk_t block, int count);

@@ -212,13 +212,17 @@ static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 /*
- * next3_exclude_inode_bread():
- * Read indirect block from exclude inode.
- * If 'create' is true, try to allocate missing indirect block.
+ * next3_exclude_inode_bread - read indirect block from exclude inode
+ * @handle:	JBD handle (NULL is !@create)
+ * @inode:	exclude inode
+ * @grp:	block group
+ * @create:	if true, try to allocate missing indirect block
  *
  * Helper function for next3_snapshot_init_bitmap_cache().
  * Called under sb_lock and before snapshots are loaded, so changes made to
  * exclude inode are not COWed.
+ *
+ * Returns indirect block buffer or NULL if not allocated.
  */
 static struct buffer_head *next3_exclude_inode_bread(handle_t *handle,
 		struct inode *inode, int grp, int create)
@@ -256,15 +260,18 @@ static struct buffer_head *next3_exclude_inode_bread(handle_t *handle,
 }
 
 /*
- * next3_exclude_inode_getblk():
- * Read location of exclude bitmap block from exclude inode.
- * If 'create' is true, try to allocate missing blocks.
- *
+ * next3_exclude_inode_getblk - read address of exclude bitmap block
+ * @handle:	JBD handle (NULL is !@create)
+ * @inode:	exclude inode
+ * @grp:	block group
+ * @create:	if true, try to allocate missing blocks
+  *
  * Helper function for next3_snapshot_init_bitmap_cache().
  * Called under sb_lock and before snapshots are loaded, so changes made to
  * exclude inode are not COWed.
+ *
+ * Returns exclude bitmap block address (little endian) or 0 if not allocated.
  */
-#warning document return vals of fxn on success/failure (0==bad, right?)
 static __le32 next3_exclude_inode_getblk(handle_t *handle,
 		struct inode *inode, int grp, int create)
 {
@@ -285,9 +292,6 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 	exclude_bitmap = ((__le32 *)ind_bh->b_data)[ind_offset];
 	if (exclude_bitmap)
 		goto out;
-#warning u might be getting a lot of "failed to read..." warnings below, if create==1. so maybe print the warning only if create!=1?
-	snapshot_debug(1, "failed to read exclude bitmap #%d block "
-			"from exclude inode\n", grp);
 	if (!create)
 		goto alloc_out;
 
@@ -299,7 +303,6 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 
 	/* exclude bitmap blocks are mapped on the DIND branch */
 	bh = next3_getblk(handle, inode, SNAPSHOT_IBLOCK(grp), create, &err);
-#warning you r ignoring value of err if bh==NULL here. maybe debug printk to tell what specific err getblk returned?
 	if (!bh)
 		goto alloc_out;
 	brelse(bh);
@@ -311,7 +314,8 @@ alloc_out:
 				le32_to_cpu(exclude_bitmap));
 	else
 		snapshot_debug(1, "failed to allocate exclude "
-				"bitmap #%d block\n", grp);
+				"bitmap #%d block (err = %d)\n",
+				grp, err);
 out:
 	brelse(ind_bh);
 	return exclude_bitmap;
@@ -322,14 +326,13 @@ out:
  *
  * Init the COW/exclude bitmap cache for all block groups.
  * COW bitmap cache is set to 0 (lazy init on first access to block group).
- * Exclude bitmap blocks are read from exclude inode.
- * When mounting ext3 (!HAS_SNAPSHOT), try to create/resize exclude inode.
+ * Read exclude bitmap blocks addresses from exclude inode and store them
+ * in block group descriptor.  Try to allocate missing exclude bitmap blocks.
  * Exclude bitmap cache is non-persistent, so no need to mark the group
  * desc blocks dirty.
  *
  * Helper function for snapshot_load().  Called under sb_lock.
  */
-#warning do you really mean "when mounting EXT3" and not "when mounting NEXT3"?
 static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 {
 	struct next3_group_desc *desc;
@@ -354,14 +357,13 @@ static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 	inode = next3_iget(sb, NEXT3_EXCLUDE_INO);
 	if (IS_ERR(inode)) {
 		snapshot_debug(1, "warning: bad exclude inode - "
-			       "disabling exclude bitmap!\n");
-#warning you say "disabling" but you dont do it here. where is it?
+				"no exclude bitmap!\n");
 		return;
 	}
 	/* start large transaction that will be extended/restarted */
 	handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
-#warning bad idea to reset handle to NULL, b/c u pass it to other functions below, and who knows how its going to get used (null deref could happen).  if you cant get a handle here, then maybe consider it an error and abort immediately? or is it safe to pass a null handle, and it will get created later?
 	if (IS_ERR(handle))
+		/* only read allocated exclude bitmap blocks */
 		handle = NULL;
 	if (handle) {
 		/* allocate missing exclude inode blocks */

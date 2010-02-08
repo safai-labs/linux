@@ -94,6 +94,10 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	unsigned int oldflags = NEXT3_I(inode)->i_flags;
 	int err = 0;
 
+	if (!((flags | oldflags) & NEXT3_SNAPFILE_FL))
+		/* snapshot flags can only be changed for snapshot files */
+		goto non_snapshot;
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 	if ((oldflags & NEXT3_SNAPFILE_FL) &&
 		(oldflags & NEXT3_NODUMP_FL) &&
@@ -133,6 +137,8 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	if (err)
 		goto out;
 
+non_snapshot:
+	/* set only non-snapshot flags here */
 	flags &= ~NEXT3_FL_SNAPSHOT_MASK;
 	flags |= (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK);
 	NEXT3_I(inode)->i_flags = flags;
@@ -423,8 +429,10 @@ static inline int next3_snapshot_shift_blocks(struct next3_inode_info *ei,
 {
 	int i, err = -EIO;
 
-	BUG_ON(from < 0 || to < 0);
-	BUG_ON(from + count > NEXT3_N_BLOCKS || to + count > NEXT3_N_BLOCKS);
+	/* the ranges must not overlap */
+	BUG_ON(from < 0 || from + count > to);
+	BUG_ON(to + count > NEXT3_N_BLOCKS);
+
 	/*
 	 * truncate_mutex is held whenever allocating or freeing inode
 	 * blocks.
@@ -443,7 +451,6 @@ static inline int next3_snapshot_shift_blocks(struct next3_inode_info *ei,
 	/*
 	 * shift 'count' blocks from position 'from' to 'to'
 	 */
-#warning if the ranges you are shifting could ever overlap, then you will trash the pointers that you are trying to move.  This is the same reason why memmove() must be used for overlapping buffers, instead of memcpy().
 	for (i = 0; i < count; i++) {
 		ei->i_data[to+i] = ei->i_data[from+i];
 		ei->i_data[from+i] = 0;
@@ -498,20 +505,22 @@ static int next3_snapshot_create(struct inode *inode)
 	}
 #endif
 
-	/* verify that all inode's direct blocks are not allocated */
-	for (i = 0; i <= NEXT3_TIND_BLOCK; i++) {
+	/*
+	 * Verify that all inode's direct blocks are not allocated.
+	 * TODO: take truncate_mutex before this test
+	 */
+	for (i = 0; i < NEXT3_N_BLOCKS; i++) {
 		if (ei->i_data[i])
 			break;
-#warning if u want to verify, then why only break out of the "for" loop. where do you check for an error and return it?
 	}
 	/* Don't need i_size_read because we hold i_mutex */
-	if (i <= NEXT3_TIND_BLOCK || inode->i_size > 0 ||
-	    ei->i_disksize > 0) {
+	if (i != NEXT3_N_BLOCKS ||
+		inode->i_size > 0 || ei->i_disksize > 0) {
 		snapshot_debug(1, "failed to create snapshot file (ino=%lu) "
-				"because it is not empty (i_data[%d], "
-				"i_size=%lld, i_disksize=%lld\n",
-				inode->i_ino, i, inode->i_size,
-				ei->i_disksize);
+				"because it is not empty (i_data[%d]=%u, "
+				"i_size=%lld, i_disksize=%lld)\n",
+				inode->i_ino, i, ei->i_data[i],
+				inode->i_size, ei->i_disksize);
 		return -EPERM;
 	}
 
@@ -1120,21 +1129,22 @@ static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
  */
 static int next3_snapshot_enable(struct inode *inode)
 {
-	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
+	struct next3_inode_info *ei = NEXT3_I(inode);
+
+	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_enable() called with non "
 			       "snapshot file (ino=%lu)\n",
 			       inode->i_ino);
-#warning u r using EPERM way too much in the next3 code.  this is an example where EINAVL is more appropriate.
-		return -EPERM;
+		return -EINVAL;
 	}
 
-	if (NEXT3_I(inode)->i_flags &
+	if (ei->i_flags &
 	    (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_TAKE_FL)) {
-		snapshot_debug(1, "failed to enable snapshot (%u) "
-			       "(deleted|take)\n", inode->i_generation);
-#warning tell me which flags caused the error.
-#warning misleading debug msg. dont say "failed to enable" b/c you didnt try to enable -- you REFUSED to enable. so say "operation not permitted".
-#warning is EPERM the right err to return?
+		snapshot_debug(1, "enable of %s snapshot (%u) "
+				"is not permitted\n",
+				(ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) ?
+				"deleted" : "pre-take",
+				inode->i_generation);
 		return -EPERM;
 	}
 
@@ -1142,7 +1152,7 @@ static int next3_snapshot_enable(struct inode *inode)
 	 * set i_size to block device size to enable loop device mount
 	 */
 	SNAPSHOT_SET_ENABLED(inode);
-	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ENABLED_FL;
+	ei->i_flags |= NEXT3_SNAPFILE_ENABLED_FL;
 
 	/* Don't need i_size_read because we hold i_mutex */
 	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
@@ -1157,17 +1167,18 @@ static int next3_snapshot_enable(struct inode *inode)
  */
 static int next3_snapshot_disable(struct inode *inode)
 {
-	if (!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL)) {
+	struct next3_inode_info *ei = NEXT3_I(inode);
+
+	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
 		snapshot_debug(1, "next3_snapshot_disable() called with non "
 			       "snapshot file (ino=%lu)\n", inode->i_ino);
-#warning EINVAL is better (same as in snapshot_enable above)
-		return -EPERM;
+		return -EINVAL;
 	}
 
-	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_OPEN_FL) {
-		snapshot_debug(1, "failed to disable mounted snapshot (%u)\n",
+	if (ei->i_flags & NEXT3_SNAPFILE_OPEN_FL) {
+		snapshot_debug(1, "disable of mounted snapshot (%u) "
+				"is not permitted\n",
 				inode->i_generation);
-#warning EINVAL is better (same as in snapshot_enable above). also misleading debug msg.
 		return -EPERM;
 	}
 
@@ -1175,7 +1186,7 @@ static int next3_snapshot_disable(struct inode *inode)
 	 * set i_size to zero to disable loop device mount
 	 */
 	SNAPSHOT_SET_DISABLED(inode);
-	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
+	ei->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
 
 	/* invalidate page cache */
 	truncate_inode_pages(&inode->i_data, SNAPSHOT_BYTES_OFFSET);
@@ -1193,15 +1204,17 @@ static int next3_snapshot_disable(struct inode *inode)
  */
 static int next3_snapshot_delete(struct inode *inode)
 {
-	if (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_ENABLED_FL) {
-		snapshot_debug(1, "failed to delete enabled snapshot (%u)\n",
+	struct next3_inode_info *ei = NEXT3_I(inode);
+
+	if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL) {
+		snapshot_debug(1, "delete of enabled snapshot (%u) "
+				"is not permitted\n",
 				inode->i_generation);
-#warning u didnd fail to delete, but failed to MARK it for deletion. use precise messages.
 		return -EPERM;
 	}
 
 	/* mark deleted for later cleanup to finish the job */
-	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_DELETED_FL;
+	ei->i_flags |= NEXT3_SNAPFILE_DELETED_FL;
 	snapshot_debug(1, "snapshot (%u) marked for deletion\n",
 			inode->i_generation);
 	return 0;
@@ -1226,9 +1239,12 @@ static int next3_snapshot_cleanup(struct inode *inode)
 
 	if (ei->i_flags & (NEXT3_SNAPFILE_ENABLED_FL | NEXT3_SNAPFILE_INUSE_FL
 			   | NEXT3_SNAPFILE_ACTIVE_FL)) {
-#warning its nicer i u can tell me exactly which flag was on
-		snapshot_debug(4, "deferred delete of snapshot (%u) "
-			       "(inuse|enabled|active)\n", inode->i_generation);
+		snapshot_debug(4, "deferred delete of %s snapshot (%u)\n",
+				(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL) ?
+				"active" : 
+				((ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL) ?
+				"enabled" : "referenced"),
+			       inode->i_generation);
 		goto out_err;
 	}
 

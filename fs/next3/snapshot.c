@@ -44,7 +44,15 @@ static inline void
 __next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		struct buffer_head *bh)
 {
-	memcpy(sbh->b_data, bh->b_data, SNAPSHOT_BLOCK_SIZE);
+	char *src;
+
+	/*
+	 * in journaled data mode, @bh can be a user page buffer
+	 * that has to be kmapped.
+	 */
+	src = kmap_atomic(bh->b_page, KM_USER0);
+	memcpy(sbh->b_data, src, SNAPSHOT_BLOCK_SIZE);
+	kunmap_atomic(src, KM_USER0);
 	set_buffer_uptodate(sbh);
 }
 
@@ -394,14 +402,17 @@ int next3_snapshot_read_block_bitmap(struct super_block *sb,
 }
 
 /*
- * next3_snapshot_read_cow_bitmap() reads the COW bitmap for a given
- * block_group.  Creates the COW bitmap on first time after snapshot take.
+ * next3_snapshot_read_cow_bitmap - read COW bitmap from active snapshot
+ * @handle:	JBD handle
+ * @snapshot:	active snapshot
+ * @block_group: block group
+ *
+ * Creates the COW bitmap on first access to @block_group after snapshot take.
  * COW bitmap cache is non-persistent, so no need to mark the group desc
  * block dirty.
  *
- * Return buffer_head on success or NULL in case of failure.
+ * Return COW bitmap buffer on success or NULL in case of failure.
  */
-#warning does the caller care what type of error occured? if so, maybe return ERR_PTR.
 static struct buffer_head *
 next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       unsigned int block_group)
@@ -723,6 +734,13 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 }
 #endif
 
+enum snapshot_cmd {
+	SNAPSHOT_READ,
+	SNAPSHOT_COPY,
+	SNAPSHOT_MOVE,
+	SNAPSHOT_CLEAR
+};
+
 /*
  * next3_snapshot_test_and_cow - tests if the blocks should be COWed/moved
  * @where:	name of caller function
@@ -742,16 +760,10 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
  * = 0 - @block was COWed or doesn't need to be COWed/moved
  * < 0 - error (or @block needs to be COWed)
  */
-#define SNAPSHOT_READ	0
-#define SNAPSHOT_COPY	1
-#warning why do you need negative values here? why cant it be an enum?
-#define SNAPSHOT_MOVE	-1
-#define SNAPSHOT_CLEAR	-2
-
 static int
 next3_snapshot_test_and_cow(const char *where, handle_t *handle, struct inode *inode,
 			    struct buffer_head *bh, next3_fsblk_t block,
-			    int maxblocks, int cmd)
+			    int maxblocks, enum snapshot_cmd cmd)
 {
 #warning this long function has three distinct modes, based on the cmd. it should be split into three helpers which can be called from here or directly from the caller.
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
@@ -802,46 +814,31 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle, struct inode *i
 	handle->h_cowing = 1;
 	/* BEGIN COWing */
 
-	if (!inode || cmd == SNAPSHOT_READ) /* skip excluded file test */
-		goto test_cow_bitmap;
-	clear = next3_snapshot_excluded(inode);
-	if (!clear)		/* file is not excluded */
-		goto test_cow_bitmap;
-
-	if (cmd < 0 || clear < 0) {
-#warning its confusing to test for "cmd < 0" instead of if its SNAPSHOT_MOVE|CLEAR. be more explict in code.
-		/* excluded file block move/delete/clear access
-		 * or ignored file block write access -
-		 * mark block in exclude bitmap */
+	if (inode)
+		clear = next3_snapshot_excluded(inode);
+	if (clear < 0) {
+		/*
+		 * excluded file block access - don't COW and
+		 * mark block in exclude bitmap
+		 */
 		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
 				"mark block (%lu) in exclude bitmap\n",
 				inode->i_ino, block);
 		cmd = SNAPSHOT_READ;
-	} else {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-		/*
-		 * XXX: Experimental code
-		 * excluded file block write access -
-		 * COW and zero out snapshot block
-		 */
-		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
-				"zero out block (%lu) in snapshot\n",
-				inode->i_ino, block);
-#else
-		/* user excluded files are not supported */
-#warning how is the BUG_ON below related to the comment just above?
-		BUG_ON(clear > 0);
-#endif
 	}
 
-test_cow_bitmap:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (!NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1)) {
+		/*
+		 * The test above is based on lower limit heuristics of
+		 * user_credits/buffer_credits, which is not always accurate,
+		 * so it is possible that there is no bug here, just another
+		 * false alarm.
+		 */
 		snapshot_debug_hl(1, "COW warning: insuffiecient buffer/user "
 				  "credits (%d/%d) for COW operation?\n",
 				  handle->h_buffer_credits,
 				  handle->h_user_credits);
-#warning the debug above seems serious enough.  maybe it should be a printk? shouldnt u return an error?
 	}
 #endif
 

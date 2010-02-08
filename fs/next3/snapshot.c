@@ -639,17 +639,17 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
 static void
 __next3_snapshot_trace_cow(const char *where, handle_t *handle,
-		struct inode *inode, struct buffer_head *bh,
-		next3_fsblk_t block, int code)
+		struct super_block *sb, struct inode *inode,
+		struct buffer_head *bh, next3_fsblk_t block, int code)
 {
 	unsigned long inode_group = 0;
 	next3_grpblk_t inode_offset = 0;
 
 	if (inode) {
 		inode_group = (inode->i_ino - 1) /
-			NEXT3_INODES_PER_GROUP(inode->i_sb);
+			NEXT3_INODES_PER_GROUP(sb);
 		inode_offset = (inode->i_ino - 1) %
-			NEXT3_INODES_PER_GROUP(inode->i_sb);
+			NEXT3_INODES_PER_GROUP(sb);
 	}
 	snapshot_debug_hl(4, "%s(i:%d/%ld, b:%lu/%lu)"
 			" h_ref=%d, code=%d\n",
@@ -659,11 +659,12 @@ __next3_snapshot_trace_cow(const char *where, handle_t *handle,
 			handle->h_ref, code);
 }
 
-#define next3_snapshot_trace_cow(where, handle, inode, bh, block, code) \
+#define next3_snapshot_trace_cow(where, handle, sb, inode, bh, block, code) \
 	if (snapshot_enable_debug >= 4)					\
-		__next3_snapshot_trace_cow(where, handle, inode, bh, block, code)
+		__next3_snapshot_trace_cow(where, handle, sb, inode,	\
+				bh, block, code)
 #else
-#define next3_snapshot_trace_cow(where, handle, inode, bh, block, code)
+#define next3_snapshot_trace_cow(where, handle, sb, inode, bh, block, code)
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
@@ -764,7 +765,7 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle, struct inode *i
 		/* no active snapshot - no need to COW */
 		return 0;
 
-	next3_snapshot_trace_cow(where, handle, inode, bh, block, cmd);
+	next3_snapshot_trace_cow(where, handle, sb, inode, bh, block, cmd);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (inode && next3_snapshot_exclude_inode(inode)) {

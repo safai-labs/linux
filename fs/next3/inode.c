@@ -361,28 +361,9 @@ static int next3_block_to_path(struct inode *inode,
  *	or when it reads all @depth-1 indirect blocks successfully and finds
  *	the whole chain, all way to the data (returns %NULL, *err == 0).
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-#define next3_get_branch_cow(handle, inode, depth, offsets, chain, err, cmd) \
-	__next3_get_branch_cow(__func__, handle, inode, depth, offsets, \
-			       chain, err, cmd)
-#define next3_get_branch(inode, depth, offsets, chain, err) \
-	__next3_get_branch_cow(__func__, NULL, inode, depth, offsets, chain, \
-			       err, 0)
-/*
- *	next3_get_branch_cow - move protected data block to snapshot
- *  and return 0, so a new data block will be allocated.
- */
-static Indirect *__next3_get_branch_cow(const char *where, handle_t *handle,
-					struct inode *inode, int depth,
-					int *offsets, Indirect chain[4],
-					int *err, int cmd)
-{
-	int ret;
-#else
 static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 				 Indirect chain[4], int *err)
 {
-#endif
 	struct super_block *sb = inode->i_sb;
 	Indirect *p = chain;
 	struct buffer_head *bh;
@@ -392,27 +373,6 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 	add_chain (chain, NULL, NEXT3_I(inode)->i_data + *offsets);
 	if (!p->key)
 		goto no_block;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-	ret = 0;
-	if (SNAPMAP_ISWRITE(cmd) && depth == 1 &&
-			next3_snapshot_should_move_data(inode))
-		/* move direct data block to active snapshot */
-		ret = next3_snapshot_get_move_access(handle, inode,
-						     le32_to_cpu(p->key), 1);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-	if (ret < 0) {
-		next3_journal_abort_handle(where, __func__, NULL, handle, ret);
-		*err = ret;
-		return p;
-	}
-#endif
-	if (ret) {
-		/* block was moved to snapshot - allocate a new one */
-		*(p->p) = 0;
-		p->key = 0;
-		goto no_block;
-	}
-#endif
 	while (--depth) {
 		bh = sb_bread(sb, le32_to_cpu(p->key));
 		if (!bh)
@@ -424,28 +384,6 @@ static Indirect *next3_get_branch(struct inode *inode, int depth, int *offsets,
 		/* Reader: end */
 		if (!p->key)
 			goto no_block;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-		ret = 0;
-		if (SNAPMAP_ISWRITE(cmd) && depth == 1 &&
-				next3_snapshot_should_move_data(inode))
-			/* move indirect data block to active snapshot */
-			ret = next3_snapshot_get_move_access(handle, inode,
-						     le32_to_cpu(p->key), 1);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-		if (ret < 0) {
-			next3_journal_abort_handle(where, __func__, NULL,
-						   handle, ret);
-			*err = ret;
-			return p;
-		}
-#endif
-		if (ret) {
-			/* block was moved to snapshot - allocate a new one */
-			*(p->p) = 0;
-			p->key = 0;
-			goto no_block;
-		}
-#endif
 	}
 	return NULL;
 
@@ -1367,7 +1305,7 @@ err_out:
 	if (SNAPMAP_ISMOVE(cmd))
 		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, blks);
-	else if (num > 0)
+	else
 		next3_free_blocks(handle, inode, le32_to_cpu(where[num].key),
 				  blks);
 #else
@@ -1465,11 +1403,28 @@ retry:
 	if (depth == 0)
 		goto out;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-	partial = next3_get_branch_cow(handle, inode, depth, offsets, chain,
-				       &err, create);
-#else
 	partial = next3_get_branch(inode, depth, offsets, chain, &err);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+	if (!partial && create &&
+		next3_snapshot_should_move_data(inode)) {
+		BUG_ON(SNAPMAP_ISSPECIAL(create));
+		BUG_ON(read_through);
+		first_block = le32_to_cpu(chain[depth - 1].key);
+		blocks_to_boundary = 0;
+		/* should move 1 data block to snapshot? */
+		err = next3_snapshot_get_move_access(handle, inode,
+				first_block, 0);
+		if (err)
+			/* do not map found block */
+			partial = chain + depth - 1;
+		if (err < 0)
+			/* cleanup the whole chain and exit */
+			goto cleanup;
+		if (err > 0)
+			/* check again under truncate_mutex */
+			err = -EAGAIN;
+	}
 #endif
 
 	/* Simplest case - block found, no allocation needed */
@@ -1559,18 +1514,25 @@ retry:
 			brelse(partial->bh);
 			partial--;
 		}
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-		partial = next3_get_branch_cow(handle, inode, depth, offsets,
-					       chain, &err,
-					       create);
-		if (err) {
-			/* failed to move block to snapshot? */
-			mutex_unlock(&ei->truncate_mutex);
-			goto cleanup;
-		}
-#else
 		partial = next3_get_branch(inode, depth, offsets, chain, &err);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+		if (!partial && next3_snapshot_should_move_data(inode)) {
+			BUG_ON(SNAPMAP_ISSPECIAL(create));
+			first_block = le32_to_cpu(chain[depth - 1].key);
+			blocks_to_boundary = 0;
+			/* should move 1 data block to snapshot? */
+			err = next3_snapshot_get_move_access(handle, inode,
+					first_block, 0);
+			if (err)
+				/* re-allocate 1 data block */
+				partial = chain + depth - 1;
+			if (err < 0)
+				/* cleanup the whole chain and exit */
+				goto out_mutex;
+		}
 #endif
+
 		if (!partial) {
 			count++;
 			mutex_unlock(&ei->truncate_mutex);
@@ -1632,6 +1594,24 @@ retry:
 			goto out_mutex;
 		}
 		next3_snapshot_start_pending_cow(sbh);
+	}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+	if (*partial->p) {
+		/* re-allocated block - move old block to snapshot */
+		err = next3_snapshot_get_move_access(handle, inode,
+				le32_to_cpu(*partial->p), 1);
+		if (err < 1) {
+			/* failed to move to snapshot - free new block */
+			next3_free_blocks(handle, inode,
+					le32_to_cpu(partial->key), 1);
+			if (!err)
+				err = -EIO;
+			goto out_mutex;
+		}
+		/* block moved to snapshot - continue to splice new block */
+		err = 0;
 	}
 #endif
 
@@ -1942,7 +1922,8 @@ static int do_journal_get_write_access(handle_t *handle,
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
-static int next3_clear_buffer_mapped(handle_t *handle, struct buffer_head *bh)
+static int do_clear_buffer_mapped(handle_t *handle,
+					struct buffer_head *bh)
 {
 	clear_buffer_mapped(bh);
 	return 0;
@@ -1998,7 +1979,7 @@ retry:
 		 * data journaling modes?
 		 */
 		ret = walk_page_buffers(handle, page_buffers(page),
-				from, to, NULL, next3_clear_buffer_mapped);
+				from, to, NULL, do_clear_buffer_mapped);
 #endif
 
 	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,

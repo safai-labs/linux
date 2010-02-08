@@ -73,7 +73,6 @@ static int next3_snapshot_exclude(handle_t *handle, struct inode *inode);
  */
 void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 {
-#warning _get_flags fxn is only used in ioctl.c. can move it there and mk it static
 	int open_count = atomic_read(&filp->f_path.dentry->d_count);
 	/*
 	 * 1 count for ioctl (lsattr)
@@ -92,7 +91,6 @@ void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 			     unsigned int flags)
 {
-#warning _set_flags fxn is only used in ioctl.c. can move it there and mk it static
 	unsigned int oldflags = NEXT3_I(inode)->i_flags;
 	int err = 0;
 

@@ -1495,7 +1495,21 @@ retry:
 	if (!create || err == -EIO)
 		goto cleanup;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	/*
+	 * locking order for locks validator:
+	 * inode (VFS operation) -> active snapshot (COW operation)
+	 *
+	 * The active snapshot truncate_mutex is only taken during COW
+	 * operation, because snapshot file has read-only aops and because
+	 * truncate/unlink of snapshot file is not permitted.
+	 */
+	BUG_ON(next3_snapshot_is_active(inode) && !handle->h_cowing);
+	BUG_ON(!next3_snapshot_is_active(inode) && handle->h_cowing);
+	mutex_lock_nested(&ei->truncate_mutex, handle->h_cowing);
+#else
 	mutex_lock(&ei->truncate_mutex);
+#endif
 
 	/*
 	 * If the indirect block is missing while we are reading

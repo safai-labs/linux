@@ -2021,8 +2021,9 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 
 	next3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	next3_snapshot_load(sb, es);
-	/* TODO: force read-only mount if snapshot_load() failed */
+	if (next3_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
+		/* XXX: how to fail mount/force read-only at this point? */
+		next3_error(sb, __func__, "load snapshot failed\n");
 #endif
 	/*
 	 * akpm: core read_super() calls in here with the superblock locked.

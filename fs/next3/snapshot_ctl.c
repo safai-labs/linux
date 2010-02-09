@@ -1008,11 +1008,11 @@ out_unlockfs:
 	if (err)
 		goto out_err;
 
-	next3_snapshot_dump(5, inode);
 	/* sleep 1 tunable delay unit */
 	snapshot_test_delay(SNAPTEST_TAKE);
 	snapshot_debug(1, "snapshot (%u) has been taken\n",
 			inode->i_generation);
+	next3_snapshot_dump(5, inode);
 
 out_err:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
@@ -1545,18 +1545,27 @@ out_err:
  */
 
 /*
- * next3_snapshot_load() loads the in-memory snapshot list from disk
+ * next3_snapshot_load - load the on-disk snapshot list to memory
+ * Start with last (active) snapshot and continue to older snapshots.
+ * If active snapshot load fails, force read-only mount.
+ * If at any point in the list load fails, all older snapshot are discarded
+ * and remain 'zombies snapshots'.
  * Called from next3_fill_super() under sb_lock
+ *
+ * Return values:
+ * = 0 - on-disk snapshot list is empty or active snapshot loaded
+ * < 0 - error loading last (active) snapshot
  */
-#warning maybe rename better to next3_read_snapshot_list?
-void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
+int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
+		int read_only)
 {
 	__le32 *ino_next = &es->s_last_snapshot;
+	int num = 0, snapshot_id = 0, has_snapshot = 1;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (!list_empty(&NEXT3_SB(sb)->s_snapshot_list)) {
 		snapshot_debug(1, "warning: snapshots already loaded!\n");
-		return;
+		return -EINVAL;
 	}
 #endif
 
@@ -1567,6 +1576,23 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 			       "this might affect concurrnet filesystem "
 			       "writers performance!\n");
 #endif
+	if (*ino_next && !NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		/*
+		 * When mounting an ext3 formatted volume as next3, the
+		 * has_snapshot flag is set on first snapshot_take()
+		 * and after that the volume can no longer be mounted
+		 * as rw ext3 (only rw next3 or ro ext3/ext2).
+		 * Never mind why we got here, but we found a last_snapshot
+		 * inode, so will try to load it.  If we succeed, we will
+		 * fix the missing has_snapshot flag and if we fail we will
+		 * clear the last_snapshot field and allow rw mount.
+		 */
+		snapshot_debug(1, "warning: has_snapshot feature is not set and"
+			       " last snapshot found (%u) - trying to load it\n",
+			       le32_to_cpu(*ino_next));
+		has_snapshot = 0;
+	}
 
 	/* init COW bitmap and exclude bitmap cache */
 	next3_snapshot_init_bitmap_cache(sb);
@@ -1575,37 +1601,35 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 		struct inode *inode;
 
 		inode = next3_orphan_get(sb, le32_to_cpu(*ino_next));
-		if (IS_ERR(inode)) {
-			snapshot_debug(1, "warning: found bad inode (%u) in "
-				       "snapshots list!\n",
-				       le32_to_cpu(*ino_next));
-#warning given the above serious warning, should this be a BUG_ON or return a serious error (EIO?)
+		if (IS_ERR(inode) ||
+			!(NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)) {
+			if (num == 0 && has_snapshot) {
+				snapshot_debug(1, "warning: failed to load "
+						"active snapshot (ino=%u) - "
+						"forcing read-only mount!\n",
+						le32_to_cpu(*ino_next));
+				return read_only ? 0 : -EINVAL;
+			}
+			snapshot_debug(1, "warning: failed to load snapshot "
+					"(ino=%u) after snapshot (%d) - "
+					"terminating snapshot list!\n",
+				       le32_to_cpu(*ino_next), snapshot_id);
 			*ino_next = 0;
 			break;
 		}
 
-		if (!(NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)) {
-			snapshot_debug(1, "warning: non snapshot file (%u) in "
-				       "snapshots list!\n",
-				       le32_to_cpu(*ino_next));
-#warning also this sounds like a serious error worthy of BUG_ON or -EIO
-			*ino_next = 0;
-			iput(inode);
-			break;
-		}
-
+		snapshot_id = inode->i_generation;
+		snapshot_debug(1, "snapshot (%d) loaded\n",
+			       snapshot_id);
+		num++;
 		next3_snapshot_dump(5, inode);
-		snapshot_debug(1, "snapshot (%u) loaded\n",
-			       inode->i_generation);
 
-		if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
-			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
-#warning seems bad to me to fix a missing flag. why should it be missing in the first place? if the user was supposed to set it in mkfs, then u should refuse to mount a next3 f/s unless it has ALL the flags you need.
-			/* fix missing has_snapshot flag */
+		if (!has_snapshot) {
 			NEXT3_SET_RO_COMPAT_FEATURE(sb,
 				    NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-			snapshot_debug(1, "warning: fixed has_snapshot "
+			snapshot_debug(1, "fixed missing has_snapshot "
 				       "flag!\n");
+			has_snapshot = 1;
 		}
 
 		if (!NEXT3_SB(sb)->s_active_snapshot)
@@ -1622,7 +1646,10 @@ void next3_snapshot_load(struct super_block *sb, struct next3_super_block *es)
 #endif
 	}
 
-	next3_snapshot_update(sb, 0);
+	snapshot_debug(1, "%d snapshots loaded\n", num);
+	if (num > 0)
+		next3_snapshot_update(sb, 0);
+	return 0;
 }
 
 /*
@@ -1643,15 +1670,15 @@ void next3_snapshot_destroy(struct super_block *sb)
 		iput(inode);
 	}
 #endif
-#warning you r ignoring return from set_active, which could return NULL
+	/* if there is an active snapshot - deactivate it */
 	next3_snapshot_set_active(sb, NULL);
 }
 
 /*
- * next3_snapshot_update() updates snapshots status
- * if 'cleanup' is true, shrink/merge/cleanup
- * all snapshots marked for deletion
- * Called under snapshot_mutex or sb_lock
+ * next3_snapshot_update - iterate snapshot list and update snapshots status
+ * If @cleanup is true, shrink/merge/cleanup all snapshots marked for deletion.
+ * Called from next3_ioctl() under snapshot_mutex
+ * Called from snapshot_load() under sb_lock
  */
 #warning this convoluted function has multiple modes and deed nesting. best split it into several helpers so its easier to follow
 void next3_snapshot_update(struct super_block *sb, int cleanup)

@@ -1314,17 +1314,18 @@ out_err:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
 /*
- * next3_snapshot_shrink() frees unused blocks from
- * deleted snapshot files.
- * 'start' is the latest non-deleted snapshot before
- * the deleted snapshots, which are due for shrinking.
- * 'end' is the first non-deleted (or active) snapshot after
- * the deleted snapshots, which are due for shrinking.
- * 'need_shrink' is the number of deleted snapshot files
- * between 'start' and 'end' which are due for shrinking.
- * Called from next3_snapshot_update() under snapshot_mutex
+ * next3_snapshot_shrink - free unused blocks from deleted snapshot files
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshot group
+ * @need_shrink: no. of deleted snapshots in the group
+ *
+ * Frees all blocks in subsequent deteted snapshots starting after @start and
+ * ending before @end, except for blocks which are 'in-use' by @start snapshot.
+ * (blocks 'in-use' are set in snapshot COW bitmap and not copied to snapshot).
+ * Called from next3_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
  */
-#warning use kerneldoc style in comment above (and in general), e.g., mark incoing vars with @var.
 static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 int need_shrink)
 {
@@ -1340,7 +1341,6 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	next3_fsblk_t bg_boundary = 0;
 	int err;
 
-#warning maybe ensure/assert that we indeed got a deleted snapshot file here
 	snapshot_debug(3, "snapshot (%u-%u) shrink: "
 			"count = 0x%lx, need_shrink = %d\n",
 			start->i_generation, end->i_generation,
@@ -1358,8 +1358,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 						      block_groups);
 			/* reset COW bitmap cache */
 			cow_bitmap.b_state = 0;
-#warning what is this hardcoded -1000 number
-			cow_bitmap.b_blocknr = -1000;
+			cow_bitmap.b_blocknr = 0;
 			cow_bh = &cow_bitmap;
 			bg_boundary += SNAPSHOT_BLOCKS_PER_GROUP;
 			block_group++;
@@ -1368,7 +1367,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 * Past last snapshot block group - pass NULL
 				 * cow_bh to next3_snapshot_shrink_blocks().
 				 * This will cause snapshots after resize to
-				 * shrink to the start of snapshot size.
+				 * shrink to the size of @start snapshot.
 				 */
 				cow_bh = NULL;
 		}
@@ -1451,18 +1450,20 @@ out_err:
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
-#warning "moves blocks": do you mean "removes blocks" or "moves"; if moves,  then moves them to WHERE?
 /*
- * next3_snapshot_merge() moves blocks of several shrunk snapshot files.
- * 'start' is the latest non-deleted snapshot before
- * the shrunk snapshots, which are due for merging.
- * 'end' is the first non-deleted (or active) snapshot after
- * the shrunk snapshots, which are due for merging.
- * 'need_merge' is the number of shrunk snapshot files
- * between 'start' and 'end' which are due for merging.
- * Called from next3_snapshot_update() under snapshot_mutex
+ * next3_snapshot_merge - merge deleted snapshots
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshot group
+ * @need_merge: no. of deleted snapshots in the group
+ *
+ * Move all blocks from deteted snapshots group starting after @start and
+ * ending before @end to @start snapshot.  All moved blocks are 'in-use' by
+ * @start snapshot, because these deleted snapshot have already been shrunk
+ * (blocks 'in-use' are set in snapshot COW bitmap and not copied to snapshot).
+ * Called from next3_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
  */
-#warning use kerneldoc style for comment above (a good idea in general, if u want to make lkml people happy)
 static int next3_snapshot_merge(struct inode *start, struct inode *end,
 				int need_merge)
 {

@@ -1314,6 +1314,73 @@ out_err:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
 /*
+ * next3_snapshot_shrink_range - free unused blocks from deleted snapshots
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshot group
+ * @iblock:	inode offset to first data block to shrink
+ * @maxblocks:	inode range of data blocks to shrink
+ * @cow_bh:	buffer head to map the COW bitmap block of snapshot @start
+ *		if NULL, don't look for COW bitmap block
+ *
+ * Shrinks @maxblocks blocks starting at inode offset @iblock in a group of
+ * subsequent deteted snapshots starting after @start and ending before @end.
+ * Shrinking is done by finding a range of mapped blocks in @start snapshot
+ * or in one of the deleted snapshots, where no other blocks are mapped in the
+ * same range in @start snapshot or in snapshots between them.
+ * The blocks in the found range may be 'in-use' by @start snapshot, so only
+ * blocks which are not set in the COW bitmap are freed.
+ * All mapped block of other deleted snapshots in the same range are freed.
+ *
+ * Called from next3_snapshot_shrink() under snapshot_mutex.
+ * Returns the shrunk blocks range and <0 on error.
+ */
+static int next3_snapshot_shrink_range(handle_t *handle,
+		struct inode *start, struct inode *end,
+		sector_t iblock, unsigned long maxblocks,
+		struct buffer_head *cow_bh)
+{
+	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
+	struct list_head *l;
+	struct inode *inode = start;
+	/* start with @maxblocks range and narrow it down */
+	int err, count = maxblocks;
+	/* @start snapshot blocks should not be freed only counted */
+	int mapped, shrink = 0;
+
+	/* iterate on (@start <= snapshot < @end) */
+	list_for_each_prev(l, &NEXT3_I(start)->i_orphan) {
+		err = next3_snapshot_shrink_blocks(handle, inode,
+				iblock, count, cow_bh, shrink, &mapped);
+		if (err < 0)
+			return err;
+
+		/* 0 < new range <= old range */
+		BUG_ON(!err || err > count);
+		count = err;
+
+		if (!cow_bh)
+			/* no COW bitmap - free all blocks in range */
+			shrink = -1;
+		else if (!shrink)
+			/* past @start snapshot - free unused blocks in range */
+			shrink = 1;
+		else if (mapped)
+			/* past first mapped range - free all blocks in range */
+			shrink = -1;
+
+		if (l == &sbi->s_snapshot_list)
+			/* didn't reach @end */
+			return -EINVAL;
+		inode = &list_entry(l, struct next3_inode_info,
+						  i_orphan)->vfs_inode;
+		if (inode == end)
+			break;
+	}
+	return count;
+}
+
+/*
  * next3_snapshot_shrink - free unused blocks from deleted snapshot files
  * @handle: JBD handle for this transaction
  * @start:	latest non-deleted snapshot before deleted snapshots group
@@ -1331,7 +1398,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 {
 	struct list_head *l;
 	handle_t *handle;
-	struct buffer_head cow_bitmap, *cow_bh;
+	struct buffer_head cow_bitmap, *cow_bh = NULL;
 	next3_fsblk_t block = 0;
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
 	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
@@ -1365,7 +1432,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			if (block >= snapshot_blocks)
 				/*
 				 * Past last snapshot block group - pass NULL
-				 * cow_bh to next3_snapshot_shrink_blocks().
+				 * cow_bh to next3_snapshot_shrink_range().
 				 * This will cause snapshots after resize to
 				 * shrink to the size of @start snapshot.
 				 */
@@ -1377,9 +1444,9 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 		if (err)
 			goto out_err;
 
-		err = next3_snapshot_shrink_blocks(handle, start, end,
+		err = next3_snapshot_shrink_range(handle, start, end,
 					      SNAPSHOT_IBLOCK(block), count,
-					      &cow_bitmap);
+					      cow_bh);
 
 		snapshot_debug(3, "snapshot (%u-%u) shrink: "
 				"block = 0x%lx, count = 0x%lx, err = 0x%x\n",
@@ -1412,7 +1479,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 		goto out_err;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-	/* iterate from 'start' to 'end' */
+	/* iterate on (@start < snapshot < @end) */
 	list_for_each_prev(l, &NEXT3_I(start)->i_orphan) {
 		struct next3_inode_info *ei;
 		struct next3_iloc iloc;
@@ -1476,7 +1543,7 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 	snapshot_debug(3, "snapshot (%u-%u) merge: need_merge=%d\n",
 			start->i_generation, end->i_generation, need_merge);
 
-	/* iterate safe from 'start' to 'end' */
+	/* iterate safe on (@start < snapshot < @end) */
 	list_for_each_prev_safe(l, n, &NEXT3_I(start)->i_orphan) {
 		struct next3_inode_info *ei = list_entry(l,
 						 struct next3_inode_info,

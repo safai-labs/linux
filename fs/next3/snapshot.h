@@ -219,10 +219,10 @@ extern void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 				(first), (last), (depth), NULL)
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
-extern int next3_snapshot_shrink_blocks(handle_t *handle,
-		struct inode *start, struct inode *end,
+extern int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,
-		struct buffer_head *cow_bh);
+		struct buffer_head *cow_bh,
+		int shrink, int *pmapped);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
 extern int next3_snapshot_merge_blocks(handle_t *handle,

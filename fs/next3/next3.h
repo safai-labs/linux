@@ -723,7 +723,8 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT	0x2000 /* Next3 snapshot image */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-#define NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE	0x4000 /* Fix exclude bitmap */
+#define NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT	0x4000 /* Corrupted snapshot */
+#define NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE	0x8000 /* Bad exclude bitmap */
 #endif
 
 #define NEXT3_FEATURE_INCOMPAT_COMPRESSION	0x0001

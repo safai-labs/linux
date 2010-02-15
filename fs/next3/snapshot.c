@@ -323,6 +323,66 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  * COW bitmap functions
  */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+/*
+ * next3_snapshot_get_read_access - get read through access to block device.
+ * Sanity test to verify that the read block is allocated and not excluded.
+ * This test has performance penalty and is only called if SNAPTEST_READ
+ * is enabled.  An attempt to read through to block device of a non allocated
+ * or excluded block may indicate a corrupted filesystem, corrupted snapshot
+ * or corrupted exclude bitmap.  However, it may also be a read-ahead, which
+ * was not implicitly requested by the user, so be sure to disable read-ahead
+ * on block device (blockdev --setra 0 <bdev>) before enabling SNAPTEST_READ.
+ *
+ * Return values:
+ * = 0 - block is allocated and not excluded
+ * < 0 - error (or block is not allocated or excluded)
+ */
+int next3_snapshot_get_read_access(struct super_block *sb,
+				   struct buffer_head *bh)
+{
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
+	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
+	struct buffer_head *bitmap_bh;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+#endif
+	int err = 0;
+
+	if (PageReadahead(bh->b_page))
+		return 0;
+
+	bitmap_bh = read_block_bitmap(sb, block_group);
+	if (!bitmap_bh)
+		return -EIO;
+
+	if (!next3_test_bit(bit, bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"non-allocated block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		brelse(bitmap_bh);
+		return -EIO;
+	}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	if (exclude_bitmap_bh &&
+		next3_test_bit(bit, exclude_bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"excluded block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		err = -EIO;
+	}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+#endif
+	brelse(bitmap_bh);
+	return err;
+}
+#endif
+
 /*
  * next3_snapshot_init_cow_bitmap() init a new allocated (locked) COW bitmap
  * buffer on first time block group access after snapshot take.

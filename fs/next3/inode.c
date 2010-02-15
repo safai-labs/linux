@@ -1616,13 +1616,17 @@ got_it:
 	/*
 	 * On read of active snapshot, a mapped block may belong to a non
 	 * completed COW operation.  Use the buffer cache to test this
-	 * condition.
+	 * condition.  if (bh_result->b_blocknr == SNAPSHOT_BLOCK(iblock)),
+	 * then this is either read through to block device or moved block.
+	 * Either way, it is not a COWed block, so it cannot be pending COW.
 	 */
-	if (read_through && next3_snapshot_is_active(inode))
+	if (read_through && next3_snapshot_is_active(inode) &&
+		bh_result->b_blocknr != SNAPSHOT_BLOCK(iblock))
 		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
 	if (read_through && sbh) {
 		/* wait for pending COW to complete */
 		next3_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
+		lock_buffer(sbh);
 		if (buffer_uptodate(sbh)) {
 			/*
 			 * Avoid disk I/O and copy out snapshot page directly
@@ -1645,6 +1649,7 @@ got_it:
 			 */
 			WARN_ON(1);
 		}
+		unlock_buffer(sbh);
 	}
 #endif
 	if (count > blocks_to_boundary)

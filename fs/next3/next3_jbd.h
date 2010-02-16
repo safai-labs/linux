@@ -100,7 +100,7 @@
  * mke2fs uses the following default formula for fs-size above 1G:
  * journal-size = MIN(128M, fs-size/32)
  * use the following formula and override the default (-J size=):
- * journal-size = MIN(2G, fs-size/32)
+ * journal-size = MIN(3G, fs-size/32)
  */
 #define NEXT3_SNAPSHOT_TRANS_BLOCKS(n) \
 	((n)*(1+NEXT3_COW_CREDITS)+NEXT3_SNAPSHOT_CREDITS)
@@ -116,6 +116,11 @@
 
 #define NEXT3_RESERVE_COW_CREDITS	(NEXT3_COW_CREDITS +		\
 					 NEXT3_SNAPSHOT_CREDITS)
+
+/*
+ * Next3 is not designed for filesystems under 1G with journal size < 32M
+ */
+#define NEXT3_MIN_JOURNAL_BLOCKS	8192U
 #endif
 
 #define NEXT3_RESERVE_TRANS_BLOCKS	12U

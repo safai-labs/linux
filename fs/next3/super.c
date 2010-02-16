@@ -2135,6 +2135,17 @@ static journal_t *next3_get_journal(struct super_block *sb,
 		return NULL;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	if ((journal_inode->i_size >> NEXT3_BLOCK_SIZE_BITS(sb)) <
+			NEXT3_MIN_JOURNAL_BLOCKS) {
+		printk(KERN_ERR "NEXT3-fs: journal is too small (%Ld < %u).\n",
+			journal_inode->i_size >> NEXT3_BLOCK_SIZE_BITS(sb),
+			NEXT3_MIN_JOURNAL_BLOCKS);
+		iput(journal_inode);
+		return NULL;
+	}
+#endif
+
 	journal = journal_init_inode(journal_inode);
 	if (!journal) {
 		printk(KERN_ERR "NEXT3-fs: Could not load journal inode\n");

@@ -1027,7 +1027,7 @@ out_err:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
 /*
  * next3_snapshot_clean() "cleans" snapshot file blocks in 1 of 2 ways:
- * 1. from next3_snapshot_cleanup() with @cleanup=1 to free snapshot file
+ * 1. from next3_snapshot_remove() with @cleanup=1 to free snapshot file
  *    blocks, before removing snapshot file from snapshots list.
  * 2. from next3_snapshot_exclude() with @cleanup=0 to mark snapshot file
  *    blocks in exclude bitmap.
@@ -1213,11 +1213,12 @@ static int next3_snapshot_delete(struct inode *inode)
 #endif
 
 /*
- * next3_snapshot_cleanup() removes a snapshot @inode from the list
+ * next3_snapshot_remove() removes a snapshot @inode from the list
  * of snapshots stored on disk and truncates the snapshot inode
+ * Called from next3_snapshot_merge() under snapshot_mutex
  * Called from next3_snapshot_update() under snapshot_mutex
  */
-static int next3_snapshot_cleanup(struct inode *inode)
+static int next3_snapshot_remove(struct inode *inode)
 {
 	handle_t *handle;
 	struct next3_sb_info *sbi;
@@ -1589,7 +1590,7 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 		/* we finished moving all blocks of interest from 'inode'
 		 * into 'start' so it is now safe to remove 'inode' from the
 		 * snapshots list forever */
-		next3_snapshot_cleanup(inode);
+		next3_snapshot_remove(inode);
 
 		if (--need_merge <= 0)
 			break;
@@ -1606,6 +1607,67 @@ out_err:
 	return err;
 }
 #endif
+
+/*
+ * next3_snapshot_cleanup - shrink/merge/remove snapshot marked for deletion
+ * @inode - inode in question
+ * @used_by - latest non-deleted snapshot
+ * @deleted - true if snapshot is marked for deletion and not active
+ * @need_shrink - counter of deleted snapshots to shrink
+ * @need_merge - counter of deleted snapshots to merge
+ *
+ * Deleted snapshot with no older non-deleted snapshot - remove from list
+ * Deleted snapshot with no older enabled snapshot - add to merge count
+ * Deleted snapshot with older enabled snapshot - add to shrink count
+ * Non-deleted snapshot - shrink and merge deleted snapshots group
+ *
+ * Called from next3_snapshot_update() under snapshot_mutex
+ */
+static void next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
+		int deleted, int *need_shrink, int *need_merge)
+{
+	struct next3_inode_info *ei = NEXT3_I(inode);
+
+	if (deleted && !used_by) {
+		/* remove permanently unused deleted snapshot */
+		next3_snapshot_remove(inode);
+		return;
+	}
+
+	if (deleted) {
+		/* deleted (non-active) snapshot file */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+		if (!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
+			/* deleted snapshot needs shrinking */
+			(*need_shrink)++;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+		if (!(ei->i_flags & NEXT3_SNAPFILE_INUSE_FL))
+			/* temporarily unused deleted
+			 * snapshot needs merging */
+			(*need_merge)++;
+#endif
+	} else {
+		/* non-deleted (or active) snapshot file */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+		if (*need_shrink)
+			/* pass 1: shrink all deleted snapshots
+			 * between 'used_by' and 'inode' */
+			next3_snapshot_shrink(used_by, inode,
+					*need_shrink);
+		*need_shrink = 0;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+		if (*need_merge)
+			/* pass 2: merge all shrunk snapshots
+			 * between 'used_by' and 'inode' */
+			next3_snapshot_merge(used_by, inode,
+					*need_merge);
+		*need_merge = 0;
+#endif
+	}
+}
+
 
 /*
  * Snapshot constructor/destructor
@@ -1747,24 +1809,18 @@ void next3_snapshot_destroy(struct super_block *sb)
  * Called from next3_ioctl() under snapshot_mutex
  * Called from snapshot_load() under sb_lock
  */
-#warning this convoluted function has multiple modes and deed nesting. best split it into several helpers so its easier to follow
 void next3_snapshot_update(struct super_block *sb, int cleanup)
 {
 	struct inode *active_snapshot;
 	struct inode *used_by = NULL; /* last non-deleted snapshot found */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-	struct list_head *l, *n;
+	struct list_head *prev;
 	struct inode *inode;
 	struct next3_inode_info *ei;
 	int found_active = 0;
 	int found_enabled = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+	int deleted;
 	int need_shrink = 0;
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
 	int need_merge = 0;
-#endif
-#endif
 
 	active_snapshot = next3_snapshot_has_active(sb);
 	if (!active_snapshot)
@@ -1772,99 +1828,76 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	/* iterate safe from oldest snapshot backwards */
-	list_for_each_prev_safe(l, n, &NEXT3_SB(sb)->s_snapshot_list) {
-		ei = list_entry(l, struct next3_inode_info, i_orphan);
-		inode = &ei->vfs_inode;
-		/* all snapshots on the list must have the SNAPSHOT flag and
-		 * are not zombies */
-		ei->i_flags |= NEXT3_SNAPFILE_FL;
-		ei->i_flags &= ~NEXT3_SNAPFILE_ZOMBIE_FL;
-		/* set the 'No_Dump' flag on all snapshots */
-		ei->i_flags |= NEXT3_NODUMP_FL;
-
-		/* snapshot later than active (failed take) should be
-		 * deleted */
-		if (found_active || (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
-			ei->i_flags |= NEXT3_SNAPFILE_TAKE_FL |
-				NEXT3_SNAPFILE_DELETED_FL;
-
-		/*
-		 * after completion of a snapshot management operation,
-		 * only the active snapshot can have the ACTIVE flag
-		 */
-		if (inode == active_snapshot) {
-			ei->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
-			found_active = 1;
-		} else
-			ei->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
-
-		if (found_enabled && !(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
-			/* snapshot is in use by an older enabled snapshot */
-			ei->i_flags |= NEXT3_SNAPFILE_INUSE_FL;
-		else
-			/* snapshot is not in use by older enabled snapshots */
-			ei->i_flags &= ~NEXT3_SNAPFILE_INUSE_FL;
-
-		if ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) &&
-			!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL)) {
-			/* deleted (non-active) snapshot file */
-			if ((cleanup && !used_by) ||
-			    (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
-				/* cleanup permanently unused deleted
-				 * snapshot */
-				next3_snapshot_cleanup(inode);
-			else if (cleanup) {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
-				if (!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
-					/* deleted snapshot needs shrinking */
-					need_shrink++;
+	prev = NEXT3_SB(sb)->s_snapshot_list.prev;
+	if (list_empty(prev))
+		return;
+#else
+	prev = &NEXT3_I(active_snapshot)->i_orphan;
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
-				if (!found_enabled)
-					/* temporarily unused deleted
-					 * snapshot needs merging */
-					need_merge++;
-#endif
-			}
-		} else {
-			/* non-deleted (or active) snapshot file */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
-			if (cleanup && need_shrink)
-				/* pass 1: shrink all deleted snapshots
-				 * between 'used_by' and 'inode' */
-				next3_snapshot_shrink(used_by, inode,
-						      need_shrink);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
-			if (cleanup && need_merge)
-				/* pass 2: merge all shrunk snapshots
-				 * between 'used_by' and 'inode' */
-				next3_snapshot_merge(used_by, inode,
-						     need_merge);
-#endif
-			need_shrink = 0;
-			need_merge = 0;
-			if (!found_active)
-				/* newer snapshot are potentialy used by
-				 * this snapshot (when it is enabled) */
-				used_by = inode;
-			if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)
-				found_enabled = 1;
-		}
+update_snapshot:
+	ei = list_entry(prev, struct next3_inode_info, i_orphan);
+	inode = &ei->vfs_inode;
+	prev = ei->i_orphan.prev;
+
+	/* all snapshots on the list must have the SNAPSHOT flag and
+	 * are not zombies */
+	ei->i_flags |= NEXT3_SNAPFILE_FL;
+	ei->i_flags &= ~NEXT3_SNAPFILE_ZOMBIE_FL;
+	/* set the 'No_Dump' flag on all snapshots */
+	ei->i_flags |= NEXT3_NODUMP_FL;
+
+	/* snapshots later than active (failed take) should be removed */
+	if (found_active || (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL)) {
+		next3_snapshot_remove(inode);
+		goto prev_snapshot;
 	}
+
+	/*
+	 * after completion of a snapshot management operation,
+	 * only the active snapshot can have the ACTIVE flag
+	 */
+	if (inode == active_snapshot) {
+		ei->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
+		found_active = 1;
+	} else
+		ei->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
+
+	if (found_enabled)
+		/* snapshot is in use by an older enabled snapshot */
+		ei->i_flags |= NEXT3_SNAPFILE_INUSE_FL;
+	else
+		/* snapshot is not in use by older enabled snapshots */
+		ei->i_flags &= ~NEXT3_SNAPFILE_INUSE_FL;
+
+	deleted = ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) &&
+			!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
+	if (cleanup)
+		next3_snapshot_cleanup(inode, used_by, deleted,
+				&need_shrink, &need_merge);
+	if (!deleted) {
+		if (!found_active)
+			/* newer snapshot are potentialy used by
+			 * this snapshot (when it is enabled) */
+			used_by = inode;
+		if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)
+			found_enabled = 1;
+	}
+
+prev_snapshot:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	if (prev != &NEXT3_SB(sb)->s_snapshot_list)
+		goto update_snapshot;
 #endif
 
-	/* if active snapshot is permanently unused and deleted, deactivate
-	   it */
-	if (cleanup && !used_by &&
-		(NEXT3_I(active_snapshot)->i_flags & NEXT3_SNAPFILE_DELETED_FL)
-	    && igrab(active_snapshot)) {
+	/* if all snapshots are deleted - deactivate active snapshot */
+	deleted = NEXT3_I(active_snapshot)->i_flags & NEXT3_SNAPFILE_DELETED_FL;
+	if (cleanup && deleted && !used_by && igrab(active_snapshot)) {
 		/* lock journal updates before deactivating snapshot */
 		journal_lock_updates(NEXT3_SB(sb)->s_journal);
 		next3_snapshot_set_active(sb, NULL);
 		journal_unlock_updates(NEXT3_SB(sb)->s_journal);
-		/* cleanup unused deleted active snapshot */
-		next3_snapshot_cleanup(active_snapshot);
+		/* remove unused deleted active snapshot */
+		next3_snapshot_remove(active_snapshot);
 		/* drop the refcount to 0 */
 		iput(active_snapshot);
 	}

@@ -119,7 +119,7 @@ next3_snapshot_copy_buffer_cow(handle_t *handle,
  * next3_snapshot_copy_buffer()
  * helper function for next3_snapshot_take()
  * used for initializing pre-allocated snapshot blocks
- * copy buffer to snapshot buffer and mark it dirty
+ * copy buffer to snapshot buffer and sync to disk
  * 'mask' block bitmap with exclude bitmap before copying to snapshot.
  */
 void next3_snapshot_copy_buffer(struct buffer_head *sbh,
@@ -133,6 +133,7 @@ void next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		__next3_snapshot_copy_buffer(sbh, bh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
+	sync_dirty_buffer(sbh);
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES

@@ -841,6 +841,8 @@ int next3_snapshot_take(struct inode *inode)
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
+	sync_dirty_buffer(sbh);
+
 	/*
 	 * copy group descriptors to snapshot
 	 */
@@ -958,6 +960,8 @@ fix_inode_copy:
 		memset(&temp_inode, 0, sizeof(temp_inode));
 	}
 	mark_buffer_dirty(sbh);
+	sync_dirty_buffer(sbh);
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		curr_inode = &list_entry(l, struct next3_inode_info,
@@ -986,7 +990,13 @@ fix_inode_copy:
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_last_snapshot_id = cpu_to_le32(1);
 	sbi->s_es->s_last_snapshot = inode->i_ino;
-	/* set as active snapshot in-memory */
+	/*
+	 * Set as active snapshot in-memory.
+	 * No need to sync the snapshot inode to disk because all
+	 * that changes are the snapshot flags TAKE and ACTIVE
+	 * which are fixed on load by snapshot_update().
+	 * Snapshot data blocks have already been synced to disk.
+	 */
 	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_TAKE_FL;
 	next3_snapshot_set_active(sb, inode);
 	/* set snapshot file read-only aops */
@@ -995,13 +1005,6 @@ fix_inode_copy:
 	next3_snapshot_reset_bitmap_cache(sb, 0);
 
 out_unlockfs:
-	/*
-	 * Sync all copied snapshot blocks.
-	 * No need to sync the snapshot inode to disk because all
-	 * that has changed are the snapshot flags TAKE and ACTIVE
-	 * which are fixed on load by snapshot_update().
-	 */
-	filemap_fdatawrite(inode->i_mapping);
 	unlock_super(sb);
 	sb->s_op->unfreeze_fs(sb);
 

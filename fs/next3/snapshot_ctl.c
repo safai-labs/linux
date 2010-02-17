@@ -1395,12 +1395,12 @@ static int next3_snapshot_shrink_range(handle_t *handle,
 		if (!cow_bh)
 			/* no COW bitmap - free all blocks in range */
 			shrink = -1;
-		else if (!shrink)
-			/* past @start snapshot - free unused blocks in range */
-			shrink = 1;
 		else if (mapped)
 			/* past first mapped range - free all blocks in range */
 			shrink = -1;
+		else if (!shrink)
+			/* past @start snapshot - free unused blocks in range */
+			shrink = 1;
 
 		if (l == &sbi->s_snapshot_list)
 			/* didn't reach @end */

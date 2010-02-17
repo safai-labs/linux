@@ -719,6 +719,79 @@ out_handle:
 }
 
 /*
+ * If we call next3_getblk() with NULL handle we will get read through access
+ * to snapshot inode.  We don't want read through access in snapshot_take(),
+ * so we call next3_getblk() with this dummy handle and since we are not
+ * allocating snapshot block here the handle will not be used anyway.
+ */
+static handle_t dummy_handle;
+
+/*
+ * next3_snapshot_copy_block() - copy block to new snapshot
+ * @snapshot:	new snapshot to copy block to
+ * @bh:		source buffer to be copied
+ * @mask:	if not NULL, mask buffer data before copying to snapshot
+ * 		(used to mask block bitmap with exclude bitmap)
+ * @name:	print name of copied block
+ * @idx:	print index of copied block
+ *
+ * Called from next3_snapshot_take() under journal_lock_updates()
+ * Returns snapshot buffer on success, NULL on error
+ */
+static struct buffer_head *next3_snapshot_copy_block(struct inode *snapshot,
+		struct buffer_head *bh, const char *mask,
+		const char *name, unsigned long idx)
+{
+	struct buffer_head *sbh = NULL;
+	int err;
+
+	if (!bh)
+		return NULL;
+
+	sbh = next3_getblk(&dummy_handle, snapshot,
+			SNAPSHOT_IBLOCK(bh->b_blocknr),
+			SNAPMAP_READ, &err);
+
+	if (err || !sbh || sbh->b_blocknr == bh->b_blocknr) {
+		snapshot_debug(1, "failed to copy %s (%lu) "
+				"block [%lld/%lld] to snapshot (%u)\n",
+				name, idx,
+				SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+				SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
+				snapshot->i_generation);
+		brelse(sbh);
+		return NULL;
+	}
+	
+	next3_snapshot_copy_buffer(sbh, bh, mask);
+
+	snapshot_debug(4, "copied %s (%lu) block [%lld/%lld] "
+			"to snapshot (%u)\n",
+			name, idx,
+			SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+			SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
+			snapshot->i_generation);
+	return sbh;
+}
+
+/*
+ * List of blocks which are copied to snapshot for every special inode.
+ * Keep block bitmap first and inode table block last in the list.
+ */
+enum copy_inode_block {
+	COPY_BLOCK_BITMAP,
+	COPY_INODE_BITMAP,
+	COPY_INODE_TABLE,
+	COPY_INODE_BLOCKS_NUM
+};
+
+static char *copy_inode_block_name[COPY_INODE_BLOCKS_NUM] = {
+	"block bitmap",
+	"inode bitmap",
+	"inode table"
+};
+
+/*
  * next3_snapshot_take() makes a new snapshot file
  * into the active snapshot
  *
@@ -728,16 +801,6 @@ out_handle:
  */
 int next3_snapshot_take(struct inode *inode)
 {
-#warning over 300 LoC fxn.  too long.
-	/*
-	 * If we call next3_getblk() with NULL handle
-	 * we will get read through access to snapshot inode.
-	 * We don't want read through access in snapshot_take(),
-	 * so we call next3_getblk() with this dummy handle.
-	 * Because we are not allocating snapshot block here
-	 * the handle will not be used anyway.
-	 */
-	static handle_t dummy_handle;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct list_head *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
 	struct list_head *l = list->next;
@@ -747,12 +810,11 @@ int next3_snapshot_take(struct inode *inode)
 	struct super_block *sb = inode->i_sb;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	struct buffer_head *sbh = NULL;
+	struct buffer_head *bhs[COPY_INODE_BLOCKS_NUM] = { NULL };
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
-	struct buffer_head *bhs[3];
-	const char *strs[3];
-	int nbhs = 0;
+	const char *mask = NULL;
 	struct next3_super_block *es = NULL;
 	struct next3_iloc iloc;
 	struct next3_inode *raw_inode, temp_inode;
@@ -789,6 +851,7 @@ int next3_snapshot_take(struct inode *inode)
 						   sbi->s_sbh->b_data));
 	}
 
+	err = -EIO;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
 	/* update fs statistics to calculate snapshot reserved space */
 	if (next3_statfs_sb(sb, &statfs)) {
@@ -847,20 +910,12 @@ int next3_snapshot_take(struct inode *inode)
 	 * copy group descriptors to snapshot
 	 */
 	for (i = 0; i < sbi->s_gdb_count; i++) {
-		struct buffer_head *bh = sbi->s_group_desc[i];
-		long iblock = SNAPSHOT_IBLOCK(bh->b_blocknr);
-
 		brelse(sbh);
-		sbh = next3_getblk(&dummy_handle, inode, iblock,
-				SNAPMAP_READ, &err);
-		if (!sbh || sbh->b_blocknr == bh->b_blocknr) {
-			snapshot_debug(1, "warning: GDT block (%lld) of "
-				       "snapshot (%u) not allocated\n",
-				       bh->b_blocknr, inode->i_generation);
-			err = -EIO;
+		sbh = next3_snapshot_copy_block(inode,
+				sbi->s_group_desc[i], NULL,
+				"GDT", i);
+		if (!sbh)
 			goto out_unlockfs;
-		}
-		next3_snapshot_copy_buffer(sbh, bh, NULL);
 	}
 
 	/* start with journal inode and continue with snapshot list */
@@ -871,65 +926,38 @@ copy_inode_blocks:
 	 * - block and inode bitmap blocks of curr_inode block group
 	 * - inode table block that contains curr_inode
 	 */
-	while (nbhs > 0)
-		brelse(bhs[--nbhs]);
+	iloc.block_group = 0;
 	err = next3_get_inode_loc(curr_inode, &iloc);
-	if (!err)
-		desc = next3_get_group_desc(sb, iloc.block_group, NULL);
-	if (err || !iloc.bh || !iloc.bh->b_blocknr || !desc) {
+	desc = next3_get_group_desc(sb, iloc.block_group, NULL);
+	if (err || !desc) {
 		snapshot_debug(1, "failed to read inode and bitmap blocks "
 			       "of inode (%lu)\n", curr_inode->i_ino);
+		err = err ? : -EIO;
 		goto out_unlockfs;
 	}
 	if (iloc.bh->b_blocknr == prev_inode_blk)
 		goto fix_inode_copy;
 	prev_inode_blk = iloc.bh->b_blocknr;
-	/* keep block bitmap buffer at index 0 and iloc.bh last */
-	strs[nbhs] = "block bitmap";
-	bhs[nbhs] = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
-	nbhs++;
-	strs[nbhs] = "inode bitmap";
-	bhs[nbhs] = sb_bread(sb, le32_to_cpu(desc->bg_inode_bitmap));
-	nbhs++;
-	strs[nbhs] = "table";
-	bhs[nbhs] = iloc.bh;
-	nbhs++;
-	for (i = 0; i < nbhs; i++) {
-		struct buffer_head *bh = bhs[i];
-		const char *mask = NULL;
+	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
+		brelse(bhs[i]);
+	bhs[COPY_BLOCK_BITMAP] = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
+	bhs[COPY_INODE_BITMAP] = sb_bread(sb, le32_to_cpu(desc->bg_inode_bitmap));
+	bhs[COPY_INODE_TABLE] = iloc.bh;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-		if (i == 0) {
-			brelse(exclude_bitmap_bh);
-			exclude_bitmap_bh = read_exclude_bitmap(sb,
-							iloc.block_group);
-			if (exclude_bitmap_bh)
-				mask = exclude_bitmap_bh->b_data;
-		}
+	brelse(exclude_bitmap_bh);
+	exclude_bitmap_bh = read_exclude_bitmap(sb, iloc.block_group);
+	if (exclude_bitmap_bh)
+		/* mask block bitmap with exclude bitmap */
+		mask = exclude_bitmap_bh->b_data;
 #endif
-		if (bh) {
-			brelse(sbh);
-			sbh = next3_getblk(&dummy_handle, inode,
-					   SNAPSHOT_IBLOCK(bh->b_blocknr),
-					   SNAPMAP_READ, &err);
-		}
-		if (!bh || err || !sbh || sbh->b_blocknr == bh->b_blocknr) {
-			snapshot_debug(1, "failed to copy inode (%lu) %s "
-			       "block [%lld/%lld] to snapshot (%u)\n",
-			       curr_inode->i_ino, strs[i],
-			       SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-			       SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-			       inode->i_generation);
-			if (!err)
-				err = -EIO;
+	err = -EIO;
+	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++) {
+		brelse(sbh);
+		sbh = next3_snapshot_copy_block(inode, bhs[i], mask,
+				copy_inode_block_name[i], curr_inode->i_ino);
+		if (!sbh)
 			goto out_unlockfs;
-		}
-		next3_snapshot_copy_buffer(sbh, bh, mask);
-		snapshot_debug(4, "copied inode (%lu) %s block [%lld/%lld] "
-			       "to snapshot (%u)\n",
-			       curr_inode->i_ino, strs[i],
-			       SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-			       SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-			       inode->i_generation);
+		mask = NULL;
 	}
 fix_inode_copy:
 	/* get snapshot copy of raw inode */
@@ -1004,6 +1032,7 @@ fix_inode_copy:
 	/* reset COW bitmap cache */
 	next3_snapshot_reset_bitmap_cache(sb, 0);
 
+	err = 0;
 out_unlockfs:
 	unlock_super(sb);
 	sb->s_op->unfreeze_fs(sb);
@@ -1022,8 +1051,8 @@ out_err:
 	brelse(exclude_bitmap_bh);
 #endif
 	brelse(sbh);
-	while (nbhs > 0)
-		brelse(bhs[--nbhs]);
+	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
+		brelse(bhs[i]);
 	return err;
 }
 

@@ -377,11 +377,19 @@ static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
 				    SNAPSHOT_BLOCK_GROUP_OFFSET(blocknr),
 				    SNAPSHOT_BLOCK_GROUP(blocknr));
 		/*
-		 * can happen once per block/snapshot - wait for COW and
-		 * keep trying
+		 * An unusually long pending COW operation can be caused by
+		 * the debugging function snapshot_test_delay(SNAPTEST_COW)
+		 * and by waiting for tracked reads to complete.
+		 * The new COW buffer is locked during those events, so wait
+		 * on the buffer before the short msleep.
 		 */
 		wait_on_buffer(sbh);
-		yield();
+		/*
+		 * This is an unlikely event that can happen only once per
+		 * block/snapshot, so msleep(1) is sufficient and there is
+		 * no need for a wait queue.
+		 */
+		msleep(1);
 	}
 }
 #endif

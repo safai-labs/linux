@@ -80,9 +80,11 @@ next3_snapshot_complete_cow(handle_t *handle,
 			    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
 			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
 			    buffer_tracked_readers_count(bh));
-		/* can happen once per block/snapshot - just keep trying */
-#warning "busy" trying is not always good. maybe a short delay first?
-		yield();
+		/*
+		 * "This is extremely improbable, so msleep(1) is sufficient
+		 *  and there is no need for a wait queue." (dm-snap.c)
+		 */
+		msleep(1);
 	}
 #endif
 	unlock_buffer(sbh);
@@ -521,11 +523,11 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			snapshot_debug_once(2, "waiting for pending cow "
 					    "bitmap #%d...\n", block_group);
 			/*
-			 * can happen once per block_group/snapshot - just
-			 * keep trying
+			 * This is an unlikely event that can happen only once
+			 * per block_group/snapshot, so msleep(1) is sufficient
+			 * and there is no need for a wait queue.
 			 */
-#warning busy trying? check all instances of such use of yield()
-			yield();
+			msleep(1);
 		}
 	}
 #endif

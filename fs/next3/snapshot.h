@@ -241,9 +241,19 @@ extern int next3_statfs_sb(struct super_block *sb, struct kstatfs *buf);
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/* tests if @inode is a snapshot file */
 static inline int next3_snapshot_file(struct inode *inode)
 {
+	if (!S_ISREG(inode->i_mode))
+		/* a snapshots directory */
+		return 0;
 	return (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL);
+}
+
+/* tests if @inode is on the on-disk snapshot list */
+static inline int next3_snapshot_list(struct inode *inode)
+{
+	return (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_LIST_FL);
 }
 #endif
 
@@ -284,9 +294,6 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	/* XXX: Experimental code */
-	if (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)
-		/* exclude zombie and deleted snapshot files */
-		return 1;
 	if (NEXT3_I(inode)->i_flags & NEXT3_NOSNAP_FL)
 		/* exclude file with 'nosnap'/'nodump' flag */
 		return 1;

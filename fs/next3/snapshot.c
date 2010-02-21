@@ -217,13 +217,14 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	} else if (SNAPMAP_ISCREATE(cmd))
 		BUG_ON(handle && handle->h_cowing);
 
-	if (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL) {
+	if (!(ei->i_flags & NEXT3_SNAPFILE_LIST_FL))
 		/*
-		 * snapshot_create() pre-allocating blocks for new snapshot or
-		 * snapshot_take() checking for pre-allocated blocks
+		 * old snapshot that was removed from the list or new snapshot
+		 * that was not added to the list yet (being taken).
 		 */
 		return 0;
-	} else if (SNAPMAP_ISWRITE(cmd)) {
+
+	if (SNAPMAP_ISWRITE(cmd)) {
 		/* snapshot inode write access */
 		snapshot_debug(1, "snapshot (%u) is read-only"
 				" - write access denied!\n",
@@ -273,9 +274,10 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	} else {
 		/* non last snapshot - read through to prev snapshot */
 		ei = list_entry(prev, struct next3_inode_info, i_orphan);
-		if (!(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
+		if (!(ei->i_flags & NEXT3_SNAPFILE_LIST_FL))
 			/* skip over snapshot during take */
-			*prev_snapshot = &ei->vfs_inode;
+			return 1;
+		*prev_snapshot = &ei->vfs_inode;
 	}
 	return 1;
 #endif

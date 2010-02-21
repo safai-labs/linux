@@ -27,14 +27,15 @@
 #include "next3_jbd.h"
 #include "xattr.h"
 #include "acl.h"
+#include "snapshot.h"
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
 static int next3_file_open(struct inode *inode, struct file *filp)
 {
-	if ((NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK) &&
+	if (next3_snapshot_file(inode) &&
 		(filp->f_flags & O_ACCMODE) != O_RDONLY)
 		/*
-		 * allow only read-only access to live or zombie snapshots
+		 * allow only read-only access to snapshot files
 		 */
 		return -EPERM;
 

@@ -59,7 +59,56 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 /*
- * Snapshots control functions
+ * Snapshot control functions
+ *
+ * Snapshot files are controlled by changing snapshot flags with chattr and
+ * moving the snapshot file through the stages of its life cycle:
+ *
+ * 1. Creating a snapshot file
+ * The snapfile flag is changed for directories only (chattr +x), so
+ * snapshot files must be created inside a snapshots diretory.
+ * They inherit the flag at birth and they die with it.
+ * This helps to avoid various race conditions when changing
+ * regular files to snapshots and back.
+ * Snapshot files are assigned with read-only address space operations, so
+ * they are not writable for users.
+ *
+ * 2. Taking a snapshot
+ * An empty snapshot file becomes the active snapshot after it is added to the
+ * head on the snapshots list by setting its snapshot list flag (chattr -X +S).
+ * snapshot_create() verifies that the file is empty and pre-allocates some
+ * blocks during the ioctl transcation.  snapshot_take() locks journal updates
+ * and copies some file system block to the pre-allocated blocks and then adds
+ * the snapshot file to the on-disk list and sets it as the active snaphot.
+ *
+ * 3. Mounting a snapshot
+ * A snapshot on the list can be enabled for user read access by setting the
+ * enabled flag (chattr -X +n) and disabled by clearing the enabled flag.
+ * An enabled snapshot can be mounted via a loop device and mounted as a
+ * read-only ext2 filesystem.
+ *
+ * 4. Deleting a snapshot
+ * A non-mounted and disabled snapshot may be marked for removal from the
+ * snapshots list by requesting to clear its snapshot list flag (chattr -X -S).
+ * The process on removing a snapshot from the list varries according to the
+ * dependencies between the snaphot and older snapshots on the list:
+ * - if all older snapshots are deleted, the snapshot is removed from the list.
+ * - if some older snapshots are enabled, snapshot_shrink() is called to free
+ *   usued blocks, but the snapshot remains on the list.
+ * - if all older snapshot are disabled, snapshot_merge() is called to move
+ *   used blocks to an older snapshot and the snapshot is removed from the list.
+ *
+ * 5. Unlinking a snapshot file
+ * When a snapshot file is no longer (or never was) on the snapshots list, it
+ * may be unlinked.  Snapshots on the list are protected from user unlink and
+ * truncate operations.
+ *
+ * 6. Discarding all snapshots
+ * An irregular way to abruptly end the lives of all snapshots on the list is by
+ * detaching the snapshot list head using the command: tune2fs -O ^has_snapshot.
+ * This action is applicable on an un-mounted next3 filesystem.  After mounting
+ * the filesystem, the discarded snapshot files will not be loaded, they will
+ * not have the snapshot list flag and therefor, may be unlinked.
  */
 static int next3_snapshot_enable(struct inode *inode);
 static int next3_snapshot_disable(struct inode *inode);
@@ -78,7 +127,7 @@ void next3_snapshot_get_flags(struct next3_inode_info *ei, struct file *filp)
 	 * 1 count for ioctl (lsattr)
 	 * greater count means the snapshot is open by user (mounted?)
 	 */
-	if (open_count > 1)
+	if ((ei->i_flags & NEXT3_SNAPFILE_LIST_FL) && open_count > 1)
 		ei->i_flags |= NEXT3_SNAPFILE_OPEN_FL;
 	else
 		ei->i_flags &= ~NEXT3_SNAPFILE_OPEN_FL;
@@ -92,16 +141,37 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 			     unsigned int flags)
 {
 	unsigned int oldflags = NEXT3_I(inode)->i_flags;
+	unsigned int snapflag = flags & NEXT3_SNAPFILE_FL;
 	int err = 0;
 
-	if (!((flags | oldflags) & NEXT3_SNAPFILE_FL))
-		/* snapshot flags can only be changed for snapshot files */
+	if (S_ISDIR(inode->i_mode)) {
+		/* only the snapfile flag may be changed for directories */
+		NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_FL;
+		NEXT3_I(inode)->i_flags |= snapflag;
 		goto non_snapshot;
+	}
+
+	if ((snapflag ^ oldflags) & NEXT3_SNAPFILE_FL) {
+		/* the snapfile flag may not be changed for regular files */
+		snapshot_debug(1, "changing the snapfile flag for regular "
+			       "file (ino=%lu) is not allowed\n",
+			       inode->i_ino);
+		return -EINVAL;
+	}
+
+	if (!next3_snapshot_file(inode)) {
+		if ((flags ^ oldflags) & ~NEXT3_FL_SNAPSHOT_MASK) {
+			/* snapflags can only be changed for snapfiles */
+			snapshot_debug(1, "changing snapflags for non snapfile"
+					" (ino=%lu) is not allowed\n",
+					inode->i_ino);
+			return -EINVAL;
+		}
+		goto non_snapshot;
+	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
-	if ((oldflags & NEXT3_SNAPFILE_FL) &&
-		(oldflags & NEXT3_NODUMP_FL) &&
-		!(flags & NEXT3_NODUMP_FL)) {
+	if ((oldflags ^ flags) & NEXT3_NODUMP_FL) {
 		/* print snapshot inode map on chattr -d */
 		next3_snapshot_dump(1, inode);
 		/* restore the 'No_Dump' flag */
@@ -110,8 +180,8 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if ((flags & NEXT3_SNAPFILE_CLEAN_FL) &&
-		!(oldflags & NEXT3_SNAPFILE_CLEAN_FL))
+	if (!snapflag)
+		/* test snapshot blocks are excluded on chattr -x */
 		err = next3_snapshot_exclude(handle, inode);
 	if (err)
 		goto out;
@@ -127,9 +197,9 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	if (err)
 		goto out;
 
-	if ((flags ^ oldflags) & NEXT3_SNAPFILE_FL) {
+	if ((flags ^ oldflags) & NEXT3_SNAPFILE_LIST_FL) {
 		/* add/delete to snapshots list during transaction */
-		if (flags & NEXT3_SNAPFILE_FL)
+		if (flags & NEXT3_SNAPFILE_LIST_FL)
 			err = next3_snapshot_create(inode);
 		else
 			err = next3_snapshot_delete(inode);
@@ -491,7 +561,7 @@ static int next3_snapshot_create(struct inode *inode)
 			snapshot_debug(1, "failed to add snapshot because last"
 				       " snapshot (%u) is not active\n",
 				       last_snapshot->i_generation);
-			return -EPERM;
+			return -EINVAL;
 		}
 	}
 #else
@@ -499,14 +569,20 @@ static int next3_snapshot_create(struct inode *inode)
 		snapshot_debug(1, "failed to add snapshot because active "
 			       "snapshot (%u) has to be deleted first\n",
 			       active_snapshot->i_generation);
-		return -EPERM;
+		return -EINVAL;
 	}
 #endif
 
-	/*
-	 * Verify that all inode's direct blocks are not allocated.
-	 * TODO: take truncate_mutex before this test
-	 */
+	/* prevent recycling of old snapshot files */
+	if ((ei->i_flags & NEXT3_FL_SNAPSHOT_MASK) != NEXT3_SNAPFILE_FL) {
+		snapshot_debug(1, "failed to create snapshot file (ino=%lu) "
+				"because it has snapshot flags (0x%x)\n",
+				inode->i_ino,
+				inode->i_flags & NEXT3_FL_SNAPSHOT_MASK);
+		return -EINVAL;
+	}
+
+	/* verify that all inode's direct blocks are not allocated */
 	for (i = 0; i < NEXT3_N_BLOCKS; i++) {
 		if (ei->i_data[i])
 			break;
@@ -519,7 +595,7 @@ static int next3_snapshot_create(struct inode *inode)
 				"i_size=%lld, i_disksize=%lld)\n",
 				inode->i_ino, i, ei->i_data[i],
 				inode->i_size, ei->i_disksize);
-		return -EPERM;
+		return -EINVAL;
 	}
 
 	/*
@@ -534,16 +610,6 @@ static int next3_snapshot_create(struct inode *inode)
 	if (err)
 		goto out_handle;
 
-	/*
-	 * first we mark the file 'snapshot take' and add it to the head
-	 * of the snapshot list (in-memory but not on-disk).
-	 * at the end of snapshot_take(), it will become the active snapshot.
-	 * finally, if snapshot_create() or snapshot_take() has failed,
-	 * snapshot_update() will remove it from the head of the list.
-	 */
-	ei->i_flags |= (NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
-	ei->i_flags &= ~NEXT3_SNAPFILE_ENABLED_FL;
-
 	/* record the new snapshot ID in the snapshot inode generation field */
 	inode->i_generation = le32_to_cpu(NEXT3_SB(inode->i_sb)->
 					  s_es->s_last_snapshot_id) + 1;
@@ -556,6 +622,13 @@ static int next3_snapshot_create(struct inode *inode)
 	SNAPSHOT_SET_DISABLED(inode);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	/*
+	 * First, the snapshot is added to the in-memory list.
+	 * At the end of snapshot_take(), it will become the active snapshot
+	 * in-memory and the head of the on-disk list.
+	 * Finally, if snapshot_create() or snapshot_take() has failed,
+	 * snapshot_update() will remove it from the in-memory list.
+	 */
 	err = next3_inode_list_add(handle, inode, list,
 			   &NEXT3_SB(inode->i_sb)->s_es->s_last_snapshot,
 			   "snapshot");
@@ -712,9 +785,6 @@ next_snapshot:
 	err = 0;
 out_handle:
 	next3_journal_stop(handle);
-	if (err)
-		ei->i_flags &=
-			~(NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAKE_FL);
 	return err;
 }
 
@@ -1008,7 +1078,7 @@ fix_inode_copy:
 			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	}
 
-	/* set as active snapshot on-disk */
+	/* set as head of on-disk list */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
 	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le32(snapshot_r_blocks);
 #endif
@@ -1021,11 +1091,11 @@ fix_inode_copy:
 	/*
 	 * Set as active snapshot in-memory.
 	 * No need to sync the snapshot inode to disk because all
-	 * that changes are the snapshot flags TAKE and ACTIVE
+	 * that changes are the snapshot flags LIST and ACTIVE
 	 * which are fixed on load by snapshot_update().
 	 * Snapshot data blocks have already been synced to disk.
 	 */
-	NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_TAKE_FL;
+	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_LIST_FL;
 	next3_snapshot_set_active(sb, inode);
 	/* set snapshot file read-only aops */
 	next3_set_aops(inode);
@@ -1078,11 +1148,11 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 	int i, nblocks = 0;
 	int *pblocks = (cleanup ? NULL : &nblocks);
 
-	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
-		snapshot_debug(1, "clean of non snapshot file (ino=%lu) "
-				"is not allowed.\n",
-				inode->i_ino);
-		return -EPERM;
+	if (!next3_snapshot_list(inode)) {
+		snapshot_debug(1, "next3_snapshot_clean() called with "
+			       "snapshot file (ino=%lu) not on list\n",
+			       inode->i_ino);
+		return -EINVAL;
 	}
 
 	if (ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL) {
@@ -1121,7 +1191,7 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
  */
 static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
 {
-	int err, nblocks;
+	int err;
 
 	/* extend small transaction started in next3_ioctl() */
 	err = extend_or_restart_transaction(handle, NEXT3_MAX_TRANS_DATA);
@@ -1131,16 +1201,9 @@ static int next3_snapshot_exclude(handle_t *handle, struct inode *inode)
 	err = next3_snapshot_clean(handle, inode, 0);
 	if (err < 0)
 		return err;
-	nblocks = err;
-
-	/* mark snapshot 'clean' */
-	NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_CLEAN_FL;
-	err = next3_mark_inode_dirty(handle, inode);
-	if (err)
-		return err;
 
 	snapshot_debug(1, "snapshot (%u) is clean (%d blocks)\n",
-			inode->i_generation, nblocks);
+			inode->i_generation, err);
 	return 0;
 }
 #endif
@@ -1154,19 +1217,19 @@ static int next3_snapshot_enable(struct inode *inode)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
 
-	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
-		snapshot_debug(1, "next3_snapshot_enable() called with non "
-			       "snapshot file (ino=%lu)\n",
+	if (!next3_snapshot_list(inode)) {
+		snapshot_debug(1, "next3_snapshot_enable() called with "
+			       "snapshot file (ino=%lu) not on list\n",
 			       inode->i_ino);
 		return -EINVAL;
 	}
 
-	if (ei->i_flags &
-	    (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_TAKE_FL)) {
+	if ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) ||
+		!(ei->i_flags & NEXT3_SNAPFILE_LIST_FL)) {
 		snapshot_debug(1, "enable of %s snapshot (%u) "
 				"is not permitted\n",
 				(ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) ?
-				"deleted" : "pre-take",
+				"deleted" : "detached",
 				inode->i_generation);
 		return -EPERM;
 	}
@@ -1192,9 +1255,10 @@ static int next3_snapshot_disable(struct inode *inode)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
 
-	if (!(ei->i_flags & NEXT3_SNAPFILE_FL)) {
-		snapshot_debug(1, "next3_snapshot_disable() called with non "
-			       "snapshot file (ino=%lu)\n", inode->i_ino);
+	if (!next3_snapshot_list(inode)) {
+		snapshot_debug(1, "next3_snapshot_disable() called with "
+			       "snapshot file (ino=%lu) not on list\n",
+			       inode->i_ino);
 		return -EINVAL;
 	}
 
@@ -1228,6 +1292,13 @@ static int next3_snapshot_disable(struct inode *inode)
 static int next3_snapshot_delete(struct inode *inode)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
+
+	if (!next3_snapshot_list(inode)) {
+		snapshot_debug(1, "next3_snapshot_delete() called with "
+			       "snapshot file (ino=%lu) not on list\n",
+			       inode->i_ino);
+		return -EINVAL;
+	}
 
 	if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL) {
 		snapshot_debug(1, "delete of enabled snapshot (%u) "
@@ -1298,14 +1369,12 @@ static int next3_snapshot_remove(struct inode *inode)
 		goto out_err;
 
 	/*
-	 * at this point, this snapshot is empty
-	 * but still on the snapshots list.
-	 * after it is removed from the list,
-	 * it must not have the SNAPFILE flag set,
-	 * but it may have the SNAPFILE_DELETED flag set.
-	 * inode will be marked dirty by next3_inode_list_del()
+	 * At this point, this snapshot is empty and on the snapshots list.
+	 * After it is removed from the list, it must not have the LIST flag
+	 * and other dynamic snapshot flags.  It will have the SNAPFILE and
+	 * DELETED flag to indicate this is a deleted snapshot that cannot be
+	 * reused.  The inode will be marked dirty by next3_inode_list_del().
 	 */
-	ei->i_flags &= ~NEXT3_SNAPFILE_FL;
 	ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
@@ -1709,8 +1778,7 @@ static void next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
  * next3_snapshot_load - load the on-disk snapshot list to memory
  * Start with last (active) snapshot and continue to older snapshots.
  * If active snapshot load fails, force read-only mount.
- * If at any point in the list load fails, all older snapshot are discarded
- * and remain 'zombies snapshots'.
+ * If at any point in the list load fails, all older snapshot are discarded.
  * Called from next3_fill_super() under sb_lock
  *
  * Return values:
@@ -1762,8 +1830,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		struct inode *inode;
 
 		inode = next3_orphan_get(sb, le32_to_cpu(*ino_next));
-		if (IS_ERR(inode) ||
-			!(NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK)) {
+		if (IS_ERR(inode) || !next3_snapshot_file(inode)) {
 			if (num == 0 && has_snapshot) {
 				snapshot_debug(1, "warning: failed to load "
 						"active snapshot (ino=%u) - "
@@ -1871,15 +1938,13 @@ update_snapshot:
 	inode = &ei->vfs_inode;
 	prev = ei->i_orphan.prev;
 
-	/* all snapshots on the list must have the SNAPSHOT flag and
-	 * are not zombies */
-	ei->i_flags |= NEXT3_SNAPFILE_FL;
-	ei->i_flags &= ~NEXT3_SNAPFILE_ZOMBIE_FL;
+	/* all snapshots on the list have the LIST flag */
+	ei->i_flags |= NEXT3_SNAPFILE_LIST_FL;
 	/* set the 'No_Dump' flag on all snapshots */
 	ei->i_flags |= NEXT3_NODUMP_FL;
 
 	/* snapshots later than active (failed take) should be removed */
-	if (found_active || (ei->i_flags & NEXT3_SNAPFILE_TAKE_FL)) {
+	if (found_active) {
 		next3_snapshot_remove(inode);
 		goto prev_snapshot;
 	}

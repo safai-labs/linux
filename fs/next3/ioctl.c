@@ -93,8 +93,7 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 		/*
-		 * Snapshot flags and snapshot file (has snapshot flags)
-		 * flags (including non-snapshot flags) can only be changed by
+		 * Snapshot file flags can only be changed by
 		 * the relevant capability and under snapshot_mutex lock.
 		 */
 		snapflags = ((flags | oldflags) & NEXT3_FL_SNAPSHOT_MASK);
@@ -159,18 +158,17 @@ flags_err:
 		if (err)
 			goto flags_out;
 
-		if ((flags & NEXT3_SNAPFILE_FL) &&
-			(ei->i_flags & NEXT3_SNAPFILE_TAKE_FL))
-			/* take snapshot outside transaction */
-			err = next3_snapshot_take(inode);
+		if ((flags | oldflags) & NEXT3_SNAPFILE_LIST_FL) {
+			/* clearing list flag - shirnk/merge/remove snapshot */
+			int cleanup = !(flags & NEXT3_SNAPFILE_LIST_FL);
 
-		if ((flags | oldflags) & NEXT3_SNAPFILE_FL)
-			/*
-			 * Finally: update all snapshots status flags
-			 * and cleanup after delete command
-			 */
-			next3_snapshot_update(inode->i_sb,
-					      !(flags & NEXT3_SNAPFILE_FL));
+			if (!(oldflags & NEXT3_SNAPFILE_LIST_FL))
+				/* setting list flag - take snapshot */
+				err = next3_snapshot_take(inode);
+
+			/* update/cleanup all snapshots on list */
+			next3_snapshot_update(inode->i_sb, cleanup);
+		}
 #endif
 flags_out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL

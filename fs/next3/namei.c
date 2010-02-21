@@ -2229,9 +2229,9 @@ static int next3_unlink(struct inode * dir, struct dentry *dentry)
 		inode->i_nlink = 1;
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
-	/* prevent deletion of snapshot files */
+	/* prevent unlink of files on snapshot list */
 	if (inode->i_nlink == 1 &&
-		next3_snapshot_file(inode)) {
+		next3_snapshot_list(inode)) {
 		snapshot_debug(1, "snapshot (%u) cannot be unlinked!\n",
 				inode->i_generation);
 		retval = -EPERM;

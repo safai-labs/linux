@@ -1943,12 +1943,14 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	 * only get the field address from the super block structs
 	 * the content of the field will only be changed under lock_super()
 	 */
-	return next3_inode_list_add(handle, inode, &NEXT3_SB(sb)->s_orphan,
-			&NEXT3_SB(sb)->s_es->s_last_orphan, "orphan");
+	return next3_inode_list_add(handle, inode, &NEXT_ORPHAN(inode),
+			&NEXT3_SB(sb)->s_es->s_last_orphan,
+			&NEXT3_SB(sb)->s_orphan, "orphan");
 }
 
 int next3_inode_list_add(handle_t *handle, struct inode *inode,
-		struct list_head *s_list, __le32 *s_last, const char *name)
+		__le32 *i_next, __le32 *s_last,
+		struct list_head *s_list, const char *name)
 {
 #else
 int next3_orphan_add(handle_t *handle, struct inode *inode)
@@ -1989,7 +1991,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 			inode->i_ino, name);
 
 	/* Insert this inode at the head of the on-disk inode list... */
-	NEXT_ORPHAN(inode) = le32_to_cpu(*s_last);
+	*i_next = le32_to_cpu(*s_last);
 	if (s_list == &NEXT3_SB(sb)->s_orphan)
 		/* last_snapshot will be written to disk in snapshot_take() */
 		*s_last = cpu_to_le32(inode->i_ino);
@@ -2021,7 +2023,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	snapshot_debug(4, "last_%s will point to inode %lu\n",
 			name, inode->i_ino);
 	snapshot_debug(4, "%s inode %lu will point to inode %d\n",
-			name, inode->i_ino, NEXT_ORPHAN(inode));
+			name, inode->i_ino, *i_next);
 
 out_unlock:
 	unlock_super(sb);
@@ -2041,12 +2043,14 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	 * only get the field address from the super block structs
 	 * the content of the field will only be changed under lock_super()
 	 */
-	return next3_inode_list_del(handle, inode, &NEXT3_SB(sb)->s_orphan,
-			&NEXT3_SB(sb)->s_es->s_last_orphan, "orphan");
+	return next3_inode_list_del(handle, inode, &NEXT_ORPHAN(inode),
+			&NEXT3_SB(sb)->s_es->s_last_orphan,
+			&NEXT3_SB(sb)->s_orphan, "orphan");
 }
 
 int next3_inode_list_del(handle_t *handle, struct inode *inode,
-		struct list_head *s_list, __le32 *s_last, const char *name)
+		__le32 *i_next, __le32 *s_last,
+		struct list_head *s_list, const char *name)
 {
 #else
 int next3_orphan_del(handle_t *handle, struct inode *inode)
@@ -2068,7 +2072,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		return 0;
 	}
 
-	ino_next = NEXT_ORPHAN(inode);
+	ino_next = *i_next;
 	prev = ei->i_orphan.prev;
 	sbi = NEXT3_SB(inode->i_sb);
 
@@ -2115,12 +2119,19 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		err = next3_reserve_inode_write(handle, i_prev, &iloc2);
 		if (err)
 			goto out_brelse;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+		if (i_next == &NEXT_ORPHAN(inode))
+			NEXT_ORPHAN(i_prev) = ino_next;
+		else
+			NEXT_INODE(i_prev) = ino_next;
+#else
 		NEXT_ORPHAN(i_prev) = ino_next;
+#endif
 		err = next3_mark_iloc_dirty(handle, i_prev, &iloc2);
 	}
 	if (err)
 		goto out_brelse;
-	NEXT_ORPHAN(inode) = 0;
+	*i_next = 0;
 	err = next3_mark_iloc_dirty(handle, inode, &iloc);
 
 out_err:

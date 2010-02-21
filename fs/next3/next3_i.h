@@ -106,6 +106,15 @@ struct next3_inode_info {
 
 	struct list_head i_orphan;	/* unlinked but open inodes */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	/*
+	 * Snapshot in-memory list uses i_orphan to link snapshot inodes
+	 * but unlike the real orphan list, the next snapshot inode number
+	 * is stored in i_next and not in i_dtime
+	 */
+	__u32	i_next;
+#endif
+
 	/*
 	 * i_disksize keeps track of what the inode size is ON DISK, not
 	 * in memory.  During truncate, i_size is set to the new size by

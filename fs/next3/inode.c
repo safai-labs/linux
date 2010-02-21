@@ -3881,6 +3881,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 	if (next3_snapshot_file(inode)) {
+		ei->i_next = le32_to_cpu(raw_inode->i_next_snapshot);
 		/*
 		 * Dynamic snapshot flags are not stored on-disk, so
 		 * at this point, we only know that the this inode has the
@@ -3892,11 +3893,6 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * on-disk snapshot list head with tune2fs -O ^has_snapshot.
 		 */
 		ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
-		/*
-		 * snapshots are linked on i_dtime the same way as orphan inodes
-		 */
-		if (!ei->i_dtime)
-			ei->i_dtime = le32_to_cpu(raw_inode->i_next_snapshot);
 		/*
 		 * snapshot size is stored in i_snapshot_blocks.  in-memory
 		 * i_disksize of snapshot files is set to snapshot size.
@@ -4108,22 +4104,12 @@ static int next3_do_update_inode(handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 	if (next3_snapshot_file(inode)) {
+		raw_inode->i_next_snapshot = cpu_to_le32(ei->i_next);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~NEXT3_FL_SNAPSHOT_DYN_MASK);
 		/* snapshot size is stored in i_snapshot_blocks */
 		raw_inode->i_snapshot_blocks =
 			cpu_to_le32(ei->i_disksize >> SNAPSHOT_BLOCK_SIZE_BITS);
-		if (next3_snapshot_list(inode)) {
-			/*
-			 * Next snapshot is stored in-memory in i_dtime, the
-			 * same way as next orphan is stored.
-			 * To differentiate between the 2 cases, next snapshot
-			 * is stored in a different field on-disk and copied
-			 * to i_dtime on next3_iget().
-			 */
-			raw_inode->i_next_snapshot = cpu_to_le32(ei->i_dtime);
-			raw_inode->i_dtime = 0;
-		}
 	}
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE

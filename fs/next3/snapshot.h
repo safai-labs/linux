@@ -202,11 +202,11 @@ extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 
 /* namei.c */
 extern int next3_inode_list_add(handle_t *handle, struct inode *inode,
-				struct list_head *s_list, __le32 *s_last,
-				const char *name);
+				__le32 *i_next, __le32 *s_last,
+				struct list_head *s_list, const char *name);
 extern int next3_inode_list_del(handle_t *handle, struct inode *inode,
-				struct list_head *s_list, __le32 *s_last,
-				const char *name);
+				__le32 *i_next, __le32 *s_last,
+				struct list_head *s_list, const char *name);
 
 /* inode.c */
 extern next3_fsblk_t next3_get_inode_block(struct super_block *sb,

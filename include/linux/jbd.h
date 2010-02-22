@@ -1,4 +1,3 @@
-//#pragma ezk
 /*
  * linux/include/linux/jbd.h
  *

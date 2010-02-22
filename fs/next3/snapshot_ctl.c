@@ -779,8 +779,6 @@ next_snapshot:
 	}
 #endif
 
-	/* sleep 1 tunable delay unit */
-	snapshot_test_delay(SNAPTEST_TAKE);
 	snapshot_debug(1, "snapshot (%u) created\n", inode->i_generation);
 	err = 0;
 out_handle:
@@ -955,6 +953,15 @@ int next3_snapshot_take(struct inode *inode)
 	sb->s_op->freeze_fs(sb);
 	lock_super(sb);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+	if (snapshot_enable_test[SNAPTEST_TAKE]) {
+		snapshot_debug(1, "taking snapshot (%u) ...\n",
+				inode->i_generation);
+		/* sleep 1 tunable delay unit */
+		snapshot_test_delay(SNAPTEST_TAKE);
+	}
+#endif
+
 	/*
 	 * copy super block to snapshot and fix it
 	 */
@@ -1110,8 +1117,6 @@ out_unlockfs:
 	if (err)
 		goto out_err;
 
-	/* sleep 1 tunable delay unit */
-	snapshot_test_delay(SNAPTEST_TAKE);
 	snapshot_debug(1, "snapshot (%u) has been taken\n",
 			inode->i_generation);
 	next3_snapshot_dump(5, inode);

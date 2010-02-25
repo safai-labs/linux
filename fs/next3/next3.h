@@ -207,23 +207,24 @@ struct next3_group_desc
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/* snapshot control flags (+/-S = take/delete, +/-n = enable/disable) */
+#define NEXT3_FL_SNAPSHOT_CTL_MASK		\
+	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
+
 /* snapshot flags modifiable by chattr */
 #define NEXT3_FL_SNAPSHOT_RW_MASK		\
-	(NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_LIST_FL| \
-	 NEXT3_SNAPFILE_ENABLED_FL|NEXT3_SNAPFILE_TAGGED_FL)
+	(NEXT3_FL_SNAPSHOT_CTL_MASK|		\
+	 NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAGGED_FL)
 
-/* persistent snapshot flags visible to lsattr */
-#define NEXT3_FL_SNAPSHOT_RO_MASK		\
-	(NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
-
-/* non-persistent snapshot flags visible to lsattr */
+/* non-persistent snapshot status flags */
 #define NEXT3_FL_SNAPSHOT_DYN_MASK		\
 	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ACTIVE_FL| \
 	 NEXT3_SNAPFILE_OPEN_FL|NEXT3_SNAPFILE_INUSE_FL)
 
-#define NEXT3_FL_SNAPSHOT_MASK 		(NEXT3_FL_SNAPSHOT_RW_MASK | \
-					 NEXT3_FL_SNAPSHOT_RO_MASK | \
-					 NEXT3_FL_SNAPSHOT_DYN_MASK)
+/* snapshot flags visible to lsattr */
+#define NEXT3_FL_SNAPSHOT_MASK			\
+	(NEXT3_FL_SNAPSHOT_RW_MASK|NEXT3_FL_SNAPSHOT_DYN_MASK| \
+	 NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
 
 /* User visible flags */
 #define NEXT3_FL_USER_VISIBLE		(NEXT3_FL_SNAPSHOT_MASK|0x0003DFFF)

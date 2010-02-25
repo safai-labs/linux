@@ -145,18 +145,10 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	int err = 0;
 
 	if (S_ISDIR(inode->i_mode)) {
-		/* only the snapfile flag may be changed for directories */
-		NEXT3_I(inode)->i_flags &= ~NEXT3_SNAPFILE_FL;
-		NEXT3_I(inode)->i_flags |= snapflag;
+		/* only the snapfile flag may be set for directories */
+		flags &= ~NEXT3_FL_SNAPSHOT_MASK;
+		flags |= snapflag;
 		goto non_snapshot;
-	}
-
-	if ((snapflag ^ oldflags) & NEXT3_SNAPFILE_FL) {
-		/* the snapfile flag may not be changed for regular files */
-		snapshot_debug(1, "changing the snapfile flag for regular "
-			       "file (ino=%lu) is not allowed\n",
-			       inode->i_ino);
-		return -EINVAL;
 	}
 
 	if (!next3_snapshot_file(inode)) {
@@ -180,9 +172,12 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
-	if (!snapflag)
+	if (!snapflag) {
 		/* test snapshot blocks are excluded on chattr -x */
 		err = next3_snapshot_exclude(handle, inode);
+		/* restore the 'snapfile' flag */
+		flags |= NEXT3_SNAPFILE_FL;
+	}
 	if (err)
 		goto out;
 #endif
@@ -208,9 +203,9 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 		goto out;
 
 non_snapshot:
-	/* set only non-snapshot flags here */
-	flags &= ~NEXT3_FL_SNAPSHOT_MASK;
-	flags |= (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_MASK);
+	/* set only non-snapshot control flags here */
+	flags &= ~NEXT3_FL_SNAPSHOT_CTL_MASK;
+	flags |= (NEXT3_I(inode)->i_flags & NEXT3_FL_SNAPSHOT_CTL_MASK);
 	NEXT3_I(inode)->i_flags = flags;
 
 out:

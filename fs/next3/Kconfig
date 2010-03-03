@@ -316,7 +316,6 @@ config NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 config NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 	bool "Next3 Snapshot Journalled - trace COW/buffer credits"
 	depends on NEXT3_FS_SNAPSHOT_JOURNAL
-	depends on SNAPSHOT_DEBUG
 	help
 	  extra debug prints to trace snapshot usage of buffer credits.
 
@@ -452,15 +451,15 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	  all snapshot files are implicitly excluded, even if you select N here.
 	  this is an experimental feature.
 
-config NEXT3_FS_SNAPSHOT_DEBUG
+config NEXT3_FS_DEBUG
 	bool "Next3 snapshot debugging support"
 	depends on NEXT3_FS_SNAPSHOT
 	select DEBUG_FS
 	default y
 	help
-	  If you select Y here, then you will be able to turn on debugging
+	  If you select Y here, then you will be able to turn on snapshot debugging
 	  with "echo N > /sys/kernel/debug/next3/snapshot-debug", where N is a
 	  number between 1 and 5, the higher the number, the more debugging
-	  output is generated.  To turn debugging off again, do
+	  output is generated.  To turn snapshot debugging off again, do
 	  "echo 0 > /sys/kernel/debug/next3/snapshot-debug".
 

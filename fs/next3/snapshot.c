@@ -179,6 +179,7 @@ next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
 #define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
 						 handle->h_cowing : 0, f, ## a)
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
 /*
  * next3_snapshot_get_inode_access() - called from next3_get_blocks_handle()
  * on snapshot file access.
@@ -196,7 +197,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	struct list_head *prev;
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	next3_fsblk_t block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = (iblock < SNAPSHOT_BLOCK_OFFSET ? -1 :
 			SNAPSHOT_BLOCK_GROUP(block));
@@ -282,6 +283,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	return 1;
 #endif
 }
+#endif
 
 /*
  * next3_snapshot_map_blocks() - helper function for
@@ -328,7 +330,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  * COW bitmap functions
  */
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 /*
  * next3_snapshot_get_read_access - get read through access to block device.
  * Sanity test to verify that the read block is allocated and not excluded.
@@ -712,7 +714,7 @@ next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
  * COW functions
  */
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_DEBUG
 static void
 __next3_snapshot_trace_cow(const char *where, handle_t *handle,
 		struct super_block *sb, struct inode *inode,
@@ -826,11 +828,13 @@ enum snapshot_cmd {
  * < 0 - error (or @block needs to be COWed)
  */
 static int
-next3_snapshot_test_and_cow(const char *where, handle_t *handle, struct inode *inode,
-			    struct buffer_head *bh, next3_fsblk_t block,
-			    int maxblocks, enum snapshot_cmd cmd)
+next3_snapshot_test_and_cow(const char *where, handle_t *handle,
+		struct inode *inode, struct buffer_head *bh,
+		next3_fsblk_t block, int maxblocks, enum snapshot_cmd cmd)
 {
-#warning this long function has three distinct modes, based on the cmd. it should be split into three helpers which can be called from here or directly from the caller.
+#warning this long function has three distinct modes, based on the cmd.
+#warning it should be split into three helpers which can be called from here
+#warning or directly from the caller.
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;

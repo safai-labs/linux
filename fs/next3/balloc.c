@@ -656,14 +656,12 @@ do_more:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 		ret = next3_snapshot_get_delete_access(handle, inode,
 						       block + i, count - i);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 		if (ret < 0) {
 			next3_journal_abort_handle(where, __func__, NULL,
 						   handle, ret);
 			err = ret;
 			break;
 		}
-#endif
 		if (ret > 0) {
 			/* 'ret' blocks were moved to snapshot - skip them */
 			group_skipped += ret;

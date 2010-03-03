@@ -162,7 +162,7 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 		goto non_snapshot;
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	if ((oldflags ^ flags) & NEXT3_NODUMP_FL) {
 		/* print snapshot inode map on chattr -d */
 		next3_snapshot_dump(1, inode);
@@ -948,9 +948,9 @@ int next3_snapshot_take(struct inode *inode)
 	sb->s_op->freeze_fs(sb);
 	lock_super(sb);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	if (snapshot_enable_test[SNAPTEST_TAKE]) {
-		snapshot_debug(1, "taking snapshot (%u) ...\n",
+		snapshot_debug(2, "taking snapshot (%u) ...\n",
 				inode->i_generation);
 		/* sleep 1 tunable delay unit */
 		snapshot_test_delay(SNAPTEST_TAKE);
@@ -1313,7 +1313,6 @@ static int next3_snapshot_delete(struct inode *inode)
 			inode->i_generation);
 	return 0;
 }
-#endif
 
 /*
  * next3_snapshot_remove() removes a snapshot @inode from the list
@@ -1581,7 +1580,6 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	if (err)
 		goto out_err;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	/* iterate on (@start < snapshot < @end) */
 	list_for_each_prev(l, &NEXT3_I(start)->i_orphan) {
 		struct next3_inode_info *ei;
@@ -1605,7 +1603,6 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				break;
 		}
 	}
-#endif
 
 	err = 0;
 out_err:
@@ -1769,7 +1766,7 @@ static void next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 #endif
 	}
 }
-
+#endif
 
 /*
  * Snapshot constructor/destructor
@@ -1969,9 +1966,11 @@ update_snapshot:
 
 	deleted = ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) &&
 			!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 	if (cleanup)
 		next3_snapshot_cleanup(inode, used_by, deleted,
 				&need_shrink, &need_merge);
+#endif
 	if (!deleted) {
 		if (!found_active)
 			/* newer snapshot are potentialy used by

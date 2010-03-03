@@ -2496,7 +2496,7 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 				block_group, bh_result);
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	snapshot_debug(3, "started tracked read: block = [%lld/%lu]\n",
 			SNAPSHOT_BLOCK_GROUP_OFFSET(
 				bh_result->b_blocknr),

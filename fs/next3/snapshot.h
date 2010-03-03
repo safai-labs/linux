@@ -98,14 +98,14 @@
 /*
  * Block access functions
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
 extern int next3_snapshot_get_inode_access(handle_t *handle,
 					   struct inode *inode,
 					   next3_fsblk_t iblock,
 					   int count, int cmd,
 					   struct inode **prev_snapshot);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_DEBUG
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 extern int next3_snapshot_get_read_access(struct super_block *sb,
 					  struct buffer_head *bh);
 #endif

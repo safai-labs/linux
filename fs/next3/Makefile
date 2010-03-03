@@ -12,4 +12,4 @@ next3-$(CONFIG_NEXT3_FS_POSIX_ACL) += acl.o
 next3-$(CONFIG_NEXT3_FS_SECURITY)	 += xattr_security.o
 next3-$(CONFIG_NEXT3_FS_SNAPSHOT)	 += snapshot.o
 next3-$(CONFIG_NEXT3_FS_SNAPSHOT)	 += snapshot_ctl.o
-next3-$(CONFIG_NEXT3_FS_SNAPSHOT_DEBUG)	 += snapshot_debug.o
+next3-$(CONFIG_NEXT3_FS_DEBUG)	 += snapshot_debug.o

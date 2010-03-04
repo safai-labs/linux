@@ -207,14 +207,14 @@ struct next3_group_desc
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-/* snapshot control flags (+/-S = take/delete, +/-n = enable/disable) */
-#define NEXT3_FL_SNAPSHOT_CTL_MASK		\
-	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
+/* snapshot flags reserved for user */
+#define NEXT3_FL_SNAPSHOT_USER_MASK		\
+	 NEXT3_SNAPFILE_TAGGED_FL
 
 /* snapshot flags modifiable by chattr */
 #define NEXT3_FL_SNAPSHOT_RW_MASK		\
-	(NEXT3_FL_SNAPSHOT_CTL_MASK|		\
-	 NEXT3_SNAPFILE_FL|NEXT3_SNAPFILE_TAGGED_FL)
+	(NEXT3_FL_SNAPSHOT_USER_MASK|NEXT3_SNAPFILE_FL| \
+	 NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
 
 /* non-persistent snapshot status flags */
 #define NEXT3_FL_SNAPSHOT_DYN_MASK		\

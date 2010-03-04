@@ -1310,6 +1310,7 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	struct inode *prev_snapshot;
 
+
 retry:
 	err = -EIO;
 	blocks_to_boundary = 0;
@@ -1903,6 +1904,16 @@ static int do_clear_buffer_mapped(handle_t *handle,
 }
 #endif
 
+/*
+ * Truncate blocks that were not used by write. We have to truncate the
+ * pagecache as well so that corresponding buffers get properly unmapped.
+ */
+static void next3_truncate_failed_write(struct inode *inode)
+{
+	truncate_inode_pages(inode->i_mapping, inode->i_size);
+	next3_truncate(inode);
+}
+
 static int next3_write_begin(struct file *file, struct address_space *mapping,
 				loff_t pos, unsigned len, unsigned flags,
 				struct page **pagep, void **fsdata)
@@ -1981,7 +1992,7 @@ write_begin_failed:
 		unlock_page(page);
 		page_cache_release(page);
 		if (pos + len > inode->i_size)
-			next3_truncate(inode);
+			next3_truncate_failed_write(inode);
 	}
 	if (ret == -ENOSPC && next3_should_retry_alloc(inode->i_sb, &retries))
 		goto retry;
@@ -2076,7 +2087,7 @@ static int next3_ordered_write_end(struct file *file,
 	page_cache_release(page);
 
 	if (pos + len > inode->i_size)
-		next3_truncate(inode);
+		next3_truncate_failed_write(inode);
 	return ret ? ret : copied;
 }
 
@@ -2102,7 +2113,7 @@ static int next3_writeback_write_end(struct file *file,
 	page_cache_release(page);
 
 	if (pos + len > inode->i_size)
-		next3_truncate(inode);
+		next3_truncate_failed_write(inode);
 	return ret ? ret : copied;
 }
 
@@ -2155,7 +2166,7 @@ static int next3_journalled_write_end(struct file *file,
 	page_cache_release(page);
 
 	if (pos + len > inode->i_size)
-		next3_truncate(inode);
+		next3_truncate_failed_write(inode);
 	return ret ? ret : copied;
 }
 

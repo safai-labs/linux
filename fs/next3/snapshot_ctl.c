@@ -624,7 +624,7 @@ static int next3_snapshot_create(struct inode *inode)
 	 * Finally, if snapshot_create() or snapshot_take() has failed,
 	 * snapshot_update() will remove it from the in-memory list.
 	 */
-	err = next3_inode_list_add(handle, inode, &NEXT_INODE(inode),
+	err = next3_inode_list_add(handle, inode, &NEXT_SNAPSHOT(inode),
 			&NEXT3_SB(inode->i_sb)->s_es->s_last_snapshot,
 			list, "snapshot");
 	/* add snapshot list reference */
@@ -1377,7 +1377,7 @@ static int next3_snapshot_remove(struct inode *inode)
 	ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-	err = next3_inode_list_del(handle, inode, &NEXT_INODE(inode),
+	err = next3_inode_list_del(handle, inode, &NEXT_SNAPSHOT(inode),
 			&sbi->s_es->s_last_snapshot,
 			&NEXT3_SB(inode->i_sb)->s_snapshot_list,
 			"snapshot");

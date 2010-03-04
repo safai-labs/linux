@@ -87,10 +87,21 @@ config NEXT3_FS_SECURITY
 	  If you are not using a security module that requires using
 	  extended attributes for file security labels, say N.
 
+config NEXT3_FS_DEBUG
+	bool "Next3 debugging support"
+	depends on NEXT3_FS
+	select DEBUG_FS
+	default y
+	help
+	  If you select Y here, then you will be able to turn on snapshot debugging
+	  with "echo N > /sys/kernel/debug/next3/snapshot-debug", where N is a
+	  number between 1 and 5, the higher the number, the more debugging
+	  output is generated.  To turn snapshot debugging off again, do
+	  "echo 0 > /sys/kernel/debug/next3/snapshot-debug".
+
 config NEXT3_FS_SNAPSHOT
 	bool "Next3 Snapshot"
 	depends on NEXT3_FS
-	select SNAPSHOT
 	select NEXT3_FS_SNAPSHOT_HOOKS
 	select NEXT3_FS_SNAPSHOT_FILE
 	select NEXT3_FS_SNAPSHOT_BALLOC
@@ -450,16 +461,4 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	  use 'chattr +d' to set the 'excluded' attribute to a file or directory.
 	  all snapshot files are implicitly excluded, even if you select N here.
 	  this is an experimental feature.
-
-config NEXT3_FS_DEBUG
-	bool "Next3 snapshot debugging support"
-	depends on NEXT3_FS_SNAPSHOT
-	select DEBUG_FS
-	default y
-	help
-	  If you select Y here, then you will be able to turn on snapshot debugging
-	  with "echo N > /sys/kernel/debug/next3/snapshot-debug", where N is a
-	  number between 1 and 5, the higher the number, the more debugging
-	  output is generated.  To turn snapshot debugging off again, do
-	  "echo 0 > /sys/kernel/debug/next3/snapshot-debug".
 

@@ -1936,6 +1936,10 @@ static int empty_dir (struct inode * inode)
  * inodes and truncating linked inodes in next3_orphan_cleanup().
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+
+#define NEXT_INODE_OFFSET (((char *)inode)-((char *)i_next))
+#define NEXT_INODE(p)	  ((__le32 *)(((char *)p)-NEXT_INODE_OFFSET))
+
 int next3_orphan_add(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
@@ -1951,12 +1955,10 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 int next3_inode_list_add(handle_t *handle, struct inode *inode,
 		__le32 *i_next, __le32 *s_last,
 		struct list_head *s_list, const char *name)
-{
 #else
 int next3_orphan_add(handle_t *handle, struct inode *inode)
-{
-	const char *name = "orphan";
 #endif
+{
 	struct super_block *sb = inode->i_sb;
 	struct next3_iloc iloc;
 	int err = 0, rc;
@@ -2020,10 +2022,16 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 		list_add(&NEXT3_I(inode)->i_orphan, &NEXT3_SB(sb)->s_orphan);
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 	snapshot_debug(4, "last_%s will point to inode %lu\n",
 			name, inode->i_ino);
 	snapshot_debug(4, "%s inode %lu will point to inode %d\n",
 			name, inode->i_ino, *i_next);
+#else
+	jbd_debug(4, "superblock will point to %lu\n", inode->i_ino);
+	jbd_debug(4, "orphan inode %lu will point to %d\n",
+			inode->i_ino, NEXT_ORPHAN(inode));
+#endif
 
 out_unlock:
 	unlock_super(sb);
@@ -2051,12 +2059,10 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 int next3_inode_list_del(handle_t *handle, struct inode *inode,
 		__le32 *i_next, __le32 *s_last,
 		struct list_head *s_list, const char *name)
-{
 #else
 int next3_orphan_del(handle_t *handle, struct inode *inode)
-{
-	const char *name = "orphan";
 #endif
+{
 	struct list_head *prev;
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	struct next3_sb_info *sbi;
@@ -2066,18 +2072,28 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 
 	lock_super(inode->i_sb);
 	if (list_empty(&ei->i_orphan)) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 		snapshot_debug(4, "next3_orphan_del() called with inode %lu "
 			       "not in %s list\n", inode->i_ino, name);
+#endif
 		unlock_super(inode->i_sb);
 		return 0;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 	ino_next = *i_next;
+#else
+	ino_next = NEXT_ORPHAN(inode);
+#endif
 	prev = ei->i_orphan.prev;
 	sbi = NEXT3_SB(inode->i_sb);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 	snapshot_debug(4, "remove inode %lu from %s list\n", inode->i_ino,
 		       name);
+#else
+	jbd_debug(4, "remove inode %lu from orphan list\n", inode->i_ino);
+#endif
 
 	list_del_init(&ei->i_orphan);
 
@@ -2094,11 +2110,12 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 	if (prev == s_list) {
-#else
-	if (prev == &sbi->s_orphan) {
-#endif
 		snapshot_debug(4, "last_%s will point to inode %lu\n", name,
 				ino_next);
+#else
+	if (prev == &sbi->s_orphan) {
+		jbd_debug(4, "superblock will point to %lu\n", ino_next);
+#endif
 		BUFFER_TRACE(sbi->s_sbh, "get_write_access");
 		err = next3_journal_get_write_access(handle, sbi->s_sbh);
 		if (err)
@@ -2114,16 +2131,18 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		struct inode *i_prev =
 			&list_entry(prev, struct next3_inode_info, i_orphan)->vfs_inode;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 		snapshot_debug(4, "%s inode %lu will point to inode %lu\n",
 			  name, i_prev->i_ino, ino_next);
+#else
+		jbd_debug(4, "orphan inode %lu will point to %lu\n",
+			  i_prev->i_ino, ino_next);
+#endif
 		err = next3_reserve_inode_write(handle, i_prev, &iloc2);
 		if (err)
 			goto out_brelse;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
-		if (i_next == &NEXT_ORPHAN(inode))
-			NEXT_ORPHAN(i_prev) = ino_next;
-		else
-			NEXT_INODE(i_prev) = ino_next;
+		NEXT_INODE(i_prev) = ino_next;
 #else
 		NEXT_ORPHAN(i_prev) = ino_next;
 #endif
@@ -2131,7 +2150,11 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	}
 	if (err)
 		goto out_brelse;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 	*i_next = 0;
+#else
+	NEXT_ORPHAN(inode) = 0;
+#endif
 	err = next3_mark_iloc_dirty(handle, inode, &iloc);
 
 out_err:

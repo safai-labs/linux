@@ -201,12 +201,14 @@ extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 #endif
 
 /* namei.c */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
 extern int next3_inode_list_add(handle_t *handle, struct inode *inode,
 				__le32 *i_next, __le32 *s_last,
 				struct list_head *s_list, const char *name);
 extern int next3_inode_list_del(handle_t *handle, struct inode *inode,
 				__le32 *i_next, __le32 *s_last,
 				struct list_head *s_list, const char *name);
+#endif
 
 /* inode.c */
 extern next3_fsblk_t next3_get_inode_block(struct super_block *sb,
@@ -313,6 +315,7 @@ static inline int next3_snapshot_should_move_data(struct inode *inode)
 }
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /*
  * tests if the file system has an active snapshot and returns its inode.
  * active snapshot is only changed under journal_lock_updates(),
@@ -332,6 +335,7 @@ static inline int next3_snapshot_is_active(struct inode *inode)
 {
 	return (inode == NEXT3_SB(inode->i_sb)->s_active_snapshot);
 }
+#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 /*

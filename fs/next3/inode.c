@@ -3591,13 +3591,8 @@ out_notrans:
 		next3_orphan_del(NULL, inode);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 next3_fsblk_t next3_get_inode_block(struct super_block *sb,
 		unsigned long ino, struct next3_iloc *iloc)
-#else
-static next3_fsblk_t next3_get_inode_block(struct super_block *sb,
-		unsigned long ino, struct next3_iloc *iloc)
-#endif
 {
 	unsigned long block_group;
 	unsigned long offset;

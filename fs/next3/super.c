@@ -2138,7 +2138,7 @@ static journal_t *next3_get_journal(struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if ((journal_inode->i_size >> NEXT3_BLOCK_SIZE_BITS(sb)) <
 			NEXT3_MIN_JOURNAL_BLOCKS) {
-		printk(KERN_ERR "NEXT3-fs: journal is too small (%Ld < %u).\n",
+		printk(KERN_ERR "NEXT3-fs: journal is too small (%lld < %u).\n",
 			journal_inode->i_size >> NEXT3_BLOCK_SIZE_BITS(sb),
 			NEXT3_MIN_JOURNAL_BLOCKS);
 		iput(journal_inode);

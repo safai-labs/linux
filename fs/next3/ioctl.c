@@ -106,7 +106,7 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 			/*
 			 * snapshot_mutex should be held throughout the trio
-			 * snapshot_{set_flags,take,update}().  It must be taken 
+			 * snapshot_{set_flags,take,update}().  It must be taken
 			 * before starting the transaction, otherwise
 			 * journal_lock_updates() inside snapshot_take()
 			 * can deadlock:

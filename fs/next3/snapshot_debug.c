@@ -103,7 +103,7 @@ void exit_next3_snapshot(void)
 }
 
 /* snapshot dump state */
-struct next3_dump_info { 
+struct next3_dump_info {
 	struct inode *di_inode; /* snapshot inode */
 	int nmeta;	/* no. of meta blocks */
 	int nind;	/* no. of ind blocks */
@@ -138,7 +138,7 @@ static struct buffer_head *next3_snapshot_read_array(int n, int l,
 
 	bh = sb_bread(di->di_inode->i_sb, nr);
 	if (!bh)
-		snapshot_debug_l(n, l+1, "I/O error: failed to read block!!!\n");
+		snapshot_debug_l(n, l+1, "I/O error: failed to read block!\n");
 	return bh;
 }
 
@@ -197,7 +197,7 @@ static void next3_snapshot_dump_ind(int n, int l,
 			k++;
 			continue;
 		}
-		
+
 		if (k == 0) {
 			/* (blk-1) is a group of 1 */
 			if (prev_key == blk - 1) {
@@ -272,7 +272,8 @@ static void next3_snapshot_dump_dind(int n, int l,
 	u32 key;
 	int i;
 
-	bh = next3_snapshot_read_array(n, l, di, nr, tind ? "tind" : "dind", idx);
+	bh = next3_snapshot_read_array(n, l, di, nr,
+			tind ? "tind" : "dind", idx);
 	if (!bh)
 		return;
 
@@ -375,10 +376,11 @@ void next3_snapshot_dump(int n, struct inode *inode)
 	nblocks = di.nmeta + di.nind + di.ncopied + di.nmoved;
 	snapshot_debug(n, "snapshot (%u) contains: %d (meta) + %d (indirect) "
 		       "+ %d (data) = %d blocks = %dK = %dM\n",
-		       inode->i_generation, di.nmeta, di.nind, di.ncopied + di.nmoved,
+		       inode->i_generation,
+		       di.nmeta, di.nind, di.ncopied + di.nmoved,
 		       nblocks, nblocks << (SNAPSHOT_BLOCK_SIZE_BITS - 10),
 		       nblocks >> (20 - SNAPSHOT_BLOCK_SIZE_BITS));
 	snapshot_debug(n, "snapshot (%u) maps: %d (copied) + %d (moved) = "
-		       "%d blocks\n",
-		       inode->i_generation, di.ncopied, di.nmoved, di.ncopied + di.nmoved);
+		       "%d blocks\n", inode->i_generation,
+		       di.ncopied, di.nmoved, di.ncopied + di.nmoved);
 }

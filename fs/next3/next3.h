@@ -233,10 +233,10 @@ struct next3_group_desc
 
 /* Flags that should be inherited by new inodes from their parent. */
 #define NEXT3_FL_INHERITED (NEXT3_SECRM_FL | NEXT3_UNRM_FL | NEXT3_COMPR_FL |\
-			   NEXT3_SYNC_FL | NEXT3_IMMUTABLE_FL | NEXT3_APPEND_FL |\
-			   NEXT3_NODUMP_FL | NEXT3_NOATIME_FL | NEXT3_COMPRBLK_FL|\
-			   NEXT3_NOCOMPR_FL | NEXT3_JOURNAL_DATA_FL |\
-			   NEXT3_NOTAIL_FL | NEXT3_DIRSYNC_FL | NEXT3_SNAPFILE_FL)
+		NEXT3_SYNC_FL | NEXT3_IMMUTABLE_FL | NEXT3_APPEND_FL |\
+		NEXT3_NODUMP_FL | NEXT3_NOATIME_FL | NEXT3_COMPRBLK_FL|\
+		NEXT3_NOCOMPR_FL | NEXT3_JOURNAL_DATA_FL |\
+		NEXT3_NOTAIL_FL | NEXT3_DIRSYNC_FL | NEXT3_SNAPFILE_FL)
 
 #else
 #define NEXT3_FL_USER_VISIBLE		0x0003DFFF /* User visible flags */
@@ -664,7 +664,7 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 
 #define NEXT_ORPHAN(inode) NEXT3_I(inode)->i_dtime
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-#define NEXT_SNAPSHOT(inode) NEXT3_I(inode)->i_next
+#define NEXT_SNAPSHOT(inode) (NEXT3_I(inode)->i_next)
 #endif
 
 /*
@@ -729,8 +729,8 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x1000 /* Next3 with snapshots */
-#define NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT	0x2000 /* Next3 snapshot image */
+#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x1000 /* Next3 has snapshots */
+#define NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT	0x2000 /* Is a snapshot image */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT	0x4000 /* Corrupted snapshot */

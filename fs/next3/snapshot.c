@@ -816,7 +816,7 @@ enum snapshot_cmd {
  * @bh:		buffer head of metadata block (NULL for data/deleted block)
  * @block:	address of block
  * @maxblocks:	max. blocks to test/COW/move
- * @cmd:	
+ * @cmd:
  *   SNAPSHOT_READ:	return no. of blocks to be COWed/moved
  *   SNAPSHOT_COPY:	copy block to snapshot if needed
  *   SNAPSHOT_MOVE:	move blocks to snapshot if needed
@@ -912,7 +912,8 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 #endif
 
 	/* get the COW bitmap and test if blocks are in use by snapshot */
-	err = next3_snapshot_test_cow_bitmap(handle, active_snapshot, block, count);
+	err = next3_snapshot_test_cow_bitmap(handle, active_snapshot,
+			block, count);
 	if (err < 0)
 		goto out;
 	if (err && clear < 0) {
@@ -945,7 +946,7 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	}
 
 	count = err;
-	/* count blocks are in use by snapshot - check if @block was already COWed */
+	/* count blocks are in use by snapshot - check if @block is mapped */
 	err = next3_snapshot_map_blocks(handle, active_snapshot, block, 1, &blk,
 					SNAPMAP_READ);
 	if (err < 0)

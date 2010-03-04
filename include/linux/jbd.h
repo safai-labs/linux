@@ -400,7 +400,7 @@ struct handle_s
 	unsigned int	h_jdata:	1;	/* force data journaling */
 	unsigned int	h_aborted:	1;	/* fatal error on handle */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	unsigned int	h_cowing:	1;	/* inside test_and_cow() */
+	unsigned int	h_cowing:1;		/* inside test_and_cow() */
 #endif
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC

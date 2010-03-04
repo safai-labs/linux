@@ -1936,10 +1936,6 @@ static int empty_dir (struct inode * inode)
  * inodes and truncating linked inodes in next3_orphan_cleanup().
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
-
-#define NEXT_INODE_OFFSET (((char *)inode)-((char *)i_next))
-#define NEXT_INODE(p)	  ((__le32 *)(((char *)p)-NEXT_INODE_OFFSET))
-
 int next3_orphan_add(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
@@ -2055,6 +2051,9 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 			&NEXT3_SB(sb)->s_es->s_last_orphan,
 			&NEXT3_SB(sb)->s_orphan, "orphan");
 }
+
+#define NEXT_INODE_OFFSET (((char *)inode)-((char *)i_next))
+#define NEXT_INODE(i_prev) (*(__le32 *)(((char *)i_prev)-NEXT_INODE_OFFSET))
 
 int next3_inode_list_del(handle_t *handle, struct inode *inode,
 		__le32 *i_next, __le32 *s_last,

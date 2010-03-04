@@ -869,8 +869,8 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 		goto out;
 
 	/* move as many whole branches as possible */
-	err = next3_move_branches(handle, src, pS->p, pD->p, depth-1-kd, max_ptrs,
-				  &moved);
+	err = next3_move_branches(handle, src, pS->p, pD->p, depth-1-kd,
+			max_ptrs, &moved);
 	if (err < 0)
 		goto out;
 	count = err;
@@ -3881,7 +3881,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * Dynamic snapshot flags are not stored on-disk, so
 		 * at this point, we only know that the this inode has the
 		 * 'snapfile' flag, but we don't know if it is on the list.
-	         * snapshot_load() loads the on-disk snapshot list to memory
+		 * snapshot_load() loads the on-disk snapshot list to memory
 		 * and snapshot_update() flags the snapshots on the list.
 		 * 'detached' snapshot files will not be accessible to user.
 		 * 'detached' snapshot files are a by-product of detaching the
@@ -3906,7 +3906,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		if (ei->i_data[NEXT3_IND_BLOCK] != 0) {
 			/* there should be no blocks on the indirect branch
 			   of exclude inode */
-			brelse (bh);
+			brelse(bh);
 			ret = -EIO;
 			goto bad_inode;
 		}
@@ -3918,7 +3918,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * 1. I like shortcuts and it helped keeping my patch small
 		 * 2. No user has access to the exclude inode
 		 * 3. The exclude inode is never truncated on a mounted next3
-		 * 4. The 'expose' is only to the in-memory inode (so fsck is happy)
+		 * 4. The 'expose' is only to the in-memory inode (fsck safe)
 		 * 5. A healthy exclude inode has blocks only on the DIND branch
 		 * XXX: is that a problem?
 		 */

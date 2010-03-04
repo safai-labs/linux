@@ -521,7 +521,7 @@ static inline int next3_snapshot_shift_blocks(struct next3_inode_info *ei,
 		ei->i_data[from+i] = 0;
 	}
 	err = 0;
-out:	
+out:
 	mutex_unlock(&ei->truncate_mutex);
 	return err;
 }
@@ -671,11 +671,11 @@ static int next3_snapshot_create(struct inode *inode)
 		goto out_handle;
 	}
 	/* place pre-allocated [d,t]ind blocks in position */
-	err = next3_snapshot_shift_blocks(ei, 
+	err = next3_snapshot_shift_blocks(ei,
 			SNAPSHOT_META_DIND, NEXT3_DIND_BLOCK, 2);
 	if (err) {
-		snapshot_debug(1, "failed to move pre-allocated [d,t]ind blocks "
-				"for snapshot (%u)\n",
+		snapshot_debug(1, "failed to move pre-allocated [d,t]ind blocks"
+				" for snapshot (%u)\n",
 				inode->i_generation);
 		goto out_handle;
 	}
@@ -825,7 +825,7 @@ static struct buffer_head *next3_snapshot_copy_block(struct inode *snapshot,
 		brelse(sbh);
 		return NULL;
 	}
-	
+
 	next3_snapshot_copy_buffer(sbh, bh, mask);
 
 	snapshot_debug(4, "copied %s (%lu) block [%lld/%lld] "
@@ -970,9 +970,11 @@ int next3_snapshot_take(struct inode *inode)
 	 */
 	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
 	es->s_journal_inum = 0;
-	es->s_feature_ro_compat &= ~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+	es->s_feature_ro_compat &=
+		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	es->s_last_snapshot = 0;
-	es->s_feature_ro_compat |= cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT);
+	es->s_feature_ro_compat |=
+		cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT);
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
@@ -1012,8 +1014,10 @@ copy_inode_blocks:
 	prev_inode_blk = iloc.bh->b_blocknr;
 	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
 		brelse(bhs[i]);
-	bhs[COPY_BLOCK_BITMAP] = sb_bread(sb, le32_to_cpu(desc->bg_block_bitmap));
-	bhs[COPY_INODE_BITMAP] = sb_bread(sb, le32_to_cpu(desc->bg_inode_bitmap));
+	bhs[COPY_BLOCK_BITMAP] = sb_bread(sb,
+			le32_to_cpu(desc->bg_block_bitmap));
+	bhs[COPY_INODE_BITMAP] = sb_bread(sb,
+			le32_to_cpu(desc->bg_inode_bitmap));
 	bhs[COPY_INODE_TABLE] = iloc.bh;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	brelse(exclude_bitmap_bh);
@@ -1335,7 +1339,7 @@ static int next3_snapshot_remove(struct inode *inode)
 			   | NEXT3_SNAPFILE_ACTIVE_FL)) {
 		snapshot_debug(4, "deferred delete of %s snapshot (%u)\n",
 				(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL) ?
-				"active" : 
+				"active" :
 				((ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL) ?
 				"enabled" : "referenced"),
 			       inode->i_generation);
@@ -1816,7 +1820,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		 * clear the last_snapshot field and allow rw mount.
 		 */
 		snapshot_debug(1, "warning: has_snapshot feature is not set and"
-			       " last snapshot found (%u) - trying to load it\n",
+			       " last snapshot found (%u). trying to load it\n",
 			       le32_to_cpu(*ino_next));
 		has_snapshot = 0;
 	}
@@ -1864,7 +1868,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		list_add_tail(&NEXT3_I(inode)->i_orphan,
 			      &NEXT3_SB(sb)->s_snapshot_list);
-		ino_next = &NEXT_INODE(inode);
+		ino_next = &NEXT_SNAPSHOT(inode);
 		/* keep snapshot list reference */
 #else
 		iput(inode);

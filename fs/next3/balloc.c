@@ -992,23 +992,12 @@ find_next_usable_block(next3_grpblk_t start, struct buffer_head *bh,
  * allocated and freed then clear the bit in the bitmap again and return
  * zero (failure).
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-
-#define sb_group_lock(sb, group) \
-	(sb), (group), sb_bgl_lock(NEXT3_SB(sb), group)
-
 static inline int
 claim_block(struct super_block *sb, int group, spinlock_t *lock,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		struct buffer_head *exclude_bitmap_bh,
-		next3_grpblk_t block, struct buffer_head *bh)
-#else
-
-#define sb_group_lock(sb, group) \
-	sb_bgl_lock(NEXT3_SB(sb), group)
-
-static inline int
-claim_block(spinlock_t *lock, next3_grpblk_t block, struct buffer_head *bh)
 #endif
+		next3_grpblk_t block, struct buffer_head *bh)
 {
 	struct journal_head *jh = bh2jh(bh);
 	int ret;
@@ -1091,6 +1080,7 @@ next3_try_to_allocate(struct super_block *sb, handle_t *handle, int group,
 			next3_grpblk_t grp_goal,
 			unsigned long *count, struct next3_reserve_window *my_rsv)
 {
+	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	next3_fsblk_t group_first_block;
 	next3_grpblk_t start, end;
 	unsigned long num = 0;
@@ -1138,7 +1128,7 @@ repeat:
 	}
 	start = grp_goal;
 
-	if (!claim_block(sb_group_lock(sb, group),
+	if (!claim_block(sb, group, sb_bgl_lock(sbi, group),
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		exclude_bitmap_bh,
 #endif
@@ -1157,7 +1147,7 @@ repeat:
 	grp_goal++;
 	while (num < *count && grp_goal < end
 		&& next3_test_allocatable(grp_goal, bitmap_bh)
-		&& claim_block(sb_group_lock(sb, group),
+		&& claim_block(sb, group, sb_bgl_lock(sbi, group),
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 				exclude_bitmap_bh,
 #endif

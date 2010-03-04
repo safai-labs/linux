@@ -249,13 +249,13 @@ static inline int next3_snapshot_file(struct inode *inode)
 	if (!S_ISREG(inode->i_mode))
 		/* a snapshots directory */
 		return 0;
-	return (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL);
+	return NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_FL;
 }
 
 /* tests if @inode is on the on-disk snapshot list */
 static inline int next3_snapshot_list(struct inode *inode)
 {
-	return (NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_LIST_FL);
+	return NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_LIST_FL;
 }
 #endif
 

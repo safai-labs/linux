@@ -94,7 +94,7 @@ int __next3_journal_dirty_metadata(const char *where,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (err)
 		return err;
-	
+
 	if (!handle->h_cowing) {
 		struct journal_head *jh = bh2jh(bh);
 		jbd_lock_bh_state(bh);

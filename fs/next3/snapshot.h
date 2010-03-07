@@ -124,7 +124,7 @@ extern int next3_snapshot_get_delete_access(handle_t *handle,
 					    struct inode *inode,
 					    next3_fsblk_t block, int count);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 extern int next3_snapshot_get_clear_access(handle_t *handle,
 					   struct inode *inode,
 					   next3_fsblk_t block, int count);
@@ -201,7 +201,7 @@ extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 #endif
 
 /* namei.c */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 extern int next3_inode_list_add(handle_t *handle, struct inode *inode,
 				__le32 *i_next, __le32 *s_last,
 				struct list_head *s_list, const char *name);
@@ -214,7 +214,7 @@ extern int next3_inode_list_del(handle_t *handle, struct inode *inode,
 extern next3_fsblk_t next3_get_inode_block(struct super_block *sb,
 					   unsigned long ino,
 					   struct next3_iloc *iloc);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 extern void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 				    struct buffer_head *parent_bh,
 				    __le32 *first, __le32 *last,
@@ -223,17 +223,17 @@ extern void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 #define next3_free_branches(handle, inode, bh, first, last, depth)	\
 	next3_free_branches_cow((handle), (inode), (bh),		\
 				(first), (last), (depth), NULL)
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_SHRINK
 extern int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,
 		struct buffer_head *cow_bh,
 		int shrink, int *pmapped);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_MERGE
 extern int next3_snapshot_merge_blocks(handle_t *handle,
 		struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks);
+#endif
 #endif
 
 /* super.c */

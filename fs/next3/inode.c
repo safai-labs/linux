@@ -518,7 +518,7 @@ static int next3_blks_to_allocate(Indirect *branch, int k, unsigned long blks,
 	return count;
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 static void next3_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
@@ -529,6 +529,7 @@ static void next3_free_data_cow(handle_t *handle, struct inode *inode,
 	next3_free_data_cow(handle, inode, bh, first, last,		\
 			    NULL, 0, NULL, NULL)
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_SHRINK
 /**
  * next3_blks_to_skip - count the number blocks that can be skipped
  * @inode: inode in question
@@ -747,7 +748,7 @@ cleanup:
 }
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MERGE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_MERGE
 /*
  * next3_move_branches - move an array of branches
  * @handle: JBD handle for this transaction
@@ -905,6 +906,7 @@ out:
 	}
 	return err < maxblocks ? err : maxblocks;
 }
+#endif
 #endif
 
 /**
@@ -1306,7 +1308,9 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	next3_fsblk_t first_block = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
 	int read_through = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	struct inode *prev_snapshot;
 
@@ -2965,7 +2969,7 @@ no_top:
  * We release `count' blocks on disk, but (last - first) may be greater
  * than `count' because there can be holes in there.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 /*
  * next3_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
@@ -2986,7 +2990,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 #endif
 {
 	__le32 *p;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	if (pblocks)
 		/* we're not actually deleting any blocks */
 		bh = NULL;
@@ -3013,7 +3017,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		}
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	if (pblocks) {
 		/* mark blocks excluded and update blocks counter */
 		next3_snapshot_get_clear_access(handle, inode, block_to_free,
@@ -3033,7 +3037,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 	 */
 	for (p = first; p < last; p++) {
 		u32 nr = le32_to_cpu(*p);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 		if (nr && bitmap && next3_test_bit(bit, bitmap))
 			/* don't free block used by older snapshot */
 			nr = 0;
@@ -3070,7 +3074,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
  * @this_bh will be %NULL if @first and @last point into the inode's direct
  * block pointers.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 /*
  * next3_free_data_cow - free a list of data blocks (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
@@ -3102,7 +3106,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 					       for current block */
 	int err;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	if (pblocks)
 		/* we're not actually deleting any blocks */
 		this_bh = NULL;
@@ -3123,7 +3127,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 
 	for (p = first; p < last; p++) {
 		nr = le32_to_cpu(*p);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_SHRINK
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 		if (nr && bitmap && next3_test_bit(bit, bitmap))
 			/* don't free block used by older snapshot */
 			nr = 0;
@@ -3140,7 +3144,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 			} else if (nr == block_to_free + count) {
 				count++;
 			} else {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 				next3_clear_blocks_cow(handle, inode, this_bh,
 					       block_to_free, count,
 					       block_to_free_p, p, bitmap,
@@ -3164,7 +3168,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 	}
 
 	if (count > 0)
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 		next3_clear_blocks_cow(handle, inode, this_bh,
 				block_to_free, count, block_to_free_p, p,
 				bitmap, bit - (p - block_to_free_p), pblocks);
@@ -3213,7 +3217,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
  *	stored as little-endian 32-bit) and updating @inode->i_blocks
  *	appropriately.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 /*
  *	next3_free_branches_cow - free or exclude an array of branches
  *	@pblocks: 	pointer to counter of branch blocks
@@ -3237,7 +3241,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 	if (is_handle_aborted(handle))
 		return;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	if (pblocks)
 		/* we're not actually deleting any blocks */
 		parent_bh = NULL;
@@ -3267,7 +3271,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 
 			/* This zaps the entire block.  Bottom up. */
 			BUFFER_TRACE(bh, "free child branches");
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			next3_free_branches_cow(handle, inode, bh,
 					(__le32 *)bh->b_data,
 					(__le32 *)bh->b_data + addr_per_block,
@@ -3298,7 +3302,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 * revoke records must be emitted *before* clearing
 			 * this block's bit in the bitmaps.
 			 */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (!pblocks)
 				next3_forget(handle, 1, inode, bh,
 					     bh->b_blocknr);
@@ -3329,7 +3333,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 				next3_journal_test_restart(handle, inode);
 			}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (pblocks) {
 				/* mark block excluded and update counter */
 				next3_snapshot_get_clear_access(handle, inode,
@@ -3365,7 +3369,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 	} else {
 		/* We have reached the bottom of the tree. */
 		BUFFER_TRACE(parent_bh, "free data blocks");
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 		next3_free_data_cow(handle, inode, parent_bh, first, last,
 				    NULL, 0, NULL, pblocks);
 #else

@@ -1935,7 +1935,7 @@ static int empty_dir (struct inode * inode)
  * At filesystem recovery time, we walk this list deleting unlinked
  * inodes and truncating linked inodes in next3_orphan_cleanup().
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 int next3_orphan_add(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
@@ -1984,7 +1984,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	if (err)
 		goto out_unlock;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	snapshot_debug(4, "add inode %lu to %s list\n",
 			inode->i_ino, name);
 
@@ -2012,13 +2012,13 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	 * This is safe: on error we're going to ignore the orphan list
 	 * anyway on the next recovery. */
 	if (!err)
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		list_add(&NEXT3_I(inode)->i_orphan, s_list);
 #else
 		list_add(&NEXT3_I(inode)->i_orphan, &NEXT3_SB(sb)->s_orphan);
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	snapshot_debug(4, "last_%s will point to inode %lu\n",
 			name, inode->i_ino);
 	snapshot_debug(4, "%s inode %lu will point to inode %d\n",
@@ -2039,7 +2039,7 @@ out_unlock:
  * next3_orphan_del() removes an unlinked or truncated inode from the list
  * of such inodes stored on disk, because it is finally being cleaned up.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 int next3_orphan_del(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
@@ -2071,7 +2071,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 
 	lock_super(inode->i_sb);
 	if (list_empty(&ei->i_orphan)) {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		snapshot_debug(4, "next3_orphan_del() called with inode %lu "
 			       "not in %s list\n", inode->i_ino, name);
 #endif
@@ -2079,7 +2079,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		return 0;
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	ino_next = *i_next;
 #else
 	ino_next = NEXT_ORPHAN(inode);
@@ -2087,7 +2087,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	prev = ei->i_orphan.prev;
 	sbi = NEXT3_SB(inode->i_sb);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	snapshot_debug(4, "remove inode %lu from %s list\n", inode->i_ino,
 		       name);
 #else
@@ -2107,7 +2107,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	if (err)
 		goto out_err;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (prev == s_list) {
 		snapshot_debug(4, "last_%s will point to inode %lu\n", name,
 				ino_next);
@@ -2119,7 +2119,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		err = next3_journal_get_write_access(handle, sbi->s_sbh);
 		if (err)
 			goto out_brelse;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		*s_last = cpu_to_le32(ino_next);
 #else
 		sbi->s_es->s_last_orphan = cpu_to_le32(ino_next);
@@ -2130,7 +2130,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		struct inode *i_prev =
 			&list_entry(prev, struct next3_inode_info, i_orphan)->vfs_inode;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		snapshot_debug(4, "%s inode %lu will point to inode %lu\n",
 			  name, i_prev->i_ino, ino_next);
 #else
@@ -2140,7 +2140,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 		err = next3_reserve_inode_write(handle, i_prev, &iloc2);
 		if (err)
 			goto out_brelse;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		NEXT_INODE(i_prev) = ino_next;
 #else
 		NEXT_ORPHAN(i_prev) = ino_next;
@@ -2149,7 +2149,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	}
 	if (err)
 		goto out_brelse;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_ORPHAN
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	*i_next = 0;
 #else
 	NEXT_ORPHAN(inode) = 0;

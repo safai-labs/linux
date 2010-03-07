@@ -69,9 +69,7 @@ next3_snapshot_complete_cow(handle_t *handle,
 	int err = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	SNAPSHOT_DEBUG_ONCE;
-#endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	/* wait for completion of tracked reads before completing COW */
 	while (bh && buffer_tracked_readers_count(bh) > 0) {
 		snapshot_debug_once(2, "waiting for tracked reads: "
@@ -832,9 +830,11 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 		struct inode *inode, struct buffer_head *bh,
 		next3_fsblk_t block, int maxblocks, enum snapshot_cmd cmd)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 #warning this long function has three distinct modes, based on the cmd.
 #warning it should be split into three helpers which can be called from here
 #warning or directly from the caller.
+#endif
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;
@@ -1092,19 +1092,19 @@ cowed:
 	next3_snapshot_mark_cowed(handle, bh);
 #endif
 
+	if (clear) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (clear < 0) {
 		/* mark COWed/moved blocks in exclude bitmap */
 		clear = next3_snapshot_exclude_blocks(handle, sb,
 						      block, count);
 		if (clear < 0)
 			err = clear;
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 		if (clear > 0)
 			handle->h_cow_cleared += clear;
 #endif
 	}
-#endif
 
 out:
 	brelse(sbh);
@@ -1302,11 +1302,11 @@ int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
 }
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_EXCLUDE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 /*
- * get_clear_access() is called from:
- * next3_snapshot_clean() and its helper functions to mark all snapshot blocks
- * excluded.
+ * get_clear_access() - mark snapshot blocks excluded
+ * Called from next3_snapshot_clean(), next3_free_branches_cow() and
+ * next3_clear_blocks_cow() under snapshot_mutex.
  *
  * Return values:
  * >= 0 - no. of blocks set in exclude bitmap

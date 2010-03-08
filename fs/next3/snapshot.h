@@ -140,6 +140,9 @@ extern int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 				    unsigned int flags);
 extern int next3_snapshot_take(struct inode *inode);
 
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
 /*
  * snapshot_map_blocks() command flags passed to get_blocks_handle() on its
  * @create argument.  All places in original code call get_blocks_handle()

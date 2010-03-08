@@ -85,8 +85,8 @@ next3_snapshot_complete_cow(handle_t *handle,
 		msleep(1);
 	}
 #endif
-	unlock_buffer(sbh);
 
+	unlock_buffer(sbh);
 	if (handle)
 		err = next3_journal_dirty_data(handle, sbh);
 	mark_buffer_dirty(sbh);
@@ -279,6 +279,8 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		*prev_snapshot = &ei->vfs_inode;
 	}
 	return 1;
+#else
+	return next3_snapshot_is_active(inode) ? 1 : 0;
 #endif
 }
 #endif
@@ -581,7 +583,9 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bh->b_blocknr),
 			SNAPSHOT_BLOCK_GROUP(cow_bh->b_blocknr));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	handle->h_cow_bitmaps++;
+#endif
 #endif
 
 out:
@@ -873,7 +877,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 		snapshot_debug_hl(4, "buffer found in COW cache - "
 				  "skip block cow!\n");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 		handle->h_cow_ok_jh++;
+#endif
 #endif
 		return 0;
 	}
@@ -940,7 +946,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	}
 	if (!err) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 		handle->h_cow_ok_clear++;
+#endif
 #endif
 		goto cowed;
 	}
@@ -954,7 +962,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	if (err > 0) {
 		sbh = sb_find_get_block(sb, blk);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 		handle->h_cow_ok_mapped++;
+#endif
 #endif
 		err = 0;
 		goto test_pending_cow;
@@ -966,7 +976,7 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 		/* don't COW - we were just checking */
 		goto out;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	/* if move or delete were requested, try to move blocks to snapshot */
 	if (cmd == SNAPSHOT_MOVE) {
 		if (inode == NULL) {
@@ -975,7 +985,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 			 * move them to snapshot
 			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 			handle->h_cow_ok_clear++;
+#endif
 #endif
 			err = 0;
 			goto cowed;
@@ -998,7 +1010,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 			clear = -1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 			handle->h_cow_moved += count;
+#endif
 #endif
 			goto cowed;
 		}
@@ -1035,7 +1049,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 		 * another COWing task must have allocated it
 		 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 		handle->h_cow_ok_mapped++;
+#endif
 #endif
 		goto test_pending_cow;
 	}
@@ -1064,7 +1080,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 			SNAPSHOT_BLOCK_GROUP_OFFSET(sbh->b_blocknr),
 			SNAPSHOT_BLOCK_GROUP(sbh->b_blocknr));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	handle->h_cow_copied++;
+#endif
 #endif
 
 test_pending_cow:
@@ -1101,8 +1119,10 @@ cowed:
 			err = clear;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 		if (clear > 0)
 			handle->h_cow_cleared += clear;
+#endif
 #endif
 	}
 
@@ -1129,7 +1149,7 @@ out:
 	next3_snapshot_test_and_cow(__func__, handle, inode,	\
 			bh, bh->b_blocknr, 1, SNAPSHOT_COPY)
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 /*
  * tests if the data block should be moved
  */
@@ -1220,7 +1240,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	err = next3_snapshot_test_cow(handle, bh);
 	if (!err)
 		return 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	/*
 	 * We shouldn't get here if get_delete_access() was called for all
 	 * deleted blocks.  However, we could definetly get here if fsck was
@@ -1251,7 +1271,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 /*
  * get_move_access() - move block to snapshot
  * @handle:	JBD handle

@@ -1639,7 +1639,7 @@ static int next3_delete_entry (handle_t *handle,
 			      struct buffer_head * bh)
 {
 	struct next3_dir_entry_2 * de, * pde;
-	int i, err;
+	int i;
 
 	i = 0;
 	pde = NULL;
@@ -1648,12 +1648,15 @@ static int next3_delete_entry (handle_t *handle,
 		if (!next3_check_dir_entry("next3_delete_entry", dir, de, bh, i))
 			return -EIO;
 		if (de == de_del)  {
-			BUFFER_TRACE(bh, "get_write_access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+			int err;
+			
+			BUFFER_TRACE(bh, "get_write_access");
 			err = next3_journal_get_write_access(handle, bh);
 			if (err)
 				return err;
 #else
+			BUFFER_TRACE(bh, "get_write_access");
 			next3_journal_get_write_access(handle, bh);
 #endif
 			if (pde)

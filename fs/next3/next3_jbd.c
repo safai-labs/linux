@@ -153,6 +153,7 @@ out:
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 void __next3_journal_trace(int n, const char *fn, const char *caller,
 		handle_t *handle, int nblocks)
 {
@@ -205,5 +206,6 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 			 handle->h_cow_ok_clear, handle->h_cow_ok_jh,
 			 handle->h_cow_bitmaps, handle->h_cow_cleared);
 }
+#endif
 #endif
 

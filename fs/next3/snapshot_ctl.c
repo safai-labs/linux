@@ -570,6 +570,11 @@ next_snapshot:
 		l = l->next;
 		goto alloc_inode_blocks;
 	}
+#else
+	if (ino == NEXT3_JOURNAL_INO) {
+		ino = inode->i_ino;
+		goto alloc_inode_blocks;
+	}
 #endif
 
 	snapshot_debug(1, "snapshot (%u) created\n", inode->i_generation);
@@ -869,6 +874,11 @@ fix_inode_copy:
 		curr_inode = &list_entry(l, struct next3_inode_info,
 				       i_orphan)->vfs_inode;
 		l = l->next;
+		goto copy_inode_blocks;
+	}
+#else
+	if (curr_inode->i_ino == NEXT3_JOURNAL_INO) {
+		curr_inode = inode;
 		goto copy_inode_blocks;
 	}
 #endif
@@ -1193,6 +1203,8 @@ static int next3_snapshot_remove(struct inode *inode)
 	if (!err)
 		err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
 	unlock_super(inode->i_sb);
+	if (err)
+		goto out_handle;
 #endif
 
 out_handle:
@@ -1906,18 +1918,22 @@ void next3_snapshot_destroy(struct super_block *sb)
  * next3_snapshot_update - iterate snapshot list and update snapshots status
  * If @cleanup is true, shrink/merge/cleanup all snapshots marked for deletion.
  * Called from next3_ioctl() under snapshot_mutex
- * Called from snapshot_load() under sb_lock
+ * Called from snapshot_load() under sb_lock with @cleanup=0
  */
 void next3_snapshot_update(struct super_block *sb, int cleanup)
 {
 	struct inode *active_snapshot;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 	struct inode *used_by = NULL; /* last non-deleted snapshot found */
-	struct list_head *prev;
+	int deleted;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	struct inode *inode;
 	struct next3_inode_info *ei;
 	int found_active = 0;
 	int found_enabled = 0;
-	int deleted;
+	struct list_head *prev;
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	int need_shrink = 0;
 	int need_merge = 0;
@@ -1927,14 +1943,15 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 	if (!active_snapshot)
 		return;
 
+	NEXT3_I(active_snapshot)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
+	NEXT3_I(active_snapshot)->i_flags |= NEXT3_SNAPFILE_LIST_FL;
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	/* iterate safe from oldest snapshot backwards */
 	prev = NEXT3_SB(sb)->s_snapshot_list.prev;
 	if (list_empty(prev))
 		return;
-#else
-	prev = &NEXT3_I(active_snapshot)->i_orphan;
-#endif
+
 update_snapshot:
 	ei = list_entry(prev, struct next3_inode_info, i_orphan);
 	inode = &ei->vfs_inode;
@@ -1974,7 +1991,12 @@ update_snapshot:
 	if (cleanup)
 		next3_snapshot_cleanup(inode, used_by, deleted,
 				&need_shrink, &need_merge);
+#else
+	if (cleanup && deleted && !used_by)
+		/* remove permanently unused deleted snapshot */
+		next3_snapshot_remove(inode);
 #endif
+
 	if (!deleted) {
 		if (!found_active)
 			/* newer snapshot are potentialy used by
@@ -1985,11 +2007,11 @@ update_snapshot:
 	}
 
 prev_snapshot:
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (prev != &NEXT3_SB(sb)->s_snapshot_list)
 		goto update_snapshot;
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 	/* if all snapshots are deleted - deactivate active snapshot */
 	deleted = NEXT3_I(active_snapshot)->i_flags & NEXT3_SNAPFILE_DELETED_FL;
 	if (cleanup && deleted && !used_by && igrab(active_snapshot)) {
@@ -2002,5 +2024,6 @@ prev_snapshot:
 		/* drop the refcount to 0 */
 		iput(active_snapshot);
 	}
+#endif
 }
 

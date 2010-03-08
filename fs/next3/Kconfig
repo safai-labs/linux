@@ -168,17 +168,6 @@ config NEXT3_FS_SNAPSHOT_FILE_PEEP
 	  is called to map the page to a disk block.  If the page is not mapped
 	  in the snapshot file a direct mapping to the block device is returned.
 
-config NEXT3_FS_SNAPSHOT_FILE_MOVE
-	bool "Next3 snapshot file - move blocks into"
-	depends on NEXT3_FS_SNAPSHOT_FILE
-	default y
-	help
-	  Imeplementation of moving blocks into a snapshot file.  The boolean
-	  argument @create to the function next3_get_blocks_handle()
-	  is extended into an integer snapshot file command argument.
-	  in addition to the old 0(=read) and 1(=create) values, the value
-	  -1(=move) maps allocated blocks to the file.
-
 config NEXT3_FS_SNAPSHOT_FILE_PERM
 	bool "Next3 snapshot file - permissions"
 	depends on NEXT3_FS_SNAPSHOT_FILE
@@ -196,6 +185,44 @@ config NEXT3_FS_SNAPSHOT_FILE_STORE
 	  During store and load of snapshot inode, some of the inode flags
 	  and fields are converted.
 
+config NEXT3_FS_SNAPSHOT_BLOCK
+	bool "Next3 snapshot block operations"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Core implementation of special snapshot file block operations.
+	  The argument @create to the function next3_get_blocks_handle()
+	  is re-interpreted as a snapshot block command argument.
+	  The old argument values 0(=read) and 1(=create) preserve the original
+	  behavior of the function.
+
+config NEXT3_FS_SNAPSHOT_BLOCK_COW
+	bool "Next3 snapshot block operation - copy blocks to snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Imeplementation of copying blocks into a snapshot file.
+	  This mechanism is used to copy-on-write metadata blocks to snapshot.
+
+config NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
+	bool "Next3 snapshot block operation - copy block bitmap to snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  The snapshot copy of the file system block bitmap is called the COW
+	  bitmap and it is used to check if a block was allocated at the time
+	  that the snapshot was taken.
+
+config NEXT3_FS_SNAPSHOT_BLOCK_MOVE
+	bool "Next3 snapshot block operation - move blocks to snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Imeplementation of moving blocks into a snapshot file.
+	  The move block command maps an allocated blocks to the snapshot file,
+	  allocating only the indirect blocks when needed.
+	  This mechanism is used to move-on-write data blocks to snapshot.
+
 config NEXT3_FS_SNAPSHOT_CTL
 	bool "Next3 snapshot control"
 	depends on NEXT3_FS_SNAPSHOT_FILE
@@ -205,39 +232,26 @@ config NEXT3_FS_SNAPSHOT_CTL
 	  Take/delete snapshot with chattr -X +/-S.
 	  Enable/disable snapshot with chattr -X +/-n.
 
-config NEXT3_FS_SNAPSHOT_BALLOC
-	bool "Next3 snapshot block allocator"
-	depends on NEXT3_FS_SNAPSHOT_FILE
-	default y
-	help
-	  Special considerations of the file system block allocator when
-	  allocating blocks for snapshots.
-
-config NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
-	bool "Next3 snapshot block allocator - reserve disk space for snapshot"
-	depends on NEXT3_FS_SNAPSHOT_BALLOC
-	default y
-	help
-	  Ensure there is enough disk space for snapshot file future use.
-	  Reserve disk space on snapshot creation time based on file system
-	  overhead size and number of directories/blocks/inodes in use.
-
-config NEXT3_FS_SNAPSHOT_BALLOC_GOAL
-	bool "Next3 snapshot block allocator - allocation goal"
-	depends on NEXT3_FS_SNAPSHOT_BALLOC
-	default n
-	help
-	  Allocate snapshot COWed blocks close to their source block.
-	  This may be good for snapshot read performance, but might cause
-	  higher defragmentation levels in data files.
-
 config NEXT3_FS_SNAPSHOT_JOURNAL
 	bool "Next3 snapshot journaled"
-	depends on NEXT3_FS_SNAPSHOT_FILE
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Next3 snapshot operations are journaled inside the same transaction
 	  with the file system operation that triggered them.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	bool "Next3 snapshot journaled - record journal error"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	default y
+	help
+	  Snapshot errors are recorded as journal errors.
+	  Next3 should be mounted with errors=remount-ro.
+	  After a snapshot error, the file system will be in read-only mode.
+	  The administrator must un-mount the file system and run fsck
+	  to prevent data corruption.
+	  Some places in Ext3 original code don't check for return value of
+	  JBD functions.  Check for snapshot/journal errors in those places.
 
 config NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	bool "Next3 snapshot journaled - increase transaction credits"
@@ -268,17 +282,6 @@ config NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 	default y
 	help
 	  Don't journal COW bitmap indirect blocks to save journal credits.
-
-config NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-	bool "Next3 snapshot journaled - record journal error"
-	depends on NEXT3_FS_SNAPSHOT_JOURNAL
-	default y
-	help
-	  Snapshot errors are recorded as journal errors.
-	  Next3 should be mounted with errors=remount-ro.
-	  After a snapshot error, the file system will be in read-only mode.
-	  The administrator must un-mount the file system and run fsck
-	  to prevent data corruption.
 
 config NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 	bool "Next3 snapshot journaled - cache last COW tid in journal_head"
@@ -324,9 +327,35 @@ config NEXT3_FS_SNAPSHOT_LIST_PEEP
 	  snapshot file, the previous snapshots on the list are checked.
 	  The first found mapping is returned.
 
+config NEXT3_FS_SNAPSHOT_BALLOC
+	bool "Next3 snapshot block allocator"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Special considerations of the file system block allocator when
+	  allocating blocks for snapshots.
+
+config NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+	bool "Next3 snapshot block allocator - reserve disk space for snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BALLOC
+	default y
+	help
+	  Ensure there is enough disk space for snapshot file future use.
+	  Reserve disk space on snapshot creation time based on file system
+	  overhead size and number of directories/blocks/inodes in use.
+
+config NEXT3_FS_SNAPSHOT_BALLOC_GOAL
+	bool "Next3 snapshot block allocator - allocation goal"
+	depends on NEXT3_FS_SNAPSHOT_BALLOC
+	default n
+	help
+	  Allocate snapshot COWed blocks close to their source block.
+	  This may be good for snapshot read performance, but might cause
+	  higher defragmentation levels in data files.
+
 config NEXT3_FS_SNAPSHOT_RACE
 	bool "Next3 snapshot race conditions"
-	depends on NEXT3_FS_SNAPSHOT_FILE
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Resolve snapshot race conditions
@@ -384,8 +413,8 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE
 	default y
 	help
 	  Mark all snapshot blocks excluded.
-	  Excluding snapshot file blocks is essential for efficient shrinking
-	  and merging of old snapshot files.
+	  Excluding snapshot file blocks is essential for efficient cleanup
+	  of deleted snapshot files.
 
 config NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	bool "Next3 snapshot exclude - the exclude inode"

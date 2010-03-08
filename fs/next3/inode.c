@@ -953,7 +953,7 @@ static int next3_alloc_blocks(handle_t *handle, struct inode *inode,
 			count--;
 		}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 		if (blks == 0 && target == 0) {
 			/* mapping data blocks */
 			*err = 0;
@@ -1002,7 +1002,7 @@ failed_out:
  *	next3_alloc_block() (normally -ENOSPC). Otherwise we set the chain
  *	as described above and return 0.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 static int next3_alloc_branch_cow(handle_t *handle, struct inode *inode,
 			next3_fsblk_t iblock, int indirect_blks,
 				  int *blks, next3_fsblk_t goal,
@@ -1021,7 +1021,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 	next3_fsblk_t new_blocks[4];
 	next3_fsblk_t current_block;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	if (SNAPMAP_ISMOVE(cmd)) {
 		/* mapping snapshot block to block device block */
 		current_block = SNAPSHOT_BLOCK(iblock);
@@ -1130,7 +1130,7 @@ failed:
 	for (i = 0; i <indirect_blks; i++)
 		next3_free_blocks(handle, inode, new_blocks[i], 1);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	if (SNAPMAP_ISMOVE(cmd) && num > 0)
 		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, num);
@@ -1157,7 +1157,7 @@ failed:
  * inode (->i_blocks, etc.). In case of success we end up with the full
  * chain to new block and return 0.
  */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 static int next3_splice_branch_cow(handle_t *handle, struct inode *inode,
 			long block, Indirect *where, int num, int blks, int cmd)
 #else
@@ -1206,7 +1206,7 @@ static int next3_splice_branch(handle_t *handle, struct inode *inode,
 	 * in i_block_alloc_info, to assist find the proper goal block for next
 	 * allocation
 	 */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	if (SNAPMAP_ISMOVE(cmd))
 		/* don't update i_block_alloc_info with moved block */
 		block_i = NULL;
@@ -1257,7 +1257,7 @@ err_out:
 #endif
 		next3_free_blocks(handle,inode,le32_to_cpu(where[i-1].key),1);
 	}
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	if (SNAPMAP_ISMOVE(cmd))
 		/* don't charge snapshot file owner if move failed */
 		vfs_dq_free_block(inode, blks);
@@ -1308,13 +1308,13 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	next3_fsblk_t first_block = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
 	int read_through = 0;
+	struct inode *prev_snapshot;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
 #endif
+
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
-	struct inode *prev_snapshot;
-
-
 retry:
 	err = -EIO;
 	blocks_to_boundary = 0;
@@ -1367,7 +1367,6 @@ retry:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 	if (!partial && create &&
 		next3_snapshot_should_move_data(inode)) {
-		BUG_ON(SNAPMAP_ISSPECIAL(create));
 		BUG_ON(read_through);
 		first_block = le32_to_cpu(chain[depth - 1].key);
 		blocks_to_boundary = 0;
@@ -1491,7 +1490,6 @@ retry:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 		if (!partial && next3_snapshot_should_move_data(inode)) {
-			BUG_ON(SNAPMAP_ISSPECIAL(create));
 			first_block = le32_to_cpu(chain[depth - 1].key);
 			blocks_to_boundary = 0;
 			/* should move 1 data block to snapshot? */
@@ -1537,7 +1535,7 @@ retry:
 	/*
 	 * Block out next3_truncate while we alter the tree
 	 */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	err = next3_alloc_branch_cow(handle, inode, iblock, indirect_blks,
 				     &count, goal, offsets + (partial - chain),
 				     partial, create);
@@ -1596,7 +1594,7 @@ retry:
 	 * may need to return -EAGAIN upwards in the worst case.  --sct
 	 */
 	if (!err)
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 		err = next3_splice_branch_cow(handle, inode, iblock, partial,
 					      indirect_blks, count, create);
 #else
@@ -1770,12 +1768,11 @@ struct buffer_head *next3_getblk(handle_t *handle, struct inode *inode,
 			J_ASSERT(create != 0);
 			J_ASSERT(handle != NULL);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
 			if (SNAPMAP_ISCOW(create)) {
 				/* COWing block or creating COW bitmap */
 				lock_buffer(bh);
 				clear_buffer_uptodate(bh);
-				set_buffer_new(bh);
 				/* flag locked buffer and return */
 				*errp = 1;
 				return bh;

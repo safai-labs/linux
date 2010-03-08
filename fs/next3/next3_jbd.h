@@ -121,6 +121,9 @@
  * Next3 is not designed for filesystems under 1G with journal size < 32M
  */
 #define NEXT3_MIN_JOURNAL_BLOCKS	8192U
+#else
+#define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
+	(handle->h_buffer_credits >= (n))
 #endif
 
 #define NEXT3_RESERVE_TRANS_BLOCKS	12U
@@ -230,6 +233,7 @@ int __next3_journal_dirty_metadata(const char *where,
 int next3_journal_dirty_data(handle_t *handle, struct buffer_head *bh);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 void __next3_journal_trace(int debug, const char *fn, const char *caller,
 		handle_t *handle, int nblocks);
 
@@ -242,6 +246,7 @@ void __next3_journal_trace(int debug, const char *fn, const char *caller,
 
 #else
 #define next3_journal_trace(n, caller, handle, nblocks)
+#endif
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
@@ -311,7 +316,7 @@ static inline int __next3_journal_extend(const char *where,
  * extra credits for COW operations.
  */
 static inline int __next3_journal_restart(const char *where,
-					  handle_t *handle, int nblocks)
+		handle_t *handle, int nblocks)
 {
 	int err = journal_restart(handle,
 				  NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
@@ -323,6 +328,19 @@ static inline int __next3_journal_restart(const char *where,
 	return err;
 }
 
+#else
+static inline int __next3_journal_extend(const char *where,
+		handle_t *handle, int nblocks)
+{
+	return journal_extend(handle, nblocks);
+}
+
+static inline int __next3_journal_restart(const char *where,
+		handle_t *handle, int nblocks)
+{
+	return journal_restart(handle, nblocks);
+}
+#endif
 
 #define next3_journal_extend(handle, nblocks) \
 	__next3_journal_extend(__func__, 	\
@@ -332,17 +350,6 @@ static inline int __next3_journal_restart(const char *where,
 	__next3_journal_restart(__func__, 	\
 			(handle), (nblocks))
 
-#else
-static inline int next3_journal_extend(handle_t *handle, int nblocks)
-{
-	return journal_extend(handle, nblocks);
-}
-
-static inline int next3_journal_restart(handle_t *handle, int nblocks)
-{
-	return journal_restart(handle, nblocks);
-}
-#endif
 
 static inline int next3_journal_blocks_per_page(struct inode *inode)
 {

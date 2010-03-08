@@ -377,6 +377,7 @@ struct handle_s
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_NEXT3_FS_DEBUG
 	/* Statistics counters: */
 	unsigned int h_cow_moved; /* blocks moved to snapshot */
 	unsigned int h_cow_copied; /* blocks copied to snapshot */
@@ -386,6 +387,7 @@ struct handle_s
 	unsigned int h_cow_ok_mapped;/* blocks already mapped in snapshot */
 	unsigned int h_cow_bitmaps; /* COW bitmaps created */
 	unsigned int h_cow_cleared; /* blocks cleared from COW bitmap */
+#endif
 #endif
 
 	/* Reference count on this handle */

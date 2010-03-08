@@ -374,7 +374,6 @@ struct handle_s
 	/* Number of buffers the user is allowed to dirty:
 	 * (counts only buffers dirtied when !h_cowing) */
 	int			h_user_credits;
-#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 #ifdef CONFIG_NEXT3_FS_DEBUG
@@ -389,6 +388,7 @@ struct handle_s
 	unsigned int h_cow_cleared; /* blocks cleared from COW bitmap */
 #endif
 #endif
+#endif
 
 	/* Reference count on this handle */
 	int			h_ref;
@@ -401,7 +401,7 @@ struct handle_s
 	unsigned int	h_sync:		1;	/* sync-on-close */
 	unsigned int	h_jdata:	1;	/* force data journaling */
 	unsigned int	h_aborted:	1;	/* fatal error on handle */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
 	unsigned int	h_cowing:1;		/* inside test_and_cow() */
 #endif
 

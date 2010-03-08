@@ -109,7 +109,7 @@ extern int next3_snapshot_get_inode_access(handle_t *handle,
 extern int next3_snapshot_get_read_access(struct super_block *sb,
 					  struct buffer_head *bh);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 extern int next3_snapshot_get_undo_access(handle_t *handle,
 					  struct buffer_head *bh);
 extern int next3_snapshot_get_write_access(handle_t *handle,
@@ -117,9 +117,13 @@ extern int next3_snapshot_get_write_access(handle_t *handle,
 					   struct buffer_head *bh);
 extern int next3_snapshot_get_create_access(handle_t *handle,
 					    struct buffer_head *bh);
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 extern int next3_snapshot_get_move_access(handle_t *handle,
 					  struct inode *inode,
 					  next3_fsblk_t block, int move);
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 extern int next3_snapshot_get_delete_access(handle_t *handle,
 					    struct inode *inode,
 					    next3_fsblk_t block, int count);
@@ -240,7 +244,7 @@ extern int next3_snapshot_merge_blocks(handle_t *handle,
 #endif
 
 /* super.c */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 struct kstatfs;
 extern int next3_statfs_sb(struct super_block *sb, struct kstatfs *buf);
 #endif

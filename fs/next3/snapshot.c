@@ -195,6 +195,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
 	struct list_head *prev;
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
 #ifdef CONFIG_NEXT3_FS_DEBUG
 	next3_fsblk_t block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = (iblock < SNAPSHOT_BLOCK_OFFSET ? -1 :
@@ -205,6 +206,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 			  "cmd=%d\n", inode->i_generation, blk, block_group,
 			  count, cmd);
 #endif
+
 	if (SNAPMAP_ISSPECIAL(cmd)) {
 		/*
 		 * test_and_cow() COWing or moving blocks to active snapshot
@@ -213,8 +215,9 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		BUG_ON(!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
 		BUG_ON(iblock < SNAPSHOT_BLOCK_OFFSET);
 		return 0;
-	} else if (SNAPMAP_ISCREATE(cmd))
+	} else if (cmd)
 		BUG_ON(handle && handle->h_cowing);
+#endif
 
 	if (!(ei->i_flags & NEXT3_SNAPFILE_LIST_FL))
 		/*
@@ -223,7 +226,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		 */
 		return 0;
 
-	if (SNAPMAP_ISWRITE(cmd)) {
+	if (cmd) {
 		/* snapshot inode write access */
 		snapshot_debug(1, "snapshot (%u) is read-only"
 				" - write access denied!\n",
@@ -1163,6 +1166,9 @@ out:
 #define next3_snapshot_mow(handle, inode, block, num)		\
 	next3_snapshot_test_and_cow(__func__, handle, inode,	\
 			NULL, block, num, SNAPSHOT_MOVE)
+#else
+#define next3_snapshot_test_mow(handle, inode, block, num) (num)
+#define next3_snapshot_mow(handle, inode, block, num) (num)
 #endif
 /*
  * tests if the block should be cowed
@@ -1176,6 +1182,7 @@ out:
  * Block access functions
  */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 /*
  * get_write_access() is called before writing to a metadata block
  * if @inode is not NULL, then this is an inode's indirect block
@@ -1240,7 +1247,6 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	err = next3_snapshot_test_cow(handle, bh);
 	if (!err)
 		return 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	/*
 	 * We shouldn't get here if get_delete_access() was called for all
 	 * deleted blocks.  However, we could definetly get here if fsck was
@@ -1249,29 +1255,12 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 	 */
 	snapshot_debug(1, "warning: new allocated block (%lld)"
 		       " needs to be COWed?!\n", bh->b_blocknr);
-#else
-	/*
-	 * Never mind why we got here, we have to try to COW the new
-	 * allocated block before it is overwritten.  If allocation is for
-	 * active snapshot itself (h_cowing), there is nothing graceful
-	 * we can do, so issue an fs error.
-	 */
-	if (handle->h_cowing)
-		return -EIO;
-	/*
-	 * Buffer comes here locked and should return locked but we must
-	 * unlock it, because it may not be up-to-date, so it may be read
-	 * from disk before it is being COWed.
-	 */
-	unlock_buffer(bh);
-	err = next3_snapshot_cow(handle, NULL, bh, "create");
-	lock_buffer(bh);
-#endif
 	return err;
 
 }
+#endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
 /*
  * get_move_access() - move block to snapshot
  * @handle:	JBD handle
@@ -1299,7 +1288,9 @@ int next3_snapshot_get_move_access(handle_t *handle, struct inode *inode,
 	else
 		return next3_snapshot_mow(handle, inode, block, 1);
 }
+#endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 /*
  * get_delete_access() - move count blocks to snapshot
  * @handle:	JBD handle

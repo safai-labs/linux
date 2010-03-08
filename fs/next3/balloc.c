@@ -1682,7 +1682,7 @@ out:
 static int next3_has_free_blocks(struct next3_sb_info *sbi)
 {
 	next3_fsblk_t free_blocks, root_blocks;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	next3_fsblk_t snapshot_r_blocks;
 	struct inode *snapshot = sbi->s_active_snapshot;
 	handle_t *handle = journal_current_handle();
@@ -1690,7 +1690,7 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 
 	free_blocks = percpu_counter_read_positive(&sbi->s_freeblocks_counter);
 	root_blocks = le32_to_cpu(sbi->s_es->s_r_blocks_count);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	if (snapshot && handle) {
 		snapshot_r_blocks =
 			le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);

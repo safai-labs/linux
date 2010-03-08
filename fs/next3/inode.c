@@ -471,7 +471,7 @@ static next3_fsblk_t next3_find_goal(struct inode *inode, long block,
 		return block_i->last_alloc_physical_block + 1;
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_GOAL
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_GOAL
 #pragma ezk ignored
 	/* snapshot file copied blocks are allocated close to their source */
 	if (next3_snapshot_file(inode))

@@ -282,6 +282,7 @@ static int __extend_or_restart_transaction(const char *where,
 #define extend_or_restart_transaction_inode(handle, inode, nblocks)	\
 	__extend_or_restart_transaction(__func__, (handle), (inode), (nblocks))
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 /*
  * helper function for snapshot_create().
  * places pre-allocated [d,t]ind blocks in position
@@ -323,6 +324,7 @@ out:
 	mutex_unlock(&ei->truncate_mutex);
 	return err;
 }
+#endif
 
 /*
  * next3_snapshot_create() initilizes a snapshot file
@@ -334,13 +336,18 @@ static int next3_snapshot_create(struct inode *inode)
 	handle_t *handle;
 	struct inode *active_snapshot = next3_snapshot_has_active(inode->i_sb);
 	struct next3_inode_info *ei = NEXT3_I(inode);
-	int i, count, err;
+	int i, err;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
+	int count;
 	struct buffer_head *bh = NULL;
 	struct next3_group_desc *desc;
 	unsigned long ino;
 	struct next3_iloc iloc;
 	next3_fsblk_t bmap_blk = 0, imap_blk = 0, inode_blk = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	next3_fsblk_t prev_inode_blk = 0;
+#endif
+#endif
 	loff_t snapshot_blocks = le32_to_cpu(NEXT3_SB(inode->i_sb)->
 					     s_es->s_blocks_count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
@@ -438,11 +445,13 @@ static int next3_snapshot_create(struct inode *inode)
 	if (err)
 		goto out_handle;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 	err = extend_or_restart_transaction_inode(handle, inode,
 				  SNAPSHOT_META_BLOCKS *
 				  NEXT3_DATA_TRANS_BLOCKS(inode->i_sb));
 	if (err)
 		goto out_handle;
+
 	/* allocate and zero out snapshot meta blocks */
 	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
 		brelse(bh);
@@ -498,9 +507,13 @@ static int next3_snapshot_create(struct inode *inode)
 		goto out_handle;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	/* start with journal inode and continue with snapshot list */
 	ino = NEXT3_JOURNAL_INO;
 alloc_inode_blocks:
+#else
+	ino = inode->i_ino;
+#endif
 	/*
 	 * pre-allocate the following blocks in the new snapshot:
 	 * - block and inode bitmap blocks of ino's block group
@@ -513,11 +526,13 @@ alloc_inode_blocks:
 
 	iloc.block_group = 0;
 	inode_blk = next3_get_inode_block(inode->i_sb, ino, &iloc);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	if (!inode_blk || inode_blk == prev_inode_blk)
 		goto next_snapshot;
 
 	/* not same inode and bitmap blocks as prev snapshot */
 	prev_inode_blk = inode_blk;
+#endif
 	bmap_blk = imap_blk = 0;
 	desc = next3_get_group_desc(inode->i_sb, iloc.block_group, NULL);
 	if (!desc)
@@ -563,6 +578,7 @@ next_snapshot:
 			err = -EIO;
 		goto out_handle;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		ino = list_entry(l, struct next3_inode_info,
@@ -575,6 +591,8 @@ next_snapshot:
 		ino = inode->i_ino;
 		goto alloc_inode_blocks;
 	}
+#endif
+#endif
 #endif
 
 	snapshot_debug(1, "snapshot (%u) created\n", inode->i_generation);
@@ -592,6 +610,7 @@ out_handle:
  */
 static handle_t dummy_handle;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 /*
  * next3_snapshot_copy_block() - copy block to new snapshot
  * @snapshot:	new snapshot to copy block to
@@ -656,6 +675,7 @@ static char *copy_inode_block_name[COPY_INODE_BLOCKS_NUM] = {
 	"inode bitmap",
 	"inode table"
 };
+#endif
 
 /*
  * next3_snapshot_take() makes a new snapshot file
@@ -671,22 +691,27 @@ int next3_snapshot_take(struct inode *inode)
 	struct list_head *list = &NEXT3_SB(inode->i_sb)->s_snapshot_list;
 	struct list_head *l = list->next;
 #endif
-	next3_fsblk_t prev_inode_blk = 0;
-	struct inode *curr_inode;
 	struct super_block *sb = inode->i_sb;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
+	struct next3_super_block *es = NULL;
 	struct buffer_head *sbh = NULL;
-	struct buffer_head *bhs[COPY_INODE_BLOCKS_NUM] = { NULL };
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
+	struct buffer_head *bhs[COPY_INODE_BLOCKS_NUM] = { NULL };
 	const char *mask = NULL;
-	struct next3_super_block *es = NULL;
+	struct inode *curr_inode;
 	struct next3_iloc iloc;
-	struct next3_inode *raw_inode, temp_inode;
 	struct next3_group_desc *desc;
-	int i, err = -EIO;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
+	next3_fsblk_t prev_inode_blk = 0;
+	struct next3_inode *raw_inode, temp_inode;
+#endif
+	int i;
+#endif
+	int err = -EIO;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	next3_fsblk_t snapshot_r_blocks;
 	struct kstatfs statfs;
 #endif
@@ -718,7 +743,7 @@ int next3_snapshot_take(struct inode *inode)
 	}
 
 	err = -EIO;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	/* update fs statistics to calculate snapshot reserved space */
 	if (next3_statfs_sb(sb, &statfs)) {
 		snapshot_debug(1, "failed to statfs before snapshot (%u) "
@@ -760,11 +785,13 @@ int next3_snapshot_take(struct inode *inode)
 	}
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 	/*
 	 * copy super block to snapshot and fix it
 	 */
 	lock_buffer(sbh);
 	memcpy(sbh->b_data, sbi->s_sbh->b_data, sb->s_blocksize);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	/*
 	 * Convert from Next3 to Ext2 super block:
 	 * Remove the has_journal flag and journal inode number.
@@ -778,6 +805,7 @@ int next3_snapshot_take(struct inode *inode)
 	es->s_last_snapshot = 0;
 	es->s_feature_ro_compat |=
 		cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT);
+#endif
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
 	mark_buffer_dirty(sbh);
@@ -795,9 +823,13 @@ int next3_snapshot_take(struct inode *inode)
 			goto out_unlockfs;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	/* start with journal inode and continue with snapshot list */
 	curr_inode = sbi->s_journal_inode;
 copy_inode_blocks:
+#else
+	curr_inode = inode;
+#endif
 	/*
 	 * copy the following blocks to the new snapshot:
 	 * - block and inode bitmap blocks of curr_inode block group
@@ -812,9 +844,11 @@ copy_inode_blocks:
 		err = err ? : -EIO;
 		goto out_unlockfs;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	if (iloc.bh->b_blocknr == prev_inode_blk)
 		goto fix_inode_copy;
 	prev_inode_blk = iloc.bh->b_blocknr;
+#endif
 	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
 		brelse(bhs[i]);
 	bhs[COPY_BLOCK_BITMAP] = sb_bread(sb,
@@ -838,6 +872,7 @@ copy_inode_blocks:
 			goto out_unlockfs;
 		mask = NULL;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 fix_inode_copy:
 	/* get snapshot copy of raw inode */
 	iloc.bh = sbh;
@@ -882,6 +917,8 @@ fix_inode_copy:
 		goto copy_inode_blocks;
 	}
 #endif
+#endif
+#endif
 
 	if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
 		NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
@@ -893,7 +930,7 @@ fix_inode_copy:
 	}
 
 	/* set as head of on-disk list */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le32(snapshot_r_blocks);
 #endif
 	sbi->s_es->s_last_snapshot_id =
@@ -917,7 +954,9 @@ fix_inode_copy:
 	next3_snapshot_reset_bitmap_cache(sb, 0);
 
 	err = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 out_unlockfs:
+#endif
 	unlock_super(sb);
 	sb->s_op->unfreeze_fs(sb);
 
@@ -933,8 +972,10 @@ out_err:
 	brelse(exclude_bitmap_bh);
 #endif
 	brelse(sbh);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
 		brelse(bhs[i]);
+#endif
 	return err;
 }
 

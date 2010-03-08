@@ -2694,7 +2694,7 @@ restore_opts:
 	return err;
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 static int next3_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	return next3_statfs_sb(dentry->d_sb, buf);
@@ -2759,7 +2759,7 @@ static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 	buf->f_bavail = buf->f_bfree - le32_to_cpu(es->s_r_blocks_count);
 	if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count))
 		buf->f_bavail = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BALLOC_RESERVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	if (sbi->s_active_snapshot) {
 		if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count) +
 				le32_to_cpu(es->s_snapshot_r_blocks_count))

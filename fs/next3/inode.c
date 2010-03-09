@@ -1178,7 +1178,7 @@ static int next3_splice_branch(handle_t *handle, struct inode *inode,
 	 */
 	if (where->bh) {
 		BUFFER_TRACE(where->bh, "get_write_access");
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 		err = next3_journal_get_write_access_inode(handle, inode,
 							   where->bh);
 #else
@@ -1372,10 +1372,9 @@ retry:
 
 	partial = next3_get_branch(inode, depth, offsets, chain, &err);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (!partial && create &&
 		next3_snapshot_should_move_data(inode)) {
-		BUG_ON(read_through);
 		first_block = le32_to_cpu(chain[depth - 1].key);
 		blocks_to_boundary = 0;
 		/* should move 1 data block to snapshot? */
@@ -1496,7 +1495,7 @@ retry:
 		}
 		partial = next3_get_branch(inode, depth, offsets, chain, &err);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 		if (!partial && next3_snapshot_should_move_data(inode)) {
 			first_block = le32_to_cpu(chain[depth - 1].key);
 			blocks_to_boundary = 0;
@@ -1576,7 +1575,7 @@ retry:
 	}
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (*partial->p) {
 		/* re-allocated block - move old block to snapshot */
 		err = next3_snapshot_get_move_access(handle, inode,
@@ -1904,7 +1903,7 @@ static int do_journal_get_write_access(handle_t *handle,
 	return next3_journal_get_write_access(handle, bh);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 static int do_clear_buffer_mapped(handle_t *handle,
 					struct buffer_head *bh)
 {
@@ -1956,7 +1955,7 @@ retry:
 		goto out;
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	/*
 	 * XXX: We can also check next3_snapshot_has_active() here and we don't
 	 * need to unmap the buffers is there is no active snapshot, but the
@@ -3009,7 +3008,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		next3_journal_test_restart(handle, inode);
 		if (bh) {
 			BUFFER_TRACE(bh, "retaking write access");
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 			next3_journal_get_write_access_inode(handle, inode, bh);
 #else
 			next3_journal_get_write_access(handle, bh);
@@ -3118,7 +3117,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 #endif
 	if (this_bh) {				/* For indirect block */
 		BUFFER_TRACE(this_bh, "get_write_access");
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 		err = next3_journal_get_write_access_inode(handle, inode,
 							   this_bh);
 #else
@@ -3356,7 +3355,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 				 * pointed to by an indirect block: journal it
 				 */
 				BUFFER_TRACE(parent_bh, "get_write_access");
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 				if (!next3_journal_get_write_access_inode(
 					    handle, inode, parent_bh)){
 #else

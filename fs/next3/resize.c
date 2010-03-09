@@ -733,12 +733,12 @@ static void update_backups(struct super_block *sb,
 		if (err)
 			break;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
 		if (next3_snapshot_has_active(sb))
 			/*
-			 * next3_snapshot_get_write_access() expects an
-			 * uptodate buffer. do it here to suppress "non
-			 * uptodate buffer" warning.
+			 * test_and_cow() expects an uptodate buffer.
+			 * Read the buffer here to suppress the
+			 * "non uptodate buffer" warning.
 			 */
 			bh = sb_bread(sb, group * bpg + blk_off);
 		else

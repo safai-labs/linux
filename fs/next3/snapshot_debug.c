@@ -102,6 +102,7 @@ void exit_next3_snapshot(void)
 	next3_remove_debugfs_entry();
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP
 /* snapshot dump state */
 struct next3_dump_info {
 	struct inode *di_inode; /* snapshot inode */
@@ -384,3 +385,4 @@ void next3_snapshot_dump(int n, struct inode *inode)
 		       "%d blocks\n", inode->i_generation,
 		       di.ncopied, di.nmoved, di.ncopied + di.nmoved);
 }
+#endif

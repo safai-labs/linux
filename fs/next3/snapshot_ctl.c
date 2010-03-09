@@ -15,6 +15,7 @@
 #include <linux/statfs.h>
 #include "snapshot.h"
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /*
  * next3_snapshot_set_active() sets the current active snapshot to @inode and
  * returns the deactivated snapshot inode.  If inode is NULL, current active
@@ -56,7 +57,9 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 
 	return old;
 }
+#endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
 /*
  * next3_snapshot_reset_bitmap_cache():
  *
@@ -80,6 +83,9 @@ static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 			desc->bg_exclude_bitmap = 0;
 	}
 }
+#else
+#define next3_snapshot_reset_bitmap_cache(sb, init)
+#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 /*
@@ -187,6 +193,7 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 		goto non_snapshot;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP
 #ifdef CONFIG_NEXT3_FS_DEBUG
 	if ((oldflags ^ flags) & NEXT3_NODUMP_FL) {
 		/* print snapshot inode map on chattr -d */
@@ -194,6 +201,7 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 		/* restore the 'No_Dump' flag */
 		flags |= NEXT3_NODUMP_FL;
 	}
+#endif
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
@@ -965,7 +973,9 @@ out_unlockfs:
 
 	snapshot_debug(1, "snapshot (%u) has been taken\n",
 			inode->i_generation);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP
 	next3_snapshot_dump(5, inode);
+#endif
 
 out_err:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
@@ -1827,6 +1837,7 @@ out:
 		next3_snapshot_reset_bitmap_cache(sb, 1)
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /*
  * next3_snapshot_load - load the on-disk snapshot list to memory
  * Start with last (active) snapshot and continue to older snapshots.
@@ -1903,7 +1914,9 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		snapshot_debug(1, "snapshot (%d) loaded\n",
 			       snapshot_id);
 		num++;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP
 		next3_snapshot_dump(5, inode);
+#endif
 
 		if (!has_snapshot) {
 			NEXT3_SET_RO_COMPAT_FEATURE(sb,
@@ -2067,4 +2080,15 @@ prev_snapshot:
 	}
 #endif
 }
+#else
+int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
+		int read_only)
+{
+	return 0;
+}
+
+void next3_snapshot_destroy(struct super_block *sb)
+{
+}
+#endif
 

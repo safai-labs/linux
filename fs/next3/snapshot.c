@@ -1217,7 +1217,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 }
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 /*
  * get_move_access() - move block to snapshot
  * @handle:	JBD handle

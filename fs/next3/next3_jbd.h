@@ -189,7 +189,7 @@ void next3_journal_abort_handle(const char *caller, const char *err_fn,
 int __next3_journal_get_undo_access(const char *where, handle_t *handle,
 				struct buffer_head *bh);
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 int __next3_journal_get_write_access_inode(const char *where, handle_t *handle,
 				struct inode *inode, struct buffer_head *bh);
 #else
@@ -211,7 +211,7 @@ int __next3_journal_dirty_metadata(const char *where,
 
 #define next3_journal_get_undo_access(handle, bh) \
 	__next3_journal_get_undo_access(__func__, (handle), (bh))
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_INODE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
 #define next3_journal_get_write_access(handle, bh) \
 	__next3_journal_get_write_access_inode(__func__, (handle), NULL, (bh))
 #define next3_journal_get_write_access_inode(handle, inode, bh) \

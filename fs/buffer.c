@@ -296,7 +296,7 @@ static void free_more_memory(void)
 	}
 }
 
-#ifdef CONFIG_BLOCK_TRACKED_READ
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 /*
  * Tracked read functions.
  * When reading through a next3 snapshot file hole to a block device block,
@@ -428,7 +428,7 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 
 	BUG_ON(!buffer_async_read(bh));
 
-#ifdef CONFIG_BLOCK_TRACKED_READ
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	if (buffer_tracked_read(bh))
 		end_buffer_tracked_read(bh);
 #endif
@@ -2336,7 +2336,7 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
 	 */
 	for (i = 0; i < nr; i++) {
 		bh = arr[i];
-#ifdef CONFIG_BLOCK_TRACKED_READ
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 		if (buffer_tracked_read(bh))
 			return submit_buffer_tracked_read(bh);
 #endif

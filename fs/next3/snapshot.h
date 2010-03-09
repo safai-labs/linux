@@ -107,7 +107,7 @@ extern int next3_snapshot_get_write_access(handle_t *handle,
 extern int next3_snapshot_get_create_access(handle_t *handle,
 					    struct buffer_head *bh);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 extern int next3_snapshot_get_move_access(handle_t *handle,
 					  struct inode *inode,
 					  next3_fsblk_t block, int move);
@@ -273,8 +273,9 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
 }
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /*
- * Next3_snapshot_excluded():
+ * next3_snapshot_excluded():
  * Checks if the file should be excluded from snapshot.
  *
  * Returns 0 for normal file.
@@ -291,7 +292,6 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 {
 	if (!inode || !S_ISREG(inode->i_mode))
 		return 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_file(inode))
 		/* ignore snapshot file */
 		return -1;
@@ -309,12 +309,15 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 #endif
 	return 0;
 }
+#endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 static inline int next3_snapshot_should_move_data(struct inode *inode)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_excluded(inode))
 		return 0;
+#endif
 	/* when data is journaled, it is already COWed as metadata */
 	if (next3_should_journal_data(inode))
 		return 0;

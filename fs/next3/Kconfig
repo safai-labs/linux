@@ -123,16 +123,6 @@ config NEXT3_FS_SNAPSHOT_HOOKS_JBD
 	  we use these journal hooks to call the snapshot API,
 	  before every meta data buffer write.
 
-config NEXT3_FS_SNAPSHOT_HOOKS_INODE
-	bool "Next3 snapshot hooks - inode argument"
-	depends on NEXT3_FS_SNAPSHOT_HOOKS
-	default y
-	help
-	  The function snapshot_get_write_access() takes an inode argument.
-	  we pass this argument in calls to next3_journal_get_write_access()
-	  of meta data buffers, which belong to an inode
-	  and leave it NULL in all other calls.
-
 config NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 	bool "Next3 snapshot hooks - delete blocks"
 	depends on NEXT3_FS_SNAPSHOT_HOOKS
@@ -142,7 +132,7 @@ config NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 	  we call the snapshot API snapshot_get_delete_access(),
 	  to optionally move the block to the snapshot file.
 
-config NEXT3_FS_SNAPSHOT_HOOKS_MOVE
+config NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	bool "Next3 snapshot hooks - move data blocks"
 	depends on NEXT3_FS_SNAPSHOT_HOOKS
 	default y
@@ -158,6 +148,8 @@ config NEXT3_FS_SNAPSHOT_FILE
 	default y
 	help
 	  Next3 snapshot implementation as a file inside the file system.
+	  Snapshot files are marked with the snapfile flag and have special
+	  read-only aops.
 
 config NEXT3_FS_SNAPSHOT_FILE_PEEP
 	bool "Next3 snapshot file - read through to block device"
@@ -269,6 +261,15 @@ config NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	  Ensure there is enough disk space for snapshot file future use.
 	  Reserve disk space on snapshot take based on file system overhead
 	  size, number of directories and number of blocks/inodes in use.
+
+config NEXT3_FS_SNAPSHOT_CTL_DUMP
+	bool "Next3 snapshot control - dump snapshot file blocks map"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	depends on NEXT3_FS_DEBUG
+	default y
+	help
+	  Use chattr -d to print the blocks map of a snapshot file.
+	  Snapshot debugging should be enabled.
 
 config NEXT3_FS_SNAPSHOT_JOURNAL
 	bool "Next3 snapshot journaled"

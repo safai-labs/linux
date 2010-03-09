@@ -71,7 +71,6 @@ extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 
 extern int init_next3_snapshot(void);
 extern void exit_next3_snapshot(void);
-extern void next3_snapshot_dump(int n, struct inode *inode);
 #else
 #define snapshot_test_delay(i)
 #define snapshot_test_delay_per_ticks(i, n)
@@ -79,9 +78,15 @@ extern void next3_snapshot_dump(int n, struct inode *inode);
 #define snapshot_debug_l(n, l, f, a...)
 #define snapshot_debug_once(n, f, a...)
 #define SNAPSHOT_DEBUG_ONCE
-#define next3_snapshot_dump(n, i)
 static inline int init_next3_snapshot(void) { return 0; }
 static inline void exit_next3_snapshot(void) { return; }
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP
+#ifdef CONFIG_NEXT3_FS_DEBUG
+extern void next3_snapshot_dump(int n, struct inode *inode);
+#else
+#define next3_snapshot_dump(n, i)
+#endif
 #endif
 
 /* debug levels */

@@ -37,7 +37,7 @@ enum bh_state_bits {
 	BH_Unwritten,	/* Buffer is allocated on disk but not written */
 	BH_Quiet,	/* Buffer Error Prinks to be quiet */
 
-#ifdef CONFIG_BLOCK_TRACKED_READ
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
 				 * to serialize write I/O to block device.
 				 * that is, don't write over this block
@@ -135,7 +135,7 @@ BUFFER_FNS(Write_EIO, write_io_error)
 BUFFER_FNS(Ordered, ordered)
 BUFFER_FNS(Eopnotsupp, eopnotsupp)
 BUFFER_FNS(Unwritten, unwritten)
-#ifdef CONFIG_BLOCK_TRACKED_READ
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 BUFFER_FNS(Tracked_Read, tracked_read)
 #endif
 
@@ -270,7 +270,7 @@ static inline void put_bh(struct buffer_head *bh)
         atomic_dec(&bh->b_count);
 }
 
-#ifdef CONFIG_BLOCK_TRACKED_READ
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 

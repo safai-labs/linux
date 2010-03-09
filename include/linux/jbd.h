@@ -401,8 +401,8 @@ struct handle_s
 	unsigned int	h_sync:		1;	/* sync-on-close */
 	unsigned int	h_jdata:	1;	/* force data journaling */
 	unsigned int	h_aborted:	1;	/* fatal error on handle */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
-	unsigned int	h_cowing:1;		/* inside test_and_cow() */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
+	unsigned int	h_cowing:1;		/* COWing block to snapshot */
 #endif
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC

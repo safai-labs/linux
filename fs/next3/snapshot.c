@@ -12,170 +12,56 @@
  * Next3 snapshots core functions.
  */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 #include <linux/quotaops.h>
+#endif
 #include "snapshot.h"
 
-/*
- * helper functions
- */
-
-/*
- * use @mask to clear exclude bitmap bits from block bitmap
- * when creating COW bitmap and mark snapshot buffer @sbh uptodate
- */
-static inline void
-__next3_snapshot_copy_bitmap(struct buffer_head *sbh,
-		char *dst, const char *src, const char *mask)
-{
-	const u32 *ps = (const u32 *)src, *pm = (const u32 *)mask;
-	u32 *pd = (u32 *)dst;
-	int i;
-
-	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
-		*pd++ = *ps++ & ~*pm++;
-
-	set_buffer_uptodate(sbh);
-}
-
-/*
- * copy buffer @bh to (locked) snapshot buffer @sbh and mark it uptodate
- */
-static inline void
-__next3_snapshot_copy_buffer(struct buffer_head *sbh,
-		struct buffer_head *bh)
-{
-	char *src;
-
-	/*
-	 * in journaled data mode, @bh can be a user page buffer
-	 * that has to be kmapped.
-	 */
-	src = kmap_atomic(bh->b_page, KM_USER0);
-	memcpy(sbh->b_data, src, SNAPSHOT_BLOCK_SIZE);
-	kunmap_atomic(src, KM_USER0);
-	set_buffer_uptodate(sbh);
-}
-
-/*
- * next3_snapshot_complete_cow()
- * Unlock a newly COWed snapshot buffer and complete the COW operation.
- * Optionally, sync the buffer to disk or add it to the current transaction
- * as dirty data.
- */
-static inline int
-next3_snapshot_complete_cow(handle_t *handle,
-		struct buffer_head *sbh, struct buffer_head *bh, int sync)
-{
-	int err = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-	SNAPSHOT_DEBUG_ONCE;
-
-	/* wait for completion of tracked reads before completing COW */
-	while (bh && buffer_tracked_readers_count(bh) > 0) {
-		snapshot_debug_once(2, "waiting for tracked reads: "
-			    "block = [%lld/%lld], "
-			    "tracked_readers_count = %d...\n",
-			    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-			    buffer_tracked_readers_count(bh));
-		/*
-		 * "This is extremely improbable, so msleep(1) is sufficient
-		 *  and there is no need for a wait queue." (dm-snap.c)
-		 */
-		msleep(1);
-	}
-#endif
-
-	unlock_buffer(sbh);
-	if (handle)
-		err = next3_journal_dirty_data(handle, sbh);
-	mark_buffer_dirty(sbh);
-	if (sync)
-		sync_dirty_buffer(sbh);
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	/* COW operetion is complete */
-	next3_snapshot_end_pending_cow(sbh);
-#endif
-	return err;
-}
-
-/*
- * next3_snapshot_copy_buffer_cow()
- * helper function for next3_snapshot_test_and_cow()
- * copy COWed buffer to new allocated (locked) snapshot buffer
- * add complete the COW operation
- */
-static inline int
-next3_snapshot_copy_buffer_cow(handle_t *handle,
-				   struct buffer_head *sbh,
-				   struct buffer_head *bh)
-{
-	__next3_snapshot_copy_buffer(sbh, bh);
-	return next3_snapshot_complete_cow(handle, sbh, bh, 0);
-}
-
-/*
- * next3_snapshot_copy_buffer()
- * helper function for next3_snapshot_take()
- * used for initializing pre-allocated snapshot blocks
- * copy buffer to snapshot buffer and sync to disk
- * 'mask' block bitmap with exclude bitmap before copying to snapshot.
- */
-void next3_snapshot_copy_buffer(struct buffer_head *sbh,
-		struct buffer_head *bh, const char *mask)
-{
-	lock_buffer(sbh);
-	if (mask)
-		__next3_snapshot_copy_bitmap(sbh,
-				sbh->b_data, bh->b_data, mask);
-	else
-		__next3_snapshot_copy_buffer(sbh, bh);
-	unlock_buffer(sbh);
-	mark_buffer_dirty(sbh);
-	sync_dirty_buffer(sbh);
-}
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-/*
- * XXX: Experimental code
- * next3_snapshot_zero_buffer()
- * helper function for next3_snapshot_test_and_cow()
- * reset snapshot data buffer to zero and
- * add to current transaction (as dirty data)
- * 'blk' is the logical snapshot block number
- * 'blocknr' is the physical block number
- */
-static int
-next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
-		next3_snapblk_t blk, next3_fsblk_t blocknr)
-{
-#pragma ezk skipped this fxn
-	int err;
-	struct buffer_head *sbh;
-	sbh = sb_getblk(inode->i_sb, blocknr);
-	if (!sbh)
-		return -EIO;
-
-	snapshot_debug(3, "zeroing snapshot block [%lld/%lld] = [%lu/%lu]\n",
-			SNAPSHOT_BLOCK_GROUP_OFFSET(blk),
-			SNAPSHOT_BLOCK_GROUP(blk),
-			SNAPSHOT_BLOCK_GROUP_OFFSET(blocknr),
-			SNAPSHOT_BLOCK_GROUP(blocknr));
-
-	lock_buffer(sbh);
-	memset(sbh->b_data, 0, SNAPSHOT_BLOCK_SIZE);
-	set_buffer_uptodate(sbh);
-	unlock_buffer(sbh);
-	err = next3_journal_dirty_data(handle, sbh);
-	mark_buffer_dirty(sbh);
-	brelse(sbh);
-	return err;
-}
-#endif
-
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
 #define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
 						 handle->h_cowing : 0, f, ## a)
+
+/*
+ * next3_snapshot_map_blocks() - helper function for
+ * next3_snapshot_test_and_cow().  Test if blocks are mapped in snapshot file.
+ * If @block is not mapped and if @cmd is non zero, try to allocate @maxblocks.
+ * Also used by next3_snapshot_create() to pre-allocate snapshot blocks.
+ *
+ * Return values:
+ * > 0 - no. of mapped blocks in snapshot file
+ * = 0 - @block is not mapped in snapshot file
+ * < 0 - error
+ */
+int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
+			      next3_snapblk_t block, unsigned long maxblocks,
+			      next3_fsblk_t *mapped, int cmd)
+{
+	struct buffer_head dummy;
+	int err;
+
+	dummy.b_state = 0;
+	dummy.b_blocknr = 0;
+	err = next3_get_blocks_handle(handle, inode, SNAPSHOT_IBLOCK(block),
+				      maxblocks, &dummy, cmd);
+	/*
+	 * next3_get_blocks_handle() returns number of blocks
+	 * mapped. 0 in case of a HOLE.
+	 */
+	if (mapped && err > 0)
+		*mapped = dummy.b_blocknr;
+
+	snapshot_debug_hl(4, "snapshot (%u) map_blocks "
+			  "[%lld/%lld] = [%lld/%lld] "
+			  "cmd=%d, maxblocks=%lu, mapped=%d\n",
+			  inode->i_generation,
+			  SNAPSHOT_BLOCK_GROUP_OFFSET(block),
+			  SNAPSHOT_BLOCK_GROUP(block),
+			  SNAPSHOT_BLOCK_GROUP_OFFSET(dummy.b_blocknr),
+			  SNAPSHOT_BLOCK_GROUP(dummy.b_blocknr),
+			  cmd, maxblocks, err);
+	return err;
+}
+#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
 /*
@@ -288,110 +174,176 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 }
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
 /*
- * next3_snapshot_map_blocks() - helper function for
- * next3_snapshot_test_and_cow().  Test if blocks are mapped in snapshot file.
- * If @block is not mapped and if @cmd is non zero, try to allocate @maxblocks.
- * Also used by next3_snapshot_create() to pre-allocate snapshot blocks.
- *
- * Return values:
- * > 0 - no. of mapped blocks in snapshot file
- * = 0 - @block is not mapped in snapshot file
- * < 0 - error
+ * COW helper functions
  */
-int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
-			      next3_snapblk_t block, unsigned long maxblocks,
-			      next3_fsblk_t *mapped, int cmd)
+
+/*
+ * copy buffer @bh to (locked) snapshot buffer @sbh and mark it uptodate
+ */
+static inline void
+__next3_snapshot_copy_buffer(struct buffer_head *sbh,
+		struct buffer_head *bh)
 {
-	struct buffer_head dummy;
-	int err;
+	char *src;
 
-	dummy.b_state = 0;
-	dummy.b_blocknr = 0;
-	err = next3_get_blocks_handle(handle, inode, SNAPSHOT_IBLOCK(block),
-				      maxblocks, &dummy, cmd);
 	/*
-	 * next3_get_blocks_handle() returns number of blocks
-	 * mapped. 0 in case of a HOLE.
+	 * in journaled data mode, @bh can be a user page buffer
+	 * that has to be kmapped.
 	 */
-	if (mapped && err > 0)
-		*mapped = dummy.b_blocknr;
+	src = kmap_atomic(bh->b_page, KM_USER0);
+	memcpy(sbh->b_data, src, SNAPSHOT_BLOCK_SIZE);
+	kunmap_atomic(src, KM_USER0);
+	set_buffer_uptodate(sbh);
+}
 
-	snapshot_debug_hl(4, "snapshot (%u) map_blocks "
-			  "[%lld/%lld] = [%lld/%lld] "
-			  "cmd=%d, maxblocks=%lu, mapped=%d\n",
-			  inode->i_generation,
-			  SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-			  SNAPSHOT_BLOCK_GROUP(block),
-			  SNAPSHOT_BLOCK_GROUP_OFFSET(dummy.b_blocknr),
-			  SNAPSHOT_BLOCK_GROUP(dummy.b_blocknr),
-			  cmd, maxblocks, err);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
+/*
+ * use @mask to clear exclude bitmap bits from block bitmap
+ * when creating COW bitmap and mark snapshot buffer @sbh uptodate
+ */
+static inline void
+__next3_snapshot_copy_bitmap(struct buffer_head *sbh,
+		char *dst, const char *src, const char *mask)
+{
+	const u32 *ps = (const u32 *)src, *pm = (const u32 *)mask;
+	u32 *pd = (u32 *)dst;
+	int i;
+
+	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
+		*pd++ = *ps++ & ~*pm++;
+
+	set_buffer_uptodate(sbh);
+}
+#endif
+
+/*
+ * next3_snapshot_complete_cow()
+ * Unlock a newly COWed snapshot buffer and complete the COW operation.
+ * Optionally, sync the buffer to disk or add it to the current transaction
+ * as dirty data.
+ */
+static inline int
+next3_snapshot_complete_cow(handle_t *handle,
+		struct buffer_head *sbh, struct buffer_head *bh, int sync)
+{
+	int err = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
+	SNAPSHOT_DEBUG_ONCE;
+
+	/* wait for completion of tracked reads before completing COW */
+	while (bh && buffer_tracked_readers_count(bh) > 0) {
+		snapshot_debug_once(2, "waiting for tracked reads: "
+			    "block = [%lld/%lld], "
+			    "tracked_readers_count = %d...\n",
+			    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
+			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
+			    buffer_tracked_readers_count(bh));
+		/*
+		 * "This is extremely improbable, so msleep(1) is sufficient
+		 *  and there is no need for a wait queue." (dm-snap.c)
+		 */
+		msleep(1);
+	}
+#endif
+
+	unlock_buffer(sbh);
+	if (handle)
+		err = next3_journal_dirty_data(handle, sbh);
+	mark_buffer_dirty(sbh);
+	if (sync)
+		sync_dirty_buffer(sbh);
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
+	/* COW operetion is complete */
+	next3_snapshot_end_pending_cow(sbh);
+#endif
 	return err;
 }
 
+/*
+ * next3_snapshot_copy_buffer_cow()
+ * helper function for next3_snapshot_test_and_cow()
+ * copy COWed buffer to new allocated (locked) snapshot buffer
+ * add complete the COW operation
+ */
+static inline int
+next3_snapshot_copy_buffer_cow(handle_t *handle,
+				   struct buffer_head *sbh,
+				   struct buffer_head *bh)
+{
+	__next3_snapshot_copy_buffer(sbh, bh);
+	return next3_snapshot_complete_cow(handle, sbh, bh, 0);
+}
+
+/*
+ * next3_snapshot_copy_buffer()
+ * helper function for next3_snapshot_take()
+ * used for initializing pre-allocated snapshot blocks
+ * copy buffer to snapshot buffer and sync to disk
+ * 'mask' block bitmap with exclude bitmap before copying to snapshot.
+ */
+void next3_snapshot_copy_buffer(struct buffer_head *sbh,
+		struct buffer_head *bh, const char *mask)
+{
+	lock_buffer(sbh);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
+	if (mask)
+		__next3_snapshot_copy_bitmap(sbh,
+				sbh->b_data, bh->b_data, mask);
+	else
+		__next3_snapshot_copy_buffer(sbh, bh);
+#else
+	__next3_snapshot_copy_buffer(sbh, bh);
+#endif
+	unlock_buffer(sbh);
+	mark_buffer_dirty(sbh);
+	sync_dirty_buffer(sbh);
+}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+/*
+ * XXX: Experimental code
+ * next3_snapshot_zero_buffer()
+ * helper function for next3_snapshot_test_and_cow()
+ * reset snapshot data buffer to zero and
+ * add to current transaction (as dirty data)
+ * 'blk' is the logical snapshot block number
+ * 'blocknr' is the physical block number
+ */
+static int
+next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
+		next3_snapblk_t blk, next3_fsblk_t blocknr)
+{
+#pragma ezk skipped this fxn
+	int err;
+	struct buffer_head *sbh;
+	sbh = sb_getblk(inode->i_sb, blocknr);
+	if (!sbh)
+		return -EIO;
+
+	snapshot_debug(3, "zeroing snapshot block [%lld/%lld] = [%lu/%lu]\n",
+			SNAPSHOT_BLOCK_GROUP_OFFSET(blk),
+			SNAPSHOT_BLOCK_GROUP(blk),
+			SNAPSHOT_BLOCK_GROUP_OFFSET(blocknr),
+			SNAPSHOT_BLOCK_GROUP(blocknr));
+
+	lock_buffer(sbh);
+	memset(sbh->b_data, 0, SNAPSHOT_BLOCK_SIZE);
+	set_buffer_uptodate(sbh);
+	unlock_buffer(sbh);
+	err = next3_journal_dirty_data(handle, sbh);
+	mark_buffer_dirty(sbh);
+	brelse(sbh);
+	return err;
+}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
 /*
  * COW bitmap functions
  */
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-/*
- * next3_snapshot_get_read_access - get read through access to block device.
- * Sanity test to verify that the read block is allocated and not excluded.
- * This test has performance penalty and is only called if SNAPTEST_READ
- * is enabled.  An attempt to read through to block device of a non allocated
- * or excluded block may indicate a corrupted filesystem, corrupted snapshot
- * or corrupted exclude bitmap.  However, it may also be a read-ahead, which
- * was not implicitly requested by the user, so be sure to disable read-ahead
- * on block device (blockdev --setra 0 <bdev>) before enabling SNAPTEST_READ.
- *
- * Return values:
- * = 0 - block is allocated and not excluded
- * < 0 - error (or block is not allocated or excluded)
- */
-int next3_snapshot_get_read_access(struct super_block *sb,
-				   struct buffer_head *bh)
-{
-	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
-	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
-	struct buffer_head *bitmap_bh;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	struct buffer_head *exclude_bitmap_bh = NULL;
-#endif
-	int err = 0;
-
-	if (PageReadahead(bh->b_page))
-		return 0;
-
-	bitmap_bh = read_block_bitmap(sb, block_group);
-	if (!bitmap_bh)
-		return -EIO;
-
-	if (!next3_test_bit(bit, bitmap_bh->b_data)) {
-		snapshot_debug(2, "warning: attempt to read through to "
-				"non-allocated block [%d/%lu] - read ahead?\n",
-				bit, block_group);
-		brelse(bitmap_bh);
-		return -EIO;
-	}
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
-	if (exclude_bitmap_bh &&
-		next3_test_bit(bit, exclude_bitmap_bh->b_data)) {
-		snapshot_debug(2, "warning: attempt to read through to "
-				"excluded block [%d/%lu] - read ahead?\n",
-				bit, block_group);
-		err = -EIO;
-	}
-#endif
-
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	brelse(exclude_bitmap_bh);
-#endif
-	brelse(bitmap_bh);
-	return err;
-}
-#endif
 
 /*
  * next3_snapshot_init_cow_bitmap() init a new allocated (locked) COW bitmap
@@ -660,6 +612,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	}
 	return inuse;
 }
+#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 /*
@@ -809,8 +762,7 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 enum snapshot_cmd {
 	SNAPSHOT_READ,
 	SNAPSHOT_COPY,
-	SNAPSHOT_MOVE,
-	SNAPSHOT_CLEAR
+	SNAPSHOT_MOVE
 };
 
 /*
@@ -825,7 +777,6 @@ enum snapshot_cmd {
  *   SNAPSHOT_READ:	return no. of blocks to be COWed/moved
  *   SNAPSHOT_COPY:	copy block to snapshot if needed
  *   SNAPSHOT_MOVE:	move blocks to snapshot if needed
- *   SNAPSHOT_CLEAR:	mark blocks in exclude bitmap
  *
  * Return values:
  * > 0 - no. of blocks that were (or needs to be) moved to snapshot
@@ -920,11 +871,16 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	}
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
 	/* get the COW bitmap and test if blocks are in use by snapshot */
 	err = next3_snapshot_test_cow_bitmap(handle, active_snapshot,
 			block, count);
 	if (err < 0)
 		goto out;
+#else
+	if (clear < 0)
+		goto cowed;
+#endif
 	if (err && clear < 0) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 		/*
@@ -1151,6 +1107,10 @@ out:
 #define next3_snapshot_cow(handle, inode, bh)			\
 	next3_snapshot_test_and_cow(__func__, handle, inode,	\
 			bh, bh->b_blocknr, 1, SNAPSHOT_COPY)
+#else
+#define next3_snapshot_test_cow(handle, bh) 0
+#define next3_snapshot_cow(handle, inode, bh) 0
+#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 /*
@@ -1170,13 +1130,6 @@ out:
 #define next3_snapshot_test_mow(handle, inode, block, num) (num)
 #define next3_snapshot_mow(handle, inode, block, num) (num)
 #endif
-/*
- * tests if the block should be cowed
- * and in case it does, tries to clear the block from the COW bitmap
- */
-#define next3_snapshot_clear(handle, inode, block, num)		\
-	next3_snapshot_test_and_cow(__func__, handle, inode,	\
-			NULL, block, num, SNAPSHOT_CLEAR)
 
 /*
  * Block access functions
@@ -1216,7 +1169,11 @@ int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
  */
 int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
 	int err = next3_snapshot_test_cow(handle, bh);
+#else
+	int err = next3_snapshot_cow(handle, NULL, bh);
+#endif
 
 	if (err) {
 		/*
@@ -1326,6 +1283,68 @@ int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
 int next3_snapshot_get_clear_access(handle_t *handle, struct inode *inode,
 				    next3_fsblk_t block, int count)
 {
-	return next3_snapshot_clear(handle, inode, block, count);
+	return next3_snapshot_exclude_blocks(handle, inode, block, count);
 }
 #endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
+/*
+ * next3_snapshot_get_read_access - get read through access to block device.
+ * Sanity test to verify that the read block is allocated and not excluded.
+ * This test has performance penalty and is only called if SNAPTEST_READ
+ * is enabled.  An attempt to read through to block device of a non allocated
+ * or excluded block may indicate a corrupted filesystem, corrupted snapshot
+ * or corrupted exclude bitmap.  However, it may also be a read-ahead, which
+ * was not implicitly requested by the user, so be sure to disable read-ahead
+ * on block device (blockdev --setra 0 <bdev>) before enabling SNAPTEST_READ.
+ *
+ * Return values:
+ * = 0 - block is allocated and not excluded
+ * < 0 - error (or block is not allocated or excluded)
+ */
+int next3_snapshot_get_read_access(struct super_block *sb,
+				   struct buffer_head *bh)
+{
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
+	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
+	struct buffer_head *bitmap_bh;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+#endif
+	int err = 0;
+
+	if (PageReadahead(bh->b_page))
+		return 0;
+
+	bitmap_bh = read_block_bitmap(sb, block_group);
+	if (!bitmap_bh)
+		return -EIO;
+
+	if (!next3_test_bit(bit, bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"non-allocated block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		brelse(bitmap_bh);
+		return -EIO;
+	}
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	if (exclude_bitmap_bh &&
+		next3_test_bit(bit, exclude_bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"excluded block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		err = -EIO;
+	}
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+#endif
+	brelse(bitmap_bh);
+	return err;
+}
+#endif
+
+

@@ -192,9 +192,10 @@ config NEXT3_FS_SNAPSHOT_BLOCK
 	help
 	  Core implementation of special snapshot file block operations.
 	  The argument @create to the function next3_get_blocks_handle()
-	  is re-interpreted as a snapshot block command argument.
-	  The old argument values 0(=read) and 1(=create) preserve the original
-	  behavior of the function.
+	  is re-interpreted as a snapshot block command argument.  The old
+	  argument values 0(=read) and 1(=create) preserve the original
+	  behavior of the function.  The bit field h_cowing in the current
+	  transaction handle is used to prevent COW recursions.
 
 config NEXT3_FS_SNAPSHOT_BLOCK_COW
 	bool "Next3 snapshot block operation - copy blocks to snapshot"

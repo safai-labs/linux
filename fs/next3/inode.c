@@ -1290,6 +1290,14 @@ err_out:
  * return = 0, if plain lookup failed.
  * return < 0, error case.
  */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
+/*
+ * snapshot_map_blocks() command flags are passed to get_blocks_handle() on its
+ * @create argument.  All places in original code call get_blocks_handle()
+ * with @create 0 or 1.  The behavior of the function remains the same for
+ * these 2 values, while higher bits are used for mapping snapshot blocks.
+ */
+#endif
 int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,
 		struct buffer_head *bh_result,
@@ -1453,7 +1461,7 @@ retry:
 	if (!create || err == -EIO)
 		goto cleanup;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
 	/*
 	 * locking order for locks validator:
 	 * inode (VFS operation) -> active snapshot (COW operation)

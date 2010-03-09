@@ -295,7 +295,6 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 	if (next3_snapshot_file(inode))
 		/* ignore snapshot file */
 		return -1;
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (next3_snapshot_exclude_inode(inode))
 		/* ignore exclude inode */

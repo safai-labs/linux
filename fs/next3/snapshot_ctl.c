@@ -12,7 +12,9 @@
  * Next3 snapshots control functions.
  */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 #include <linux/statfs.h>
+#endif
 #include "snapshot.h"
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE

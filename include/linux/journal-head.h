@@ -60,8 +60,8 @@ struct journal_head {
 	 * [jbd_lock_bh_state()]
 	 */
 	tid_t b_cow_tid;
-#endif
 
+#endif
 	/*
 	 * Copy of the buffer data frozen for writing to the log.
 	 * [jbd_lock_bh_state()]

@@ -387,9 +387,9 @@ struct handle_s
 	unsigned int h_cow_bitmaps; /* COW bitmaps created */
 	unsigned int h_cow_cleared; /* blocks cleared from COW bitmap */
 #endif
-#endif
-#endif
 
+#endif
+#endif
 	/* Reference count on this handle */
 	int			h_ref;
 

@@ -174,8 +174,8 @@ read_block_bitmap(struct super_block *sb, unsigned int block_group)
 	 */
 	return bh;
 }
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+
 /**
  * read_exclude_bitmap()
  * @sb:			super block
@@ -227,8 +227,8 @@ read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 static struct inode dummy_exclude_inode = {
 	.i_ino = NEXT3_EXCLUDE_INO
 };
-#endif
 
+#endif
 /*
  * The reservation window structure operations
  * --------------------------------------------
@@ -555,12 +555,12 @@ void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 	next3_grpblk_t group_freed;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
 	next3_grpblk_t group_skipped = 0;
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	next3_grpblk_t exclude_freed = 0;
 	int excluded_block, excluded_file = (inode &&
 			next3_snapshot_excluded(inode)) ? 1 : 0;
+#endif
 #endif
 
 	*pdquot_freed_blocks = 0;
@@ -648,8 +648,8 @@ do_more:
 			goto error_return;
 		exclude_freed = 0;
 	}
-#endif
 
+#endif
 	jbd_lock_bh_state(bitmap_bh);
 
 	for (i = 0, group_freed = 0; i < count; i++) {
@@ -1565,8 +1565,8 @@ next3_try_to_allocate_with_rsv(struct super_block *sb, handle_t *handle,
 			}
 		}
 	}
-#endif
 
+#endif
 	/*
 	 * we don't deal with reservation when
 	 * filesystem is mounted without reservation

@@ -113,8 +113,8 @@ struct next3_inode_info {
 	 * is stored in i_next and not in i_dtime
 	 */
 	__u32	i_next;
-#endif
 
+#endif
 	/*
 	 * i_disksize keeps track of what the inode size is ON DISK, not
 	 * in memory.  During truncate, i_size is set to the new size by

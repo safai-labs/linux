@@ -2031,7 +2031,6 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	jbd_debug(4, "orphan inode %lu will point to %d\n",
 			inode->i_ino, NEXT_ORPHAN(inode));
 #endif
-
 out_unlock:
 	unlock_super(sb);
 	next3_std_error(inode->i_sb, err);

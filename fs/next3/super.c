@@ -135,8 +135,8 @@ int __next3_journal_stop(const char *where, handle_t *handle)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 	next3_journal_trace(SNAP_WARN, where, handle, 0);
-#endif
 
+#endif
 	sb = handle->h_transaction->t_journal->j_private;
 	err = handle->h_err;
 	rc = journal_stop(handle);
@@ -2144,8 +2144,8 @@ static journal_t *next3_get_journal(struct super_block *sb,
 		iput(journal_inode);
 		return NULL;
 	}
-#endif
 
+#endif
 	journal = journal_init_inode(journal_inode);
 	if (!journal) {
 		printk(KERN_ERR "NEXT3-fs: Could not load journal inode\n");

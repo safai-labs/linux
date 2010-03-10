@@ -90,7 +90,6 @@ int __next3_journal_dirty_metadata(const char *where,
 	int err = journal_dirty_metadata(handle, bh);
 	if (err)
 		next3_journal_abort_handle(where, __func__, bh, handle,err);
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (err)
 		return err;
@@ -112,14 +111,15 @@ int __next3_journal_dirty_metadata(const char *where,
 		}
 		jbd_unlock_bh_state(bh);
 	}
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 	next3_journal_trace(SNAP_DEBUG, where, handle, -1);
 #endif
+#endif
 	return err;
 }
-
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
+
 int __next3_journal_release_buffer(const char *where, handle_t *handle,
 				struct buffer_head *bh)
 {
@@ -150,8 +150,8 @@ out:
 	journal_release_buffer(handle, bh);
 	return err;
 }
-#endif
 
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 #ifdef CONFIG_NEXT3_FS_DEBUG
 void __next3_journal_trace(int n, const char *fn, const char *caller,
@@ -208,4 +208,4 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 }
 #endif
 #endif
-
+#endif

@@ -232,6 +232,7 @@ int __next3_journal_dirty_metadata(const char *where,
 
 int next3_journal_dirty_data(handle_t *handle, struct buffer_head *bh);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 #ifdef CONFIG_NEXT3_FS_DEBUG
 void __next3_journal_trace(int debug, const char *fn, const char *caller,
@@ -247,9 +248,8 @@ void __next3_journal_trace(int debug, const char *fn, const char *caller,
 #else
 #define next3_journal_trace(n, caller, handle, nblocks)
 #endif
-#endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+#endif
 handle_t *__next3_journal_start(const char *where,
 		struct super_block *sb, int nblocks);
 

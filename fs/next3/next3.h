@@ -201,12 +201,12 @@ struct next3_group_desc
 #endif
 #define NEXT3_RESERVED_FL		0x80000000 /* reserved for next3 lib */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 /* exclude file from snapshot (d) */
 #define NEXT3_NOSNAP_FL			NEXT3_NODUMP_FL
-#endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#endif
 /* snapshot flags reserved for user */
 #define NEXT3_FL_SNAPSHOT_USER_MASK		\
 	 NEXT3_SNAPFILE_TAGGED_FL
@@ -716,13 +716,9 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-/* Snapshots - big journal */
-#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL	0x1000
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-/* Snapshots - exclude inode */
-#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL	0x1000 /* Has big journal */
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000 /* Has exclude inode */
 #endif
 
 #define NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
@@ -731,10 +727,10 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 #define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x1000 /* Next3 has snapshots */
 #define NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT	0x2000 /* Is a snapshot image */
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT	0x4000 /* Corrupted snapshot */
 #define NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE	0x8000 /* Bad exclude bitmap */
+#endif
 #endif
 
 #define NEXT3_FEATURE_INCOMPAT_COMPRESSION	0x0001

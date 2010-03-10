@@ -120,8 +120,8 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			 */
 			mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
 		}
-#endif
 
+#endif
 		handle = next3_journal_start(inode, 1);
 		if (IS_ERR(handle)) {
 			err = PTR_ERR(handle);

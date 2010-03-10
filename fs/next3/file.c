@@ -41,8 +41,8 @@ static int next3_file_open(struct inode *inode, struct file *filp)
 
 	return generic_file_open(inode, filp);
 }
-#endif
 
+#endif
 /*
  * Called when an inode is released. Note that this is different
  * from next3_file_open: open gets called at every open, but release

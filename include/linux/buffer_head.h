@@ -42,8 +42,8 @@ enum bh_state_bits {
 				 * to serialize write I/O to block device.
 				 * that is, don't write over this block
 				 * until I finished reading it. */
-#endif
 
+#endif
 	BH_PrivateStart,/* not a state bit, but the first bit available
 			 * for private allocation by other entities
 			 */
@@ -298,8 +298,8 @@ static inline int buffer_tracked_readers_count(struct buffer_head *_bh)
 {
 	return atomic_read(&_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
 }
-#endif
 
+#endif
 static inline void brelse(struct buffer_head *bh)
 {
 	if (bh)

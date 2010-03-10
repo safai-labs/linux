@@ -412,8 +412,8 @@ static void end_buffer_tracked_read(struct buffer_head *bh)
 	clear_buffer_mapped(bh);
 	clear_buffer_tracked_read(bh);
 }
-#endif
 
+#endif
 /*
  * I/O completion handler for block_read_full_page() - pages
  * which come unlocked at the end of I/O.
@@ -431,8 +431,8 @@ static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	if (buffer_tracked_read(bh))
 		end_buffer_tracked_read(bh);
-#endif
 
+#endif
 	page = bh->b_page;
 	if (uptodate) {
 		set_buffer_uptodate(bh);

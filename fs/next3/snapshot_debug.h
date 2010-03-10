@@ -81,6 +81,7 @@ extern void exit_next3_snapshot(void);
 static inline int init_next3_snapshot(void) { return 0; }
 static inline void exit_next3_snapshot(void) { return; }
 #endif
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP
 #ifdef CONFIG_NEXT3_FS_DEBUG
 extern void next3_snapshot_dump(int n, struct inode *inode);

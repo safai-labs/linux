@@ -51,8 +51,8 @@ static int verify_group_input(struct super_block *sb,
 		free_blocks_count--;
 		input->free_blocks_count = free_blocks_count;
 	}
-#endif
 
+#endif
 	if (test_opt(sb, DEBUG))
 		printk(KERN_DEBUG "NEXT3-fs: adding %s group %u: %u blocks "
 		       "(%d free, %u reserved)\n",
@@ -304,8 +304,8 @@ static int setup_new_group_blocks(struct super_block *sb,
 		/* clear reserved exclude bitmap block */
 		itend++;
 	}
-#endif
 
+#endif
 	/* Zero out all of the inode table blocks */
 	for (block = input->inode_table, bit = block - start;
 	     block < itend; bit++, block++) {
@@ -880,8 +880,8 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		}
 		exclude_bitmap = ((__le32 *)exclude_bh->b_data) + ind_offset;
 	}
-#endif
 
+#endif
 	if ((err = verify_group_input(sb, input)))
 		goto exit_put;
 

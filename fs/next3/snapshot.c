@@ -1283,7 +1283,8 @@ int next3_snapshot_get_delete_access(handle_t *handle, struct inode *inode,
 int next3_snapshot_get_clear_access(handle_t *handle, struct inode *inode,
 				    next3_fsblk_t block, int count)
 {
-	return next3_snapshot_exclude_blocks(handle, inode, block, count);
+	return next3_snapshot_exclude_blocks(handle, inode->i_sb,
+			block, count);
 }
 #endif
 

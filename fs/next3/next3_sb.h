@@ -12,7 +12,7 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  *
- *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
+ *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _LINUX_NEXT3_SB

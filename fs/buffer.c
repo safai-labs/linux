@@ -17,7 +17,7 @@
  *
  * async buffer flushing, 1999 Andrea Arcangeli <andrea@suse.de>
  *
- * Track async buffer read for Next3, Amir Goldstein <amir@ctera.com>, 2010
+ * Tracked buffer read for Next3, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/kernel.h>

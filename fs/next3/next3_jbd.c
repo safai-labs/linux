@@ -1,7 +1,7 @@
 /*
  * Interface between next3 and JBD
  *
- * Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include "next3_jbd.h"

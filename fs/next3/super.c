@@ -15,7 +15,7 @@
  *  Big-endian to little-endian byte-swapping/bitmaps by
  *        David S. Miller (davem@caip.rutgers.edu), 1995
  *
- *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
+ *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/module.h>

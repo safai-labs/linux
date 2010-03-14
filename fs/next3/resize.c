@@ -7,7 +7,7 @@
  *
  * This could probably be made into a module, because it is not often in use.
  *
- * Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 

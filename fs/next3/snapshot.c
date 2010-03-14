@@ -1,7 +1,7 @@
 /*
  * linux/fs/next3/snapshot.c
  *
- * Written by Amir Goldstein <amir@ctera.com>, 2008
+ * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
  * Copyright (C) 2008-2010 CTERA Networks
  *

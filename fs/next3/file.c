@@ -17,7 +17,7 @@
  *  64-bit file support on 64-bit platforms by Jakub Jelinek
  *	(jj@sunsite.ms.mff.cuni.cz)
  *
- *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
+ *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/time.h>

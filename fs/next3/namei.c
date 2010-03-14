@@ -23,7 +23,7 @@
  *  Hash Tree Directory indexing cleanup
  *	Theodore Ts'o, 2002
  *
- *  Added snapshot support, Amir Goldstein <amir@ctera.com>, 2010
+ *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/fs.h>
@@ -1650,7 +1650,7 @@ static int next3_delete_entry (handle_t *handle,
 		if (de == de_del)  {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 			int err;
-			
+
 			BUFFER_TRACE(bh, "get_write_access");
 			err = next3_journal_get_write_access(handle, bh);
 			if (err)

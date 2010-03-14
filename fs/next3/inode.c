@@ -471,7 +471,7 @@ static next3_fsblk_t next3_find_goal(struct inode *inode, long block,
 		return block_i->last_alloc_physical_block + 1;
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_GOAL
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_GOAL
 #pragma ezk ignored
 	/* snapshot file copied blocks are allocated close to their source */
 	if (next3_snapshot_file(inode))
@@ -1314,14 +1314,14 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	int count = 0;
 	next3_fsblk_t first_block = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
 	int read_through = 0;
 	struct inode *prev_snapshot;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 retry:
 	err = -EIO;
 	blocks_to_boundary = 0;
@@ -1425,7 +1425,7 @@ retry:
 			goto got_it;
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
 	/*
 	 * On read of snapshot file, an unmapped block is a peephole to prev
 	 * snapshot.  On read of active snapshot, an unmapped block is a
@@ -1433,7 +1433,7 @@ retry:
 	 * is filled forever.
 	 */
 	if (read_through && !err) {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 		if (prev_snapshot) {
 			while (partial > chain) {
 				brelse(partial->bh);

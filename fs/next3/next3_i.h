@@ -107,6 +107,7 @@ struct next3_inode_info {
 	struct list_head i_orphan;	/* unlinked but open inodes */
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define i_list i_orphan
 	/*
 	 * Snapshot in-memory list uses i_orphan to link snapshot inodes
 	 * but unlike the real orphan list, the next snapshot inode number

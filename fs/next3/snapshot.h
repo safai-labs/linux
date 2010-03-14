@@ -126,7 +126,7 @@ extern int next3_snapshot_get_clear_access(handle_t *handle,
 extern int next3_snapshot_get_read_access(struct super_block *sb,
 					  struct buffer_head *bh);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
 extern int next3_snapshot_get_inode_access(handle_t *handle,
 					   struct inode *inode,
 					   next3_fsblk_t iblock,

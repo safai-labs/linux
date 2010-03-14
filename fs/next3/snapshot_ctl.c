@@ -366,7 +366,7 @@ static int next3_snapshot_create(struct inode *inode)
 	if (!list_empty(list)) {
 		struct inode *last_snapshot =
 			&list_first_entry(list, struct next3_inode_info,
-					  i_orphan)->vfs_inode;
+					  i_list)->vfs_inode;
 		if (active_snapshot != last_snapshot) {
 			snapshot_debug(1, "failed to add snapshot because last"
 				       " snapshot (%u) is not active\n",
@@ -592,7 +592,7 @@ next_snapshot:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		ino = list_entry(l, struct next3_inode_info,
-				i_orphan)->vfs_inode.i_ino;
+				i_list)->vfs_inode.i_ino;
 		l = l->next;
 		goto alloc_inode_blocks;
 	}
@@ -917,7 +917,7 @@ fix_inode_copy:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	if (l != list) {
 		curr_inode = &list_entry(l, struct next3_inode_info,
-				       i_orphan)->vfs_inode;
+				       i_list)->vfs_inode;
 		l = l->next;
 		goto copy_inode_blocks;
 	}
@@ -1317,7 +1317,7 @@ static int next3_snapshot_shrink_range(handle_t *handle,
 	int mapped, shrink = 0;
 
 	/* iterate on (@start <= snapshot < @end) */
-	list_for_each_prev(l, &NEXT3_I(start)->i_orphan) {
+	list_for_each_prev(l, &NEXT3_I(start)->i_list) {
 		err = next3_snapshot_shrink_blocks(handle, inode,
 				iblock, count, cow_bh, shrink, &mapped);
 		if (err < 0)
@@ -1341,7 +1341,7 @@ static int next3_snapshot_shrink_range(handle_t *handle,
 			/* didn't reach @end */
 			return -EINVAL;
 		inode = &list_entry(l, struct next3_inode_info,
-						  i_orphan)->vfs_inode;
+						  i_list)->vfs_inode;
 		if (inode == end)
 			break;
 	}
@@ -1447,12 +1447,12 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 		goto out_err;
 
 	/* iterate on (@start < snapshot < @end) */
-	list_for_each_prev(l, &NEXT3_I(start)->i_orphan) {
+	list_for_each_prev(l, &NEXT3_I(start)->i_list) {
 		struct next3_inode_info *ei;
 		struct next3_iloc iloc;
 		if (l == &sbi->s_snapshot_list)
 			break;
-		ei = list_entry(l, struct next3_inode_info, i_orphan);
+		ei = list_entry(l, struct next3_inode_info, i_list);
 		if (&ei->vfs_inode == end)
 			break;
 		if (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL &&
@@ -1510,10 +1510,10 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 			start->i_generation, end->i_generation, need_merge);
 
 	/* iterate safe on (@start < snapshot < @end) */
-	list_for_each_prev_safe(l, n, &NEXT3_I(start)->i_orphan) {
+	list_for_each_prev_safe(l, n, &NEXT3_I(start)->i_list) {
 		struct next3_inode_info *ei = list_entry(l,
 						 struct next3_inode_info,
-						 i_orphan);
+						 i_list);
 		struct inode *inode = &ei->vfs_inode;
 		next3_fsblk_t block = 0;
 		int count = snapshot_blocks;
@@ -1932,7 +1932,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 			next3_snapshot_set_active(sb, inode);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-		list_add_tail(&NEXT3_I(inode)->i_orphan,
+		list_add_tail(&NEXT3_I(inode)->i_list,
 			      &NEXT3_SB(sb)->s_snapshot_list);
 		ino_next = &NEXT_SNAPSHOT(inode);
 		/* keep snapshot list reference */
@@ -1960,8 +1960,8 @@ void next3_snapshot_destroy(struct super_block *sb)
 	 * inodes */
 	list_for_each_safe(l, n, &NEXT3_SB(sb)->s_snapshot_list) {
 		struct inode *inode = &list_entry(l, struct next3_inode_info,
-						  i_orphan)->vfs_inode;
-		list_del_init(&NEXT3_I(inode)->i_orphan);
+						  i_list)->vfs_inode;
+		list_del_init(&NEXT3_I(inode)->i_list);
 		/* remove snapshot list reference */
 		iput(inode);
 	}
@@ -2009,9 +2009,9 @@ void next3_snapshot_update(struct super_block *sb, int cleanup)
 		return;
 
 update_snapshot:
-	ei = list_entry(prev, struct next3_inode_info, i_orphan);
+	ei = list_entry(prev, struct next3_inode_info, i_list);
 	inode = &ei->vfs_inode;
-	prev = ei->i_orphan.prev;
+	prev = ei->i_list.prev;
 
 	/* all snapshots on the list have the LIST flag */
 	ei->i_flags |= NEXT3_SNAPFILE_LIST_FL;

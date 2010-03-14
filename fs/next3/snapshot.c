@@ -63,7 +63,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 }
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
 /*
  * next3_snapshot_get_inode_access() - called from next3_get_blocks_handle()
  * on snapshot file access.
@@ -78,7 +78,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		struct inode **prev_snapshot)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 	struct list_head *prev;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
@@ -137,7 +137,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	 * calling next3_snapshot_get_block()
 	 */
 	*prev_snapshot = NULL;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_PEEP
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 	/*
 	 * Snapshot list add/delete is protected by lock_super() and we
 	 * don't take lock_super() here.  However, since only
@@ -151,7 +151,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	 * 3. we got here after it was added to list and before it was
 	 *    activated - we skip it.
 	 */
-	prev = ei->i_orphan.prev;
+	prev = ei->i_list.prev;
 	if (list_empty(prev)) {
 		/* not in snapshots list */
 		return -EIO;
@@ -161,7 +161,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 			return -EIO;
 	} else {
 		/* non last snapshot - read through to prev snapshot */
-		ei = list_entry(prev, struct next3_inode_info, i_orphan);
+		ei = list_entry(prev, struct next3_inode_info, i_list);
 		if (!(ei->i_flags & NEXT3_SNAPFILE_LIST_FL))
 			/* skip over snapshot during take */
 			return 1;
@@ -788,11 +788,9 @@ next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 		struct inode *inode, struct buffer_head *bh,
 		next3_fsblk_t block, int maxblocks, enum snapshot_cmd cmd)
 {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 #warning this long function has three distinct modes, based on the cmd.
 #warning it should be split into three helpers which can be called from here
 #warning or directly from the caller.
-#endif
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;

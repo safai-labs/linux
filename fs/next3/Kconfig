@@ -100,12 +100,8 @@ config NEXT3_FS_DEBUG
 	select DEBUG_FS
 	default y
 	help
-	  To turn snapshot debugging on, run:
-	  "echo N > /sys/kernel/debug/next3/snapshot-debug",
-	  where N is a number between 1 and 5, the higher the number,
-	  the more debugging output is generated.
-	  To turn snapshot debugging off, run:
-	  "echo 0 > /sys/kernel/debug/next3/snapshot-debug".
+	  Control snapshot debug level via debugfs entry /next3/snapshot-debug.
+	  Control snapshot unit tests via debugfs entries /next3/test-XXX.
 
 config NEXT3_FS_SNAPSHOT_HOOKS
 	bool "Next3 snapshot hooks"

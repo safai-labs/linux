@@ -814,7 +814,7 @@ int next3_snapshot_take(struct inode *inode)
 		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	es->s_last_snapshot = 0;
 	es->s_feature_ro_compat |=
-		cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_A_SNAPSHOT);
+		cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT);
 #endif
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);

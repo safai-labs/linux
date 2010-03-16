@@ -284,7 +284,7 @@ static inline handle_t *next3_journal_current_handle(void)
 /*
  * Next3 wrapper for journal_extend()
  * When transaction runs out of buffer credits it is possible to try and
- * extend the buffer credits withtout restarting the transaction.
+ * extend the buffer credits without restarting the transaction.
  * Next3 wrapper for journal_start() has increased the user requested buffer
  * credits to include the extra credits for COW operations.
  * This wrapper checks the remaining user credits and how many COW credits

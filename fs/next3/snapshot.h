@@ -36,7 +36,7 @@
  * This way, a snapshot image block group can be mapped with 1 double
  * indirect block + 32 indirect blocks.  To mount the snapshot image, the
  * loop device should be configured with:
- * '-o <SNAPSHOT_BYTES_OFFSET>' (i.e. (12+1k)*4k = 4243456)
+ * '-o <SNAPSHOT_BYTES_OFFSET>' (i.e., (12+1k)*4k = 4243456)
  */
 #define SNAPSHOT_BLOCK_SIZE		PAGE_SIZE
 #define SNAPSHOT_BLOCK_SIZE_BITS	PAGE_SHIFT

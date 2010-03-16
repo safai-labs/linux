@@ -570,7 +570,7 @@ out:
  * @count:	no. of blocks to be tested
  *
  * If the block bit is set in the COW bitmap, than it was allocated at the time
- * that the active snapshot was taken and is therefor "in use" by the snapshot.
+ * that the active snapshot was taken and is therefore "in use" by the snapshot.
  *
  * Return values:
  * > 0 - no. of blocks that are in use by snapshot
@@ -1141,7 +1141,7 @@ out:
  *
  * Return values:
  * = 0 - block was COWed or doesn't need to be COWed
- * < 0 - error (or block needs to be COWed)
+ * < 0 - error
  */
 int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
 				    struct buffer_head *bh)
@@ -1163,7 +1163,7 @@ int next3_snapshot_get_write_access(handle_t *handle, struct inode *inode,
  *
  * Return values:
  * = 0 - block was COWed or doesn't need to be COWed
- * < 0 - error (or block needs to be COWed)
+ * < 0 - error
  */
 int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
 {
@@ -1193,7 +1193,7 @@ int next3_snapshot_get_undo_access(handle_t *handle, struct buffer_head *bh)
  *
  * Return values:
  * = 0 - block was COWed or doesn't need to be COWed
- * < 0 - error (or block needs to be COWed)
+ * < 0 - error
  */
 int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
 {
@@ -1226,7 +1226,7 @@ int next3_snapshot_get_create_access(handle_t *handle, struct buffer_head *bh)
  * Called from next3_get_blocks_handle() before overwriting a data block,
  * when next3_snapshot_should_move_data(@inode) is true.
  * Specifically, only data blocks of regular files, whose data is not being
- * journaled are moved.  Jounraled data blocks are COWed on get_write_access().
+ * journaled are moved.  Journaled data blocks are COWed on get_write_access().
  * Snapshots and excluded files blocks are never moved-on-write.
  * If @move is true, then truncate_mutex is held.
  *

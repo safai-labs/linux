@@ -109,9 +109,9 @@ static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
  * An empty snapshot file becomes the active snapshot after it is added to the
  * head on the snapshots list by setting its snapshot list flag (chattr -X +S).
  * snapshot_create() verifies that the file is empty and pre-allocates some
- * blocks during the ioctl transcation.  snapshot_take() locks journal updates
+ * blocks during the ioctl transaction.  snapshot_take() locks journal updates
  * and copies some file system block to the pre-allocated blocks and then adds
- * the snapshot file to the on-disk list and sets it as the active snaphot.
+ * the snapshot file to the on-disk list and sets it as the active snapshot.
  *
  * 3. Mounting a snapshot
  * A snapshot on the list can be enabled for user read access by setting the
@@ -122,12 +122,12 @@ static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
  * 4. Deleting a snapshot
  * A non-mounted and disabled snapshot may be marked for removal from the
  * snapshots list by requesting to clear its snapshot list flag (chattr -X -S).
- * The process on removing a snapshot from the list varries according to the
- * dependencies between the snaphot and older snapshots on the list:
+ * The process of removing a snapshot from the list varies according to the
+ * dependencies between the snapshot and older snapshots on the list:
  * - if all older snapshots are deleted, the snapshot is removed from the list.
  * - if some older snapshots are enabled, snapshot_shrink() is called to free
- *   usued blocks, but the snapshot remains on the list.
- * - if all older snapshot are disabled, snapshot_merge() is called to move
+ *   unused blocks, but the snapshot remains on the list.
+ * - if all older snapshots are disabled, snapshot_merge() is called to move
  *   used blocks to an older snapshot and the snapshot is removed from the list.
  *
  * 5. Unlinking a snapshot file
@@ -140,7 +140,7 @@ static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
  * detaching the snapshot list head using the command: tune2fs -O ^has_snapshot.
  * This action is applicable on an un-mounted next3 filesystem.  After mounting
  * the filesystem, the discarded snapshot files will not be loaded, they will
- * not have the snapshot list flag and therefor, may be unlinked.
+ * not have the snapshot list flag and therefore, may be unlinked.
  */
 static int next3_snapshot_enable(struct inode *inode);
 static int next3_snapshot_disable(struct inode *inode);
@@ -627,8 +627,8 @@ static handle_t dummy_handle;
  * @bh:		source buffer to be copied
  * @mask:	if not NULL, mask buffer data before copying to snapshot
  * 		(used to mask block bitmap with exclude bitmap)
- * @name:	print name of copied block
- * @idx:	print index of copied block
+ * @name:	name of copied block to print
+ * @idx:	index of copied block to print
  *
  * Called from next3_snapshot_take() under journal_lock_updates()
  * Returns snapshot buffer on success, NULL on error
@@ -804,9 +804,9 @@ int next3_snapshot_take(struct inode *inode)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	/*
 	 * Convert from Next3 to Ext2 super block:
-	 * Remove the has_journal flag and journal inode number.
-	 * Remove the has_snapshot flag and last snapshot inode number.
-	 * Set the a_snapshot flag to signal fsck this is a snapshot image.
+	 * Remove the HAS_JOURNAL flag and journal inode number.
+	 * Remove the HAS_SNAPSHOT flag and last snapshot inode number.
+	 * Set the IS_SNAPSHOT flag to signal fsck this is a snapshot image.
 	 */
 	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
 	es->s_journal_inum = 0;
@@ -1009,7 +1009,6 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 		int cleanup)
 {
 	struct next3_inode_info *ei = NEXT3_I(inode);
-	__le32 *p;
 	int i, nblocks = 0;
 	int *pblocks = (cleanup ? NULL : &nblocks);
 
@@ -1034,16 +1033,15 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 	 * No need to add inode to orphan list for post crash truncate, because
 	 * snapshot is still on the snapshot list and marked for deletion.
 	 */
-	p = ei->i_data;
-	for (i = 0; i < NEXT3_N_BLOCKS; i++, p++) {
+	for (i = 0; i < NEXT3_N_BLOCKS; i++) {
 		int depth = (i < NEXT3_NDIR_BLOCKS ? 0 :
 				i - NEXT3_NDIR_BLOCKS + 1);
-		if (!*p)
+		if (!ei->i_data[i])
 			continue;
 		next3_free_branches_cow(handle, inode, NULL,
-				p, p+1, depth, pblocks);
+				ei->i_data+i, ei->i_data+i+1, depth, pblocks);
 		if (cleanup)
-			*p = 0;
+			ei->i_data[i] = 0;
 	}
 	return nblocks;
 }
@@ -1292,13 +1290,13 @@ out_err:
  *		if NULL, don't look for COW bitmap block
  *
  * Shrinks @maxblocks blocks starting at inode offset @iblock in a group of
- * subsequent deteted snapshots starting after @start and ending before @end.
+ * subsequent deleted snapshots starting after @start and ending before @end.
  * Shrinking is done by finding a range of mapped blocks in @start snapshot
  * or in one of the deleted snapshots, where no other blocks are mapped in the
  * same range in @start snapshot or in snapshots between them.
  * The blocks in the found range may be 'in-use' by @start snapshot, so only
  * blocks which are not set in the COW bitmap are freed.
- * All mapped block of other deleted snapshots in the same range are freed.
+ * All mapped blocks of other deleted snapshots in the same range are freed.
  *
  * Called from next3_snapshot_shrink() under snapshot_mutex.
  * Returns the shrunk blocks range and <0 on error.
@@ -1355,7 +1353,7 @@ static int next3_snapshot_shrink_range(handle_t *handle,
  * @end:	first non-deleted snapshot after deleted snapshot group
  * @need_shrink: no. of deleted snapshots in the group
  *
- * Frees all blocks in subsequent deteted snapshots starting after @start and
+ * Frees all blocks in subsequent deleted snapshots starting after @start and
  * ending before @end, except for blocks which are 'in-use' by @start snapshot.
  * (blocks 'in-use' are set in snapshot COW bitmap and not copied to snapshot).
  * Called from next3_snapshot_update() under snapshot_mutex.
@@ -1490,9 +1488,9 @@ out_err:
  * @end:	first non-deleted snapshot after deleted snapshot group
  * @need_merge: no. of deleted snapshots in the group
  *
- * Move all blocks from deteted snapshots group starting after @start and
+ * Move all blocks from deleted snapshots group starting after @start and
  * ending before @end to @start snapshot.  All moved blocks are 'in-use' by
- * @start snapshot, because these deleted snapshot have already been shrunk
+ * @start snapshot, because these deleted snapshots have already been shrunk
  * (blocks 'in-use' are set in snapshot COW bitmap and not copied to snapshot).
  * Called from next3_snapshot_update() under snapshot_mutex.
  * Returns 0 on success and <0 on error.
@@ -1844,7 +1842,7 @@ out:
  * next3_snapshot_load - load the on-disk snapshot list to memory
  * Start with last (active) snapshot and continue to older snapshots.
  * If active snapshot load fails, force read-only mount.
- * If at any point in the list load fails, all older snapshot are discarded.
+ * If at any point in the list load fails, all older snapshots are discarded.
  * Called from next3_fill_super() under sb_lock
  *
  * Return values:
@@ -1875,13 +1873,14 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
 		/*
 		 * When mounting an ext3 formatted volume as next3, the
-		 * has_snapshot flag is set on first snapshot_take()
+		 * HAS_SNAPSHOT flag is set on first snapshot_take()
 		 * and after that the volume can no longer be mounted
 		 * as rw ext3 (only rw next3 or ro ext3/ext2).
-		 * Never mind why we got here, but we found a last_snapshot
-		 * inode, so will try to load it.  If we succeed, we will
-		 * fix the missing has_snapshot flag and if we fail we will
-		 * clear the last_snapshot field and allow rw mount.
+		 * We should never get here if the file system is consistent,
+		 * but if we find a last_snapshot inode, we try to load it.
+	         * If we succeed, we will fix the missing HAS_SNAPSHOT flag
+		 * and if we fail we will clear the last_snapshot field and
+		 * allow rw mount.
 		 */
 		snapshot_debug(1, "warning: has_snapshot feature is not set and"
 			       " last snapshot found (%u). trying to load it\n",
@@ -1902,7 +1901,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 						"active snapshot (ino=%u) - "
 						"forcing read-only mount!\n",
 						le32_to_cpu(*ino_next));
-				return read_only ? 0 : -EINVAL;
+				return read_only ? 0 : -EIO;
 			}
 			snapshot_debug(1, "warning: failed to load snapshot "
 					"(ino=%u) after snapshot (%d) - "
@@ -2055,7 +2054,7 @@ update_snapshot:
 
 	if (!deleted) {
 		if (!found_active)
-			/* newer snapshot are potentialy used by
+			/* newer snapshots are potentialy used by
 			 * this snapshot (when it is enabled) */
 			used_by = inode;
 		if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)

@@ -159,7 +159,7 @@ flags_err:
 			goto flags_out;
 
 		if ((flags | oldflags) & NEXT3_SNAPFILE_LIST_FL) {
-			/* clearing list flag - shirnk/merge/remove snapshot */
+			/* clearing list flag - shrink/merge/remove snapshot */
 			int cleanup = !(flags & NEXT3_SNAPFILE_LIST_FL);
 
 			if (!(oldflags & NEXT3_SNAPFILE_LIST_FL))

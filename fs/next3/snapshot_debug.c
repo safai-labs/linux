@@ -180,7 +180,7 @@ static void next3_snapshot_dump_ind(int n, int l,
 
 	snapshot_debug_l(n, l, "{\n");
 	p = (__le32 *)bh->b_data;
-	/* itertate on data blocks array */
+	/* iterate on data blocks array */
 	for (i = 0; i <= SNAPSHOT_ADDR_PER_BLOCK; i++, p++, blk++) {
 		prev_key = key;
 		if (i < SNAPSHOT_ADDR_PER_BLOCK)

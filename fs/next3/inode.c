@@ -605,7 +605,7 @@ static int next3_blks_to_skip(struct inode *inode, long i_block,
  * 'in-use' by non-deleted snapshots (blocks 'in-use' are set in COW bitmap).
  * If @shrink is false, just count mapped blocks and look for COW bitmap block.
  * The first time that a COW bitmap block is found in @inode, whether @inode is
- * deleted or not, it is stored in @cow_bh and will used in subsequent calls to
+ * deleted or not, it is stored in @cow_bh and is used in subsequent calls to
  * this function with other deleted snapshots within the block group boundaries.
  * Called from next3_snapshot_shrink_blocks() under snapshot_mutex.
  *
@@ -1574,10 +1574,10 @@ retry:
 
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	if (*partial->p) {
+	if (*(partial->p)) {
 		/* re-allocated block - move old block to snapshot */
 		err = next3_snapshot_get_move_access(handle, inode,
-				le32_to_cpu(*partial->p), 1);
+				le32_to_cpu(*(partial->p)), 1);
 		if (err < 1) {
 			/* failed to move to snapshot - free new block */
 			next3_free_blocks(handle, inode,
@@ -2288,7 +2288,7 @@ static int buffer_unmapped(handle_t *handle, struct buffer_head *bh)
  *
  *   It's a rare case: affects the final partial page, for journalled data
  *   where the file is subject to bith write() and writepage() in the same
- *   transction.  To fix it we'll need a custom block_write_full_page().
+ *   transaction.  To fix it we'll need a custom block_write_full_page().
  *   We'll probably need that anyway for journalling writepage() output.
  *
  * We don't honour synchronous mounts for writepage().  That would be
@@ -3898,7 +3898,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		ei->i_next = le32_to_cpu(raw_inode->i_next_snapshot);
 		/*
 		 * Dynamic snapshot flags are not stored on-disk, so
-		 * at this point, we only know that the this inode has the
+		 * at this point, we only know that this inode has the
 		 * 'snapfile' flag, but we don't know if it is on the list.
 		 * snapshot_load() loads the on-disk snapshot list to memory
 		 * and snapshot_update() flags the snapshots on the list.
@@ -4135,7 +4135,7 @@ static int next3_do_update_inode(handle_t *handle,
 		 * Remove duplicate reference to exclude inode indirect blocks
 		 * which was exposed in next3_iget() before storing to disk.
 		 * It was needed only in memory and we don't want to break
-		 * compatibility to ext2 disk format.
+		 * compatibility with ext2's disk format.
 		 */
 		raw_inode->i_block[NEXT3_IND_BLOCK] = 0;
 

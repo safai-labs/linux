@@ -278,7 +278,7 @@ extern void cancel_buffer_tracked_read(struct buffer_head *bh);
  * A tracked reader takes 0x10000 reference counts on the block device buffer.
  * b_count is not likely to reach 0x10000 by get_bh() calls, but even if it
  * does, that will only affect the result of buffer_tracked_readers_count().
- * After 0x1000 subsequent calls to get_bh_tracked_reader(), b_count will
+ * After 0x10000 subsequent calls to get_bh_tracked_reader(), b_count will
  * overflow, but that requires 0x10000 parallel readers from 0x10000 different
  * snapshots and very slow disk I/O...
  */

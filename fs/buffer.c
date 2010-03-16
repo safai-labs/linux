@@ -312,7 +312,7 @@ static void free_more_memory(void)
  * end_buffer_async_read() calls end_buffer_tracked_read() to complete the
  * tracked read operation.
  * The only lock needed in all these functions is PageLock on the snapshot page,
- * which is guarentied in readpage() and verified in block_read_full_page().
+ * which is guarantied in readpage() and verified in block_read_full_page().
  * The block device page buffer doesn't need any lock because the operations
  * {get|put}_bh_tracked_reader() are atomic.
  */

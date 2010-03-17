@@ -1993,9 +1993,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 
 	/* Insert this inode at the head of the on-disk inode list... */
 	*i_next = le32_to_cpu(*s_last);
-	if (s_list == &NEXT3_SB(sb)->s_orphan)
-		/* last_snapshot will be written to disk in snapshot_take() */
-		*s_last = cpu_to_le32(inode->i_ino);
+	*s_last = cpu_to_le32(inode->i_ino);
 #else
 	/* Insert this inode at the head of the on-disk orphan list... */
 	NEXT_ORPHAN(inode) = le32_to_cpu(NEXT3_SB(sb)->s_es->s_last_orphan);

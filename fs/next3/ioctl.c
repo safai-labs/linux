@@ -167,7 +167,7 @@ flags_err:
 				err = next3_snapshot_take(inode);
 
 			/* update/cleanup all snapshots on list */
-			next3_snapshot_update(inode->i_sb, cleanup);
+			next3_snapshot_update(inode->i_sb, cleanup, 0);
 		}
 #endif
 flags_out:

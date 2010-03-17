@@ -619,14 +619,15 @@ struct next3_super_block {
 	__u8	s_reserved_char_pad2;
 	__le16  s_reserved_pad;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	__u32	s_reserved[159];	/* Padding to the end of the block */
+	__u32	s_reserved[158];	/* Padding to the end of the block */
 	/*
 	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT
 	 * is set.
 	 */
+/*3F0*/	__le32	s_last_snapshot;	/* start of list of snapshot inodes */
 	__le32	s_snapshot_r_blocks_count; /* Reserved snapshot blocks count */
-	__le32	s_last_snapshot_id;	/* running snapshot ID */
-	__le32	s_last_snapshot;	/* start of list of snapshot inodes */
+	__le32	s_snapshot_id;		/* running snapshot ID */
+	__le32	s_snapshot_inum;	/* inode number of active snapshot */
 #else
 	__u32   s_reserved[162];        /* Padding to the end of the block */
 #endif

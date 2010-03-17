@@ -196,7 +196,8 @@ extern int next3_snapshot_read_block_bitmap(struct super_block *sb,
 extern int next3_snapshot_load(struct super_block *sb,
 		struct next3_super_block *es, int read_only);
 extern void next3_snapshot_destroy(struct super_block *sb);
-extern void next3_snapshot_update(struct super_block *sb, int cleanup);
+extern void next3_snapshot_update(struct super_block *sb, int cleanup,
+		int read_only);
 
 
 /* balloc.c */

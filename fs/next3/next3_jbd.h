@@ -124,9 +124,9 @@
 					 NEXT3_SNAPSHOT_CREDITS)
 
 /*
- * Next3 is not designed for filesystems under 1G with journal size < 32M
+ * Next3 is not designed for filesystems under 4G with journal size < 128M
  */
-#define NEXT3_MIN_JOURNAL_BLOCKS	8192U
+#define NEXT3_MIN_JOURNAL_BLOCKS	32768U
 #else
 #define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
 	(handle->h_buffer_credits >= (n))

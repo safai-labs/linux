@@ -70,8 +70,9 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
  * next3_snapshot_init_bitmap_cache().
  * COW/exclude bitmap cache is non-persistent, so no need to mark the group
  * desc blocks dirty.  Called under lock_super() or sb_lock
+ * Returns 0 on success and <0 on error.
  */
-static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
+static int next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 {
 	struct next3_group_desc *desc;
 	int i;
@@ -79,14 +80,15 @@ static void next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 	for (i = 0; i < NEXT3_SB(sb)->s_groups_count; i++) {
 		desc = next3_get_group_desc(sb, i, NULL);
 		if (!desc)
-			continue;
+			return -EIO;
 		desc->bg_cow_bitmap = 0;
 		if (init)
 			desc->bg_exclude_bitmap = 0;
 	}
+	return 0;
 }
 #else
-#define next3_snapshot_reset_bitmap_cache(sb, init)
+#define next3_snapshot_reset_bitmap_cache(sb, init) 0
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
@@ -1758,47 +1760,49 @@ out:
  * Init the COW/exclude bitmap cache for all block groups.
  * COW bitmap cache is set to 0 (lazy init on first access to block group).
  * Read exclude bitmap blocks addresses from exclude inode and store them
- * in block group descriptor.  Try to allocate missing exclude bitmap blocks.
- * Exclude bitmap cache is non-persistent, so no need to mark the group
- * desc blocks dirty.
+ * in block group descriptor.  If @create is true, Try to allocate missing
+ * exclude bitmap blocks.  Exclude bitmap cache is non-persistent, so no need
+ * to mark the group desc blocks dirty.
  *
  * Helper function for snapshot_load().  Called under sb_lock.
+ * Returns 0 on success and <0 on error.
  */
-static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
+static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 {
 	struct next3_group_desc *desc;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
-	handle_t *handle;
+	handle_t *handle = NULL;
 	struct inode *inode;
 	__le32 exclude_bitmap = 0;
 	int grp, max_groups = sbi->s_groups_count;
-	int err = 0, create = 0;
+	int err = 0;
 	loff_t i_size;
 
 	/* reset COW/exclude bitmap cache */
-	next3_snapshot_reset_bitmap_cache(sb, 1);
+	err = next3_snapshot_reset_bitmap_cache(sb, 1);
+	if (err)
+		return err;
 
 	if (!NEXT3_HAS_COMPAT_FEATURE(sb,
 				      NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
 		snapshot_debug(1, "warning: exclude_inode feature not set - "
 			       "snapshot merge might not free all unused "
 			       "blocks!\n");
-		return;
+		return 0;
 	}
+
 	inode = next3_iget(sb, NEXT3_EXCLUDE_INO);
 	if (IS_ERR(inode)) {
 		snapshot_debug(1, "warning: bad exclude inode - "
 				"no exclude bitmap!\n");
-		return;
+		PTR_ERR(inode);
 	}
-	/* start large transaction that will be extended/restarted */
-	handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
-	if (IS_ERR(handle))
-		/* only read allocated exclude bitmap blocks */
-		handle = NULL;
-	if (handle) {
-		/* allocate missing exclude inode blocks */
-		create = 1;
+
+	if (create) {
+		/* start large transaction that will be extended/restarted */
+		handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
+		if (IS_ERR(handle))
+			PTR_ERR(handle);
 		/* number of groups the filesystem can grow to */
 		max_groups = sbi->s_gdb_count +
 			le16_to_cpu(sbi->s_es->s_reserved_gdt_blocks);
@@ -1809,15 +1813,20 @@ static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 	 * Init exclude bitmap blocks for all existing block groups and
 	 * allocate indirect blocks for all reserved block groups.
 	 */
+	err = -EIO;
 	for (grp = 0; grp < max_groups; grp++) {
 		exclude_bitmap = next3_exclude_inode_getblk(handle, inode, grp,
 				create);
-		if (!exclude_bitmap)
+		if (create && grp >= sbi->s_groups_count)
+			/* only allocating indirect blocks */
 			continue;
+
+		if (create && !exclude_bitmap)
+			goto out;
 
 		desc = next3_get_group_desc(sb, grp, NULL);
 		if (!desc)
-			continue;
+			goto out;
 
 		desc->bg_exclude_bitmap = exclude_bitmap;
 		snapshot_debug(2, "update exclude bitmap #%d cache "
@@ -1825,10 +1834,13 @@ static void next3_snapshot_init_bitmap_cache(struct super_block *sb)
 			       le32_to_cpu(exclude_bitmap));
 	}
 
-	i_size = SNAPSHOT_IBLOCK(max_groups) << SNAPSHOT_BLOCK_SIZE_BITS;
-	if (!create || NEXT3_I(inode)->i_disksize >= i_size)
+	err = 0;
+	if (!create)
 		goto out;
 
+	i_size = SNAPSHOT_IBLOCK(max_groups) << SNAPSHOT_BLOCK_SIZE_BITS;
+	if (NEXT3_I(inode)->i_disksize >= i_size)
+		goto out;
 	i_size_write(inode, i_size);
 	NEXT3_I(inode)->i_disksize = i_size;
 	err = next3_mark_inode_dirty(handle, inode);
@@ -1836,11 +1848,12 @@ out:
 	if (handle)
 		next3_journal_stop(handle);
 	iput(inode);
+	return err;
 }
 
 #else
 /* with no exclude inode, exclude bitmap is reset to 0 */
-#define next3_snapshot_init_bitmap_cache(sb)	\
+#define next3_snapshot_init_bitmap_cache(sb, create)	\
 		next3_snapshot_reset_bitmap_cache(sb, 1)
 #endif
 
@@ -1861,7 +1874,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 {
 	__le32 *ino_next = &es->s_last_snapshot;
 	__le32 active_ino = es->s_snapshot_inum;
-	int num = 0, snapshot_id = 0;
+	int err, num = 0, snapshot_id = 0;
 	int has_snapshot = 1, has_active = 0;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
@@ -1908,7 +1921,9 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 
 	/* init COW bitmap and exclude bitmap cache */
-	next3_snapshot_init_bitmap_cache(sb);
+	err = next3_snapshot_init_bitmap_cache(sb, !read_only);
+	if (err)
+		return err;
 
 	while (*ino_next) {
 		struct inode *inode;

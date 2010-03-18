@@ -166,7 +166,7 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 		handle_t *handle, int nblocks)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
-	int has_active = (int)next3_snapshot_has_active(sb);
+	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	int upper = NEXT3_SNAPSHOT_START_TRANS_BLOCKS(handle->h_base_credits);
 	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits);
 	int final = (nblocks == 0 && handle->h_ref == 1 &&
@@ -184,7 +184,7 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 		 * valid if there is an active snapshot and not during COW
 		 */
 		if (handle->h_buffer_credits < lower &&
-		    has_active && !handle->h_cowing)
+		    active_snapshot && !handle->h_cowing)
 			break;
 	case SNAP_ERR:
 		/* trace if user credits are too low */

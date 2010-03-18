@@ -1,5 +1,5 @@
 /*
- *  next3_sb.h
+ *  linux/fs/next3/next3_sb.h
  *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)

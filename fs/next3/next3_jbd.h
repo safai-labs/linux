@@ -1,5 +1,11 @@
 /*
- * next3_jbd.h
+ * linux/fs/next3/next3_jbd.h
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ *
+ * from
+ *
+ * linux/include/linux/ext3_jbd.h
  *
  * Written by Stephen C. Tweedie <sct@redhat.com>, 1999
  *

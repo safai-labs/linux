@@ -1,5 +1,11 @@
 /*
- *  next3.h
+ *  linux/fs/next3/next3.h
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ *
+ * from
+ *
+ *  linux/include/linux/ext3_fs.h
  *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)

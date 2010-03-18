@@ -1,4 +1,12 @@
 /*
+ * linux/fs/next3/next3_jbd.c
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ *
+ * from
+ *
+ * linux/fs/ext3/ext3_jbd.c
+ *
  * Interface between next3 and JBD
  *
  * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008

@@ -95,45 +95,6 @@
 #define SNAPSHOT_SET_DISABLED(inode)		\
 	i_size_write((inode), 0)
 
-/*
- * Block access functions
- */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
-extern int next3_snapshot_get_undo_access(handle_t *handle,
-					  struct buffer_head *bh);
-extern int next3_snapshot_get_write_access(handle_t *handle,
-					   struct inode *inode,
-					   struct buffer_head *bh);
-extern int next3_snapshot_get_create_access(handle_t *handle,
-					    struct buffer_head *bh);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-extern int next3_snapshot_get_move_access(handle_t *handle,
-					  struct inode *inode,
-					  next3_fsblk_t block, int move);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
-extern int next3_snapshot_get_delete_access(handle_t *handle,
-					    struct inode *inode,
-					    next3_fsblk_t block, int count);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-extern int next3_snapshot_get_clear_access(handle_t *handle,
-					   struct inode *inode,
-					   next3_fsblk_t block, int count);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-extern int next3_snapshot_get_read_access(struct super_block *sb,
-					  struct buffer_head *bh);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
-extern int next3_snapshot_get_inode_access(handle_t *handle,
-					   struct inode *inode,
-					   next3_fsblk_t iblock,
-					   int count, int cmd,
-					   struct inode **prev_snapshot);
-#endif
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 /*
  * Snapshot control functions
@@ -188,6 +149,190 @@ extern void next3_snapshot_copy_buffer(struct buffer_head *sbh,
 /* helper function for next3_snapshot_get_block() */
 extern int next3_snapshot_read_block_bitmap(struct super_block *sb,
 		unsigned int block_group, struct buffer_head *bitmap_bh);
+
+extern int next3_snapshot_test_and_cow(const char *where,
+		handle_t *handle, struct inode *inode,
+		struct buffer_head *bh, int cow);
+
+/*
+ * test if a metadata block should be COWed
+ */
+#define next3_snapshot_test_cow(handle, bh)			\
+	next3_snapshot_test_and_cow(__func__, handle, NULL,	\
+			bh, 0)
+/*
+ * test if a metadata block should be COWed
+ * and if it should, copy the block to the active snapshot
+ */
+#define next3_snapshot_cow(handle, inode, bh)			\
+	next3_snapshot_test_and_cow(__func__, handle, inode,	\
+			bh, 1)
+#else
+#define next3_snapshot_test_cow(handle, bh) 0
+#define next3_snapshot_cow(handle, inode, bh) 0
+#endif
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
+extern int next3_snapshot_test_and_move(const char *where,
+		handle_t *handle, struct inode *inode,
+		next3_fsblk_t block, int maxblocks, int move);
+
+/*
+ * test if blocks should be moved to snapshot
+ * and if they should, try to move them to the active snapshot
+ */
+#define next3_snapshot_move(handle, inode, block, num, move)	\
+	next3_snapshot_test_and_move(__func__, handle, inode,	\
+			block, num, move)
+#else
+#define next3_snapshot_move(handle, inode, block, num, move) (num)
+#endif
+
+/*
+ * Block access functions
+ */
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
+/*
+ * get_write_access() is called before writing to a metadata block
+ * if @inode is not NULL, then this is an inode's indirect block
+ * otherwise, this is a file system global metadata block
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int next3_snapshot_get_write_access(handle_t *handle,
+		struct inode *inode, struct buffer_head *bh)
+{
+	return next3_snapshot_cow(handle, inode, bh);
+}
+
+/*
+ * called from next3_journal_get_undo_access(),
+ * which is called for group bitmap block from:
+ * 1. next3_free_blocks_sb_inode() before deleting blocks
+ * 2. next3_new_blocks() before allocating blocks
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int next3_snapshot_get_undo_access(handle_t *handle,
+		struct buffer_head *bh)
+{
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
+	/*
+	 * undo access is only requested for block bitmaps, which should be
+	 * COWed in next3_snapshot_test_cow_bitmap(), even if we pass @cow=0.
+	 */
+	return next3_snapshot_test_cow(handle, bh);
+#else
+	return next3_snapshot_cow(handle, NULL, bh);
+#endif
+}
+
+/*
+ * get_create_access() is called after allocating a new metadata block
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int next3_snapshot_get_create_access(handle_t *handle,
+		struct buffer_head *bh)
+{
+	/*
+	 * This block shouldn't need to be COWed if get_delete_access() was
+	 * called for all deleted blocks.  However, it may need to be COWed
+	 * if fsck was run and if it had freed some blocks without moving them
+	 * to snapshot.  In the later case, -EIO will be returned.
+	 */
+	return next3_snapshot_test_cow(handle, bh);
+}
+
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+/*
+ * get_move_access() - move block to snapshot
+ * @handle:	JBD handle
+ * @inode:	owner of @block
+ * @block:	address of @block
+ * @move:	if false, only test if @block needs to be moved
+ *
+ * Called from next3_get_blocks_handle() before overwriting a data block,
+ * when next3_snapshot_should_move_data(@inode) is true.
+ * Specifically, only data blocks of regular files, whose data is not being
+ * journaled are moved.  Journaled data blocks are COWed on get_write_access().
+ * Snapshots and excluded files blocks are never moved-on-write.
+ * If @move is true, then truncate_mutex is held.
+ *
+ * Return values:
+ * = 1 - @block was moved or may not be overwritten
+ * = 0 - @block may be overwritten
+ * < 0 - error
+ */
+static inline int next3_snapshot_get_move_access(handle_t *handle,
+		struct inode *inode, next3_fsblk_t block, int move)
+{
+	return next3_snapshot_move(handle, inode, block, 1, move);
+}
+
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+/*
+ * get_delete_access() - move count blocks to snapshot
+ * @handle:	JBD handle
+ * @inode:	owner of blocks
+ * @block:	address of start @block
+ * @count:	no. of blocks to move
+ *
+ * Called from next3_free_blocks_sb_inode() before deleting blocks with
+ * truncate_mutex held
+ *
+ * Return values:
+ * > 0 - no. of blocks that were moved to snapshot and may not be deleted
+ * = 0 - @block may be deleted
+ * < 0 - error
+ */
+static inline int next3_snapshot_get_delete_access(handle_t *handle,
+		struct inode *inode, next3_fsblk_t block, int count)
+{
+	return next3_snapshot_move(handle, inode, block, count, 1);
+}
+
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
+extern int next3_snapshot_exclude_blocks(handle_t *handle,
+		struct super_block *sb, next3_fsblk_t block, int count);
+
+/*
+ * get_clear_access() - mark snapshot blocks excluded
+ * Called from next3_snapshot_clean(), next3_free_branches_cow() and
+ * next3_clear_blocks_cow() under snapshot_mutex.
+ *
+ * Return values:
+ * >= 0 - no. of blocks set in exclude bitmap
+ * < 0 - error
+ */
+static inline int next3_snapshot_get_clear_access(handle_t *handle,
+		struct inode *inode, next3_fsblk_t block, int count)
+{
+	return next3_snapshot_exclude_blocks(handle, inode->i_sb,
+			block, count);
+}
+
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
+extern int next3_snapshot_get_read_access(struct super_block *sb,
+					  struct buffer_head *bh);
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
+extern int next3_snapshot_get_inode_access(handle_t *handle,
+					   struct inode *inode,
+					   next3_fsblk_t iblock,
+					   int count, int cmd,
+					   struct inode **prev_snapshot);
 #endif
 
 /*

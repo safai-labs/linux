@@ -208,11 +208,11 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 	if (!final)
 		return;
 	snapshot_debug_l(n, handle->h_cowing, "COW stats: moved/copied=%d/%d, "
-			 "mapped/clear/cached=%d/%d/%d, "
+			 "mapped/bitmap/cached=%d/%d/%d, "
 			 "bitmaps/cleared=%d/%d\n", handle->h_cow_moved,
 			 handle->h_cow_copied, handle->h_cow_ok_mapped,
-			 handle->h_cow_ok_clear, handle->h_cow_ok_jh,
-			 handle->h_cow_bitmaps, handle->h_cow_cleared);
+			 handle->h_cow_ok_bitmap, handle->h_cow_ok_jh,
+			 handle->h_cow_bitmaps, handle->h_cow_excluded);
 }
 #endif
 #endif

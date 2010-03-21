@@ -3921,12 +3921,12 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 */
 		ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
 		/*
-		 * snapshot size is stored in i_snapshot_blocks.  in-memory
+		 * snapshot size is stored in i_snapshot_blocks_count. in-memory
 		 * i_disksize of snapshot files is set to snapshot size.
 		 * in-memory i_size of disabled snapshot files is set to 0.
 		 */
-//EZK: the comment above suggests that a disabled snapshot will have zero blocks.  is it possible for two snapshots to be taken in rapid succession, without any CoW blocks copied over, and hence resulting in a new (valid) snapshot that has zero blocks in it? if so, this could cause confusion and you'll have to use something else (-1?) to indicate a disabled snapshot.  perhaps as long as you check if a snapshot is disabled ONLY using flags then it is ok for i_snapshot_blocks to be zero (as long as you dont count on it).
-		ei->i_disksize = le32_to_cpu(raw_inode->i_snapshot_blocks);
+		ei->i_disksize = le32_to_cpu(
+				raw_inode->i_snapshot_blocks_count);
 		ei->i_disksize <<= SNAPSHOT_BLOCK_SIZE_BITS;
 		if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)
 			SNAPSHOT_SET_ENABLED(inode);
@@ -4136,8 +4136,8 @@ static int next3_do_update_inode(handle_t *handle,
 		raw_inode->i_next_snapshot = cpu_to_le32(ei->i_next);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~NEXT3_FL_SNAPSHOT_DYN_MASK);
-		/* snapshot size is stored in i_snapshot_blocks */
-		raw_inode->i_snapshot_blocks =
+		/* snapshot size is stored in i_snapshot_blocks_count */
+		raw_inode->i_snapshot_blocks_count =
 			cpu_to_le32(ei->i_disksize >> SNAPSHOT_BLOCK_SIZE_BITS);
 	}
 

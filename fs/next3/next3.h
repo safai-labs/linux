@@ -400,8 +400,7 @@ struct next3_inode {
 			__le16	l_i_uid_high;	/* these 2 fields    */
 			__le16	l_i_gid_high;	/* were reserved2[0] */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-//EZK: why not call i_snapshot_blocks simply i_snapshot_size or i_snapshot_block_count? (or anything that implies that it is the count of number of blocks, not the list of blocks themselves, or a used/free blocks bitmap).
-			__le32	l_i_snapshot_blocks; /* On-disk snapshot size */
+			__le32	l_i_snapshot_blocks_count; /* On-disk snapshot size */
 #else
 			__u32	l_i_reserved2;
 #endif
@@ -440,7 +439,7 @@ struct next3_inode {
 #define i_uid_high	osd2.linux2.l_i_uid_high
 #define i_gid_high	osd2.linux2.l_i_gid_high
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-#define i_snapshot_blocks	osd2.linux2.l_i_snapshot_blocks
+#define i_snapshot_blocks_count	osd2.linux2.l_i_snapshot_blocks_count
 #else
 #define i_reserved2	osd2.linux2.l_i_reserved2
 #endif

@@ -1816,8 +1816,8 @@ retry:
 	if (err) {
 		drop_nlink(inode); /* is this nlink == 0? */
 		unlock_new_inode(inode);
-//EZK: fxn on next line can return err. test for it?
-		next3_mark_inode_dirty(handle, inode);
+		/* no need to check for errors - we failed anyway */
+		(void)next3_mark_inode_dirty(handle, inode);
 		iput(inode);
 		brelse(dir_block);
 		goto out_stop;
@@ -1946,7 +1946,9 @@ static int empty_dir (struct inode * inode)
  * inodes and truncating linked inodes in next3_orphan_cleanup().
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-__attribute__ ((warn_unused_result))
+/*
+ * On errors, next3_std_error() is called and transaction is aborted.
+ */
 int next3_orphan_add(handle_t *handle, struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;

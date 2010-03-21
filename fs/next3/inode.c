@@ -1127,8 +1127,8 @@ failed:
 		BUFFER_TRACE(branch[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (!SNAPMAP_ISSYNC(cmd))
-//EZK: fxn on next line can return err. test for it?
-			next3_journal_forget(handle, branch[i].bh);
+			/* no need to check for errors - we failed anyway */
+			(void)next3_journal_forget(handle, branch[i].bh);
 #else
 		next3_journal_forget(handle, branch[i].bh);
 #endif
@@ -1257,8 +1257,8 @@ err_out:
 		BUFFER_TRACE(where[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (!SNAPMAP_ISSYNC(cmd))
-//EZK: fxn on next line can return err. test for it?
-			next3_journal_forget(handle, where[i].bh);
+			/* no need to check for errors - we failed anyway */
+			(void)next3_journal_forget(handle, where[i].bh);
 #else
 		next3_journal_forget(handle, where[i].bh);
 #endif
@@ -3016,7 +3016,6 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		if (bh) {
 			BUFFER_TRACE(bh, "retaking write access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
-//EZK: fxn on next line can return err. test for it?
 			next3_journal_get_write_access_inode(handle, inode, bh);
 #else
 			next3_journal_get_write_access(handle, bh);
@@ -3034,6 +3033,8 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		/* mark blocks excluded and update blocks counter */
 		next3_snapshot_get_clear_access(handle, inode, block_to_free,
 						count);
+		if (is_handle_aborted(handle))
+			return;
 		*pblocks += count;
 		return;
 	}
@@ -3317,9 +3318,10 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (!pblocks)
-//EZK: fxn on next line can return err. test for it?
 				next3_forget(handle, 1, inode, bh,
 					     bh->b_blocknr);
+			if (is_handle_aborted(handle))
+				return;
 #else
 			next3_forget(handle, 1, inode, bh, bh->b_blocknr);
 #endif
@@ -3350,9 +3352,10 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (pblocks) {
 				/* mark block excluded and update counter */
-//EZK: fxn on next line can return err. test for it?
 				next3_snapshot_get_clear_access(handle, inode,
 								nr, 1);
+				if (is_handle_aborted(handle))
+					return;
 				*pblocks += 1;
 				continue;
 			}

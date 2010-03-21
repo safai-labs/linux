@@ -311,16 +311,12 @@ extern int next3_snapshot_exclude_blocks(handle_t *handle,
  * Called from next3_snapshot_clean(), next3_free_branches_cow() and
  * next3_clear_blocks_cow() under snapshot_mutex.
  *
- * Return values:
- * >= 0 - no. of blocks set in exclude bitmap
- * < 0 - error
+ * On error handle is aborted.
  */
-__attribute__ ((warn_unused_result))
-static inline int next3_snapshot_get_clear_access(handle_t *handle,
+static inline void next3_snapshot_get_clear_access(handle_t *handle,
 		struct inode *inode, next3_fsblk_t block, int count)
 {
-	return next3_snapshot_exclude_blocks(handle, inode->i_sb,
-			block, count);
+	next3_snapshot_exclude_blocks(handle, inode->i_sb, block, count);
 }
 
 #endif

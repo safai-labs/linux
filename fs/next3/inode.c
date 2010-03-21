@@ -1298,7 +1298,6 @@ err_out:
  * return < 0, error case.
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
-//EZK: this ifdef is just for a comment. verify that the ifdef/endif pair are correct.
 /*
  * snapshot_map_blocks() command flags are passed to get_blocks_handle() on its
  * @create argument.  All places in original code call get_blocks_handle()

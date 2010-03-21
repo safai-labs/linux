@@ -3090,9 +3090,15 @@ static int __init init_next3_fs(void)
 	if (err)
 		goto out;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	init_next3_snapshot();
+	err = init_next3_snapshot();
+	if (err)
+		goto out_fs;
 #endif
 	return 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+out_fs:
+	unregister_filesystem(&next3_fs_type);
+#endif
 out:
 	destroy_inodecache();
 out1:

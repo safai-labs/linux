@@ -58,12 +58,16 @@ struct debugfs_blob_wrapper snapshot_version_blob = {
 	.size = sizeof(snapshot_version_str)
 };
 
+#warning EZK: this function can fail inside.  maybe it shuold return -errno on err, and callers must check for it. say what it returns on success/failure. (I know it is only a debugging function, but still...)
 static void next3_create_debugfs_entry(void)
 {
 	int i;
+
+//EZK: fxn on next line can return err. test for it?
 	next3_debugfs_dir = debugfs_create_dir("next3", NULL);
 	if (!next3_debugfs_dir)
 		return;
+//EZK: can these other debugfs_* functions below ever fail?
 	snapshot_debug = debugfs_create_u8("snapshot-debug", S_IRUGO|S_IWUSR,
 					   next3_debugfs_dir,
 					   &snapshot_enable_debug);
@@ -180,6 +184,7 @@ static void next3_snapshot_dump_ind(int n, int l,
 
 	snapshot_debug_l(n, l, "{\n");
 	p = (__le32 *)bh->b_data;
+//EZK: variable 'p' seems unnecessary in this fxn. u can just deref bh->b_data[i] inside the "for" loop
 	/* iterate on data blocks array */
 	for (i = 0; i <= SNAPSHOT_ADDR_PER_BLOCK; i++, p++, blk++) {
 		prev_key = key;
@@ -280,6 +285,7 @@ static void next3_snapshot_dump_dind(int n, int l,
 
 	snapshot_debug_l(n, l, "{\n");
 	p = (__le32 *)bh->b_data;
+//EZK: variable 'p' seems unnecessary in this fxn. u can just deref bh->b_data[i] inside the "for" loop
 	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++, p++) {
 		key = le32_to_cpu(*p);
 		if (!key)

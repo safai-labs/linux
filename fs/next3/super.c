@@ -445,6 +445,7 @@ static void next3_put_super (struct super_block * sb)
 	lock_kernel();
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
+//EZK: fxn on next line SHOULD return err. test for it?
 	next3_snapshot_destroy(sb);
 #endif
 	next3_xattr_put_super(sb);
@@ -2771,7 +2772,7 @@ static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 				le32_to_cpu(es->s_snapshot_r_blocks_count))
 			buf->f_bavail = 0;
 		else
-		buf->f_bavail -= le32_to_cpu(es->s_snapshot_r_blocks_count);
+			buf->f_bavail -= le32_to_cpu(es->s_snapshot_r_blocks_count);
 	}
 	buf->f_spare[0] = percpu_counter_sum_positive(&sbi->s_dirs_counter);
 	buf->f_spare[1] = sbi->s_overhead_last;

@@ -107,12 +107,14 @@ struct next3_inode_info {
 	struct list_head i_orphan;	/* unlinked but open inodes */
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+//EZK: the name i_list seems a bit too generic for me, esp. given the i_orphan above. maybe call it i_snaplist?
 #define i_list i_orphan
 	/*
 	 * Snapshot in-memory list uses i_orphan to link snapshot inodes
 	 * but unlike the real orphan list, the next snapshot inode number
 	 * is stored in i_next and not in i_dtime
 	 */
+//EZK: the next snapshot in struct next3_inode is called i_next_snapshot, but here its called only i_next. maybe call it i_next_snapshot here as well? it would make more sense and clarify rest of code.
 	__u32	i_next;
 
 #endif

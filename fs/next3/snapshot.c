@@ -73,6 +73,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  * in which case 'prev_snapshot' is pointed to the previous snapshot
  * on the list or set to NULL to indicate read through to block device.
  */
+//EZK: say what locks shld be taken before calling this. verify snapshot_mutex is taken, which is protecting s_snapshot_list.
 int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t iblock, int count, int cmd,
 		struct inode **prev_snapshot)
@@ -164,6 +165,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	
 	if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
 		/* last snapshot not yet activated - access denied */
+//EZK: if the error is simply an "access denied" then why scare the caller with -EIO? fix comment or return val.
 		return -EIO;
 
 	/* non last snapshot - read through to prev snapshot */
@@ -318,7 +320,6 @@ static int
 next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
 		next3_snapblk_t blk, next3_fsblk_t blocknr)
 {
-#pragma ezk skipped this fxn
 	int err;
 	struct buffer_head *sbh;
 	sbh = sb_getblk(inode->i_sb, blocknr);
@@ -437,6 +438,7 @@ int next3_snapshot_read_block_bitmap(struct super_block *sb,
  *
  * Return COW bitmap buffer on success or NULL in case of failure.
  */
+//EZK: locking semantics?
 static struct buffer_head *
 next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       unsigned int block_group)
@@ -462,8 +464,10 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_BITMAP
+//EZK: u just read the cow_bitmap_blk above under a spinlock, then u go ahead and re-lock and re-read it again. you can combine the two tries into a do-until loop instead.
 	/* handle concurrect COW bitmap operations */
 	while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk) {
+//EZK: cow_bitmap_blk can have three status: equal to 0; equal to bitmap_blk; or some other value. explain somewhere in code+wiki what each of those states means and how its value moves b/t those states.
 		spin_lock(sb_bgl_lock(sbi, block_group));
 		cow_bitmap_blk = le32_to_cpu(desc->bg_cow_bitmap);
 		if (cow_bitmap_blk == 0)
@@ -783,6 +787,8 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 }
 #endif
 
+//EZK this is called under which kind of lock(s)?
+//EZK (perhaps h_cowing should be updated via atomic_set?)
 static inline void next3_snapshot_cow_begin(handle_t *handle)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
@@ -803,6 +809,8 @@ static inline void next3_snapshot_cow_begin(handle_t *handle)
 	handle->h_cowing = 1;
 }
 
+//EZK this is called under which kind of lock(s)?
+//EZK (perhaps h_cowing should be updated via atomic_set?)
 static inline void next3_snapshot_cow_end(const char *where,
 		handle_t *handle, next3_fsblk_t block, int err)
 {

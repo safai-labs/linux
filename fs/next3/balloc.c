@@ -209,6 +209,7 @@ read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 		next3_error(sb, __func__,
 			    "Cannot read exclude bitmap - "
 			    "block_group = %d, exclude_bitmap = %u",
+//EZK: use "bitmap_blk" in next3_error instead of le32_to_cpu(...)
 			    block_group, le32_to_cpu(desc->bg_exclude_bitmap));
 		return NULL;
 	}
@@ -220,6 +221,7 @@ read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 		next3_error(sb, __func__,
 			    "Cannot read exclude bitmap - "
 			    "block_group = %d, exclude_bitmap = %u",
+//EZK: use "bitmap_blk" in next3_error instead of le32_to_cpu(...)
 			    block_group, le32_to_cpu(desc->bg_exclude_bitmap));
 		return NULL;
 	}
@@ -1673,6 +1675,7 @@ out:
 	next3_journal_release_buffer(handle, bitmap_bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh)
+//EZK: fxn on next line can return err. test for it?
 		next3_journal_release_buffer(handle, exclude_bitmap_bh);
 	brelse(exclude_bitmap_bh);
 #endif
@@ -1690,6 +1693,7 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 	next3_fsblk_t free_blocks, root_blocks;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	next3_fsblk_t snapshot_r_blocks;
+//EZK: rename 'snaphot' var below to active_snapshot (name is too generic)
 	struct inode *snapshot = sbi->s_active_snapshot;
 	handle_t *handle = journal_current_handle();
 #endif

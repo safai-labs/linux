@@ -315,6 +315,7 @@ extern int next3_snapshot_exclude_blocks(handle_t *handle,
  * >= 0 - no. of blocks set in exclude bitmap
  * < 0 - error
  */
+__attribute__ ((warn_unused_result))
 static inline int next3_snapshot_get_clear_access(handle_t *handle,
 		struct inode *inode, next3_fsblk_t block, int count)
 {
@@ -478,6 +479,7 @@ static inline int next3_snapshot_should_move_data(struct inode *inode)
  */
 static inline struct inode *next3_snapshot_has_active(struct super_block *sb)
 {
+//EZK: do u need s_snapshot_mutex to return this val?
 	return NEXT3_SB(sb)->s_active_snapshot;
 }
 
@@ -488,6 +490,7 @@ static inline struct inode *next3_snapshot_has_active(struct super_block *sb)
  */
 static inline int next3_snapshot_is_active(struct inode *inode)
 {
+//EZK: do u need s_snapshot_mutex to compare/return this val?
 	return (inode == NEXT3_SB(inode->i_sb)->s_active_snapshot);
 }
 #endif
@@ -532,6 +535,7 @@ static inline void next3_snapshot_end_pending_cow(struct buffer_head *sbh)
 /*
  * Test for pending COW operation and wait for its completion.
  */
+//EZK: there's a chance that this routine will never return.  perhaps add a failsafe method that if it went into the while loop more than N times and still didn't terminate, you abort with some error?
 static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
 						sector_t blocknr)
 {

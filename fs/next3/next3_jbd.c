@@ -127,7 +127,6 @@ int __next3_journal_dirty_metadata(const char *where,
 }
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
-
 int __next3_journal_release_buffer(const char *where, handle_t *handle,
 				struct buffer_head *bh)
 {

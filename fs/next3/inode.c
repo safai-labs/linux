@@ -478,7 +478,6 @@ static next3_fsblk_t next3_find_goal(struct inode *inode, long block,
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_GOAL
-#pragma ezk ignored
 	/* snapshot file copied blocks are allocated close to their source */
 	if (next3_snapshot_file(inode))
 		return SNAPSHOT_BLOCK(block);
@@ -1128,6 +1127,7 @@ failed:
 		BUFFER_TRACE(branch[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (!SNAPMAP_ISSYNC(cmd))
+//EZK: fxn on next line can return err. test for it?
 			next3_journal_forget(handle, branch[i].bh);
 #else
 		next3_journal_forget(handle, branch[i].bh);
@@ -1257,6 +1257,7 @@ err_out:
 		BUFFER_TRACE(where[i].bh, "call journal_forget");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (!SNAPMAP_ISSYNC(cmd))
+//EZK: fxn on next line can return err. test for it?
 			next3_journal_forget(handle, where[i].bh);
 #else
 		next3_journal_forget(handle, where[i].bh);
@@ -1297,6 +1298,7 @@ err_out:
  * return < 0, error case.
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
+//EZK: this ifdef is just for a comment. verify that the ifdef/endif pair are correct.
 /*
  * snapshot_map_blocks() command flags are passed to get_blocks_handle() on its
  * @create argument.  All places in original code call get_blocks_handle()
@@ -3014,6 +3016,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		if (bh) {
 			BUFFER_TRACE(bh, "retaking write access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
+//EZK: fxn on next line can return err. test for it?
 			next3_journal_get_write_access_inode(handle, inode, bh);
 #else
 			next3_journal_get_write_access(handle, bh);
@@ -3314,6 +3317,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (!pblocks)
+//EZK: fxn on next line can return err. test for it?
 				next3_forget(handle, 1, inode, bh,
 					     bh->b_blocknr);
 #else
@@ -3346,6 +3350,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (pblocks) {
 				/* mark block excluded and update counter */
+//EZK: fxn on next line can return err. test for it?
 				next3_snapshot_get_clear_access(handle, inode,
 								nr, 1);
 				*pblocks += 1;
@@ -3918,6 +3923,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * i_disksize of snapshot files is set to snapshot size.
 		 * in-memory i_size of disabled snapshot files is set to 0.
 		 */
+//EZK: the comment above suggests that a disabled snapshot will have zero blocks.  is it possible for two snapshots to be taken in rapid succession, without any CoW blocks copied over, and hence resulting in a new (valid) snapshot that has zero blocks in it? if so, this could cause confusion and you'll have to use something else (-1?) to indicate a disabled snapshot.  perhaps as long as you check if a snapshot is disabled ONLY using flags then it is ok for i_snapshot_blocks to be zero (as long as you dont count on it).
 		ei->i_disksize = le32_to_cpu(raw_inode->i_snapshot_blocks);
 		ei->i_disksize <<= SNAPSHOT_BLOCK_SIZE_BITS;
 		if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)

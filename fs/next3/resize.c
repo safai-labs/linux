@@ -884,6 +884,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 				       "indirect[%d] block\n", dind_offset);
 			return err ? err : -EIO;
 		}
+//EZK: cast below is wrong
 		exclude_bitmap = ((__le32 *)exclude_bh->b_data)[ind_offset];
 	}
 

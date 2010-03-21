@@ -173,6 +173,7 @@ flags_err:
 				err = next3_snapshot_take(inode);
 
 			/* update/cleanup all snapshots on list */
+//EZK: fxn on next line SHOULD return err. test for it?
 			next3_snapshot_update(inode->i_sb, cleanup, 0);
 		}
 #endif

@@ -475,7 +475,6 @@ static inline int next3_snapshot_should_move_data(struct inode *inode)
  */
 static inline struct inode *next3_snapshot_has_active(struct super_block *sb)
 {
-//EZK: do u need s_snapshot_mutex to return this val?
 	return NEXT3_SB(sb)->s_active_snapshot;
 }
 
@@ -486,7 +485,6 @@ static inline struct inode *next3_snapshot_has_active(struct super_block *sb)
  */
 static inline int next3_snapshot_is_active(struct inode *inode)
 {
-//EZK: do u need s_snapshot_mutex to compare/return this val?
 	return (inode == NEXT3_SB(inode->i_sb)->s_active_snapshot);
 }
 #endif

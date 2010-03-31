@@ -19,15 +19,49 @@
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 /*
- * next3_snapshot_set_active() sets the current active snapshot to @inode and
- * returns the deactivated snapshot inode.  If inode is NULL, current active
- * snapshot is deactivated.  This function should be called under
- * journal_lock_updates() and snapshot mutex lock.
+ * General snapshot locking semantics:
+ *
+ * The snapshot_mutex:
+ * -------------------
+ * The majority of the code in the snapshot_{ctl,debug}.c files is called from
+ * very few entry points in the code:
+ * 1. {init,exit}_next3_fs() - calls {init,exit}_next3_snapshot() under BGL.
+ * 2. next3_{fill,put}_super() - calls next3_snapshot_{load,destroy}() under
+ *    VFS sb_lock, while f/s is not accessible to users.
+ * 3. next3_ioctl() - only place that takes snapshot_mutex (after i_mutex)
+ *    and only entry point to snapshot control functions below.
+ *
+ * From the rules above it follows that all fields accessed inside
+ * snapshot_{ctl,debug}.c are protected by one of the following:
+ * - snapshot_mutex during snapshot control operations.
+ * - VFS sb_lock during f/s mount/umount time.
+ * - Big kernel lock during module init time.
+ * Needless to say, either of the above is sufficient.
+ * So if a field is accessed only inside snapshot_*.c it should be safe.
+ *
+ * The transaction handle:
+ * -----------------------
+ * Snapshot COW code (in snapshot.c) is called from block access hooks during a
+ * transaction (with a transaction handle). This guaranties safe read access to
+ * s_active_snapshot, without taking snapshot_mutex, because the later is only
+ * changed under lock_journal_updates() (while no transaction handles exist).
+ *
+ * The transaction handle is a per task struct, so there is no need to protect
+ * fields on that struct (i.e. h_cowing, h_cow_*).
  */
-//EZK: comment above says "if inode is NULL".  do you mean if @inode arg, or if this fxn returns NULL?
-//EZK: say clearly what is returned from this fxn upon success/failure. use kerneldoc style.
-//EZK: can this fxn ever fail?  if so, should it return ERR_PTR()?
-//EZK: either way say what this function returns on success/failure.
+
+/*
+ * next3_snapshot_set_active - set the current active snapshot
+ * First, if current active snapshot exists, it is deactivated.
+ * Then, if @inode is not NULL, the active snapshot is set to @inode.
+ *
+ * Called from next3_snapshot_take() and next3_snapshot_update() under
+ * journal_lock_updates() and snapshot_mutex.
+ * Called from next3_snapshot_{load,destroy}() under sb_lock.
+ *
+ * Returns the deactivated snapshot inode or NULL on success (NULL if no
+ * snapshot was deactivated) and ERR_PTR() or error.
+ */
 __attribute__ ((warn_unused_result))
 static struct inode *
 next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
@@ -39,25 +73,25 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 			       "because file system block size (%lu) != "
 			       "page size (%lu)\n", inode->i_generation,
 			       NEXT3_BLOCK_SIZE(sb), SNAPSHOT_BLOCK_SIZE);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	if (old == inode)
 		return NULL; /* no snapshot was deactivated */
+	
+	/* add new active snapshot reference */
+	if (inode && !igrab(inode))
+		return NULL;
 
+	/* point of no return - replace old with new snapshot */
 	if (old) {
-//EZK: move snapshot_debug msg after u actually do the work.
+		NEXT3_I(old)->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
 		snapshot_debug(1, "snapshot (%u) deactivated\n",
 			       old->i_generation);
-		NEXT3_I(old)->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
-		/* remove active snapshot reference */
+		/* remove old active snapshot reference */
 		iput(old);
 	}
 	if (inode) {
-		/* add active snapshot reference */
-//EZK: if igrab failed, you already deactivated the previous snapshot, so now u dont have any active snapshot. maybe it would be better to first igrab() before deactivating old snapshot, so you dont have strange side effects on the error path of this fxn.
-		if (!igrab(inode))
-			return old;
 		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
 		snapshot_debug(1, "snapshot (%u) activated\n",
 			       inode->i_generation);
@@ -2199,8 +2233,6 @@ prev_snapshot:
 		sb->s_op->freeze_fs(sb);
 		lock_super(sb);
 		/* deactivate in-memory active snapshot */
-//EZK: is snapshot mutex taken at this point? comment above fxn say snapshot mutex might be taken some of the time, depending on caller.
-//EZK: if u want to be safe, u can add BUG_ON(!mutex_is_locked(&lock)) inside snapshot_set_active and in other functions. i use it often to catch "bad" code paths that dont take locks.
 //EZK: fxn on next line MIGHT return err. test for it?
 		next3_snapshot_set_active(sb, NULL);
 		/* clear on-disk active snapshot */

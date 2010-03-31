@@ -37,6 +37,9 @@ enum bh_state_bits {
 	BH_Unwritten,	/* Buffer is allocated on disk but not written */
 	BH_Quiet,	/* Buffer Error Prinks to be quiet */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	BH_Move,	/* Block should be moved to snapshot */
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
 				 * to serialize write I/O to block device.
@@ -135,6 +138,9 @@ BUFFER_FNS(Write_EIO, write_io_error)
 BUFFER_FNS(Ordered, ordered)
 BUFFER_FNS(Eopnotsupp, eopnotsupp)
 BUFFER_FNS(Unwritten, unwritten)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+BUFFER_FNS(Move, move)
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 BUFFER_FNS(Tracked_Read, tracked_read)
 #endif

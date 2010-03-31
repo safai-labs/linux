@@ -261,9 +261,9 @@ static inline int next3_snapshot_get_create_access(handle_t *handle,
  * @move:	if false, only test if @block needs to be moved
  *
  * Called from next3_get_blocks_handle() before overwriting a data block,
- * when next3_snapshot_should_move_data(@inode) is true.
- * Specifically, only data blocks of regular files, whose data is not being
- * journaled are moved.  Journaled data blocks are COWed on get_write_access().
+ * when buffer_move() is true.  Specifically, only data blocks of regular files,
+ * whose data is not being journaled are moved on full page write.
+ * Journaled data blocks are COWed on get_write_access().
  * Snapshots and excluded files blocks are never moved-on-write.
  * If @move is true, then truncate_mutex is held.
  *
@@ -454,7 +454,11 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-static inline int next3_snapshot_should_move_data(struct inode *inode)
+/*
+ * check if @inode data should be COWed or moved to snapshot
+ * (blocks are moved only on full page write)
+ */
+static inline int next3_snapshot_should_cow_data(struct inode *inode)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_excluded(inode))

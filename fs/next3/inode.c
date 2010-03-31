@@ -1382,7 +1382,8 @@ retry:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (!partial && create &&
-		next3_snapshot_should_move_data(inode)) {
+			next3_snapshot_should_cow_data(inode) &&
+			buffer_move(bh_result)) {
 		first_block = le32_to_cpu(chain[depth - 1].key);
 		blocks_to_boundary = 0;
 		/* should move 1 data block to snapshot? */
@@ -1502,7 +1503,8 @@ retry:
 		}
 		partial = next3_get_branch(inode, depth, offsets, chain, &err);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-		if (!partial && next3_snapshot_should_move_data(inode)) {
+		if (!partial && next3_snapshot_should_cow_data(inode) &&
+				buffer_move(bh_result)) {
 			first_block = le32_to_cpu(chain[depth - 1].key);
 			blocks_to_boundary = 0;
 			/* should move 1 data block to snapshot? */
@@ -1911,11 +1913,27 @@ static int do_journal_get_write_access(handle_t *handle,
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-static int do_clear_buffer_mapped(handle_t *handle,
+/* read non-uptodate buffer to cache and COW to snapshot */
+static int do_snapshot_get_write_access(handle_t *handle, struct inode *inode,
 					struct buffer_head *bh)
 {
-	clear_buffer_mapped(bh);
-	return 0;
+	int err;
+
+	if (!buffer_mapped(bh))
+		return -EIO;
+
+	if (!buffer_uptodate(bh)) {
+		ll_rw_block(READ, 1, &bh);
+		wait_on_buffer(bh);
+		if (!buffer_uptodate(bh))
+			return -EIO;
+	}
+
+	err = next3_snapshot_get_write_access(handle, inode, bh);
+	if (err)
+		next3_journal_abort_handle("next3_write_begin", __func__,
+				bh, handle, err);
+	return err;
 }
 
 #endif
@@ -1933,6 +1951,9 @@ static int next3_write_begin(struct file *file, struct address_space *mapping,
 				loff_t pos, unsigned len, unsigned flags,
 				struct page **pagep, void **fsdata)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	struct buffer_head *bh;
+#endif
 	struct inode *inode = mapping->host;
 	int ret;
 	handle_t *handle;
@@ -1969,15 +1990,19 @@ retry:
 	 * gauranty this we have to know that the transaction is not restarted.
 	 * Can we count on that?
 	 */
-	if (next3_snapshot_should_move_data(inode) &&
-		page_has_buffers(page))
-		/*
-		 * Unset the BH_Mapped flag so get_block is always called.
-		 * XXX: is write_begin() being called before writepage() in all
-		 * data journaling modes?
-		 */
-		ret = walk_page_buffers(handle, page_buffers(page),
-				from, to, NULL, do_clear_buffer_mapped);
+	if (next3_snapshot_should_cow_data(inode)) {
+		if (!page_has_buffers(page))
+			create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
+		/* snapshots only work when blocksize == pagesize */
+		bh = page_buffers(page);
+		if (len == PAGE_CACHE_SIZE) {
+			/* move block inside get_block on full page write */
+			set_buffer_move(bh);
+			/* make sure that get_block() is called */
+			clear_buffer_mapped(bh);
+		} else
+			clear_buffer_move(bh);
+	}
 
 #endif
 	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
@@ -1989,7 +2014,16 @@ retry:
 		ret = walk_page_buffers(handle, page_buffers(page),
 				from, to, NULL, do_journal_get_write_access);
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	if (next3_snapshot_should_cow_data(inode) && !buffer_move(bh))
+		/* COW block before partial page write */
+		ret = do_snapshot_get_write_access(handle, inode, bh);
+#endif
 write_begin_failed:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	/* keep buffer_move() inside the scope of this function */
+	clear_buffer_move(bh);
+#endif
 	if (ret) {
 		/*
 		 * block_write_begin may have instantiated a few blocks

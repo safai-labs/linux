@@ -97,11 +97,11 @@
 #define NEXT3_SNAPSHOT_CREDITS 	(3*NEXT3_WRITE_CREDITS)
 /*
  * in total, for N COW operations, we may have to journal 17N+3 blocks,
- * and we also want to reserve 17+3 credits for the last COW opertation,
+ * and we also want to reserve 17+3 credits for the last COW operation,
  * so we add 17(N-1)+3+(17+3) to the requested N buffer credits
  * and request 18N+6 buffer credits.
  *
- * we are going to need a bigger journal to accomodate the
+ * we are going to need a bigger journal to accommodate the
  * extra snapshot credits.
  * mke2fs uses the following default formula for fs-size above 1G:
  * journal-size = MIN(128M, fs-size/32)

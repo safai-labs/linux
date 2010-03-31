@@ -804,7 +804,7 @@ static int next3_move_branches(handle_t *handle, struct inode *src,
  * @iblock:	inode offset to first data block to merge
  * @maxblocks:	inode range of data blocks to merge
  *
- * Merges @maxblocks data blocks starting at @iblock and all the indirects
+ * Merges @maxblocks data blocks starting at @iblock and all the indirect
  * blocks that map them.
  * Called from next3_snapshot_merge() under snapshot_mutex.
  * Returns the merged blocks range and <0 on error.
@@ -859,7 +859,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 	pS = S+kd;
 	pD = D+kd;
 
-	/* calc max braches that can be moved */
+	/* compute max branches that can be moved */
 	data_ptrs_bits = ptrs_bits * (depth - kd - 1);
 	data_ptrs_mask = (1 << data_ptrs_bits) - 1;
 	max_ptrs = (maxblocks >> data_ptrs_bits) + 1;
@@ -1128,7 +1128,7 @@ failed:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (!SNAPMAP_ISSYNC(cmd))
 			/* no need to check for errors - we failed anyway */
-			(void)next3_journal_forget(handle, branch[i].bh);
+			(void) next3_journal_forget(handle, branch[i].bh);
 #else
 		next3_journal_forget(handle, branch[i].bh);
 #endif
@@ -1258,7 +1258,7 @@ err_out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
 		if (!SNAPMAP_ISSYNC(cmd))
 			/* no need to check for errors - we failed anyway */
-			(void)next3_journal_forget(handle, where[i].bh);
+			(void) next3_journal_forget(handle, where[i].bh);
 #else
 		next3_journal_forget(handle, where[i].bh);
 #endif
@@ -1683,7 +1683,7 @@ cleanup:
 		cancel_buffer_tracked_read(bh_result);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	/* cancel pending COW operetion on failure to alloc snapshot block */
+	/* cancel pending COW operation on failure to alloc snapshot block */
 	if (create && err < 0 && sbh)
 		next3_snapshot_end_pending_cow(sbh);
 	brelse(sbh);
@@ -1987,7 +1987,7 @@ retry:
 	 * XXX: We can also check next3_snapshot_has_active() here and we don't
 	 * need to unmap the buffers is there is no active snapshot, but the
 	 * result must be valid throughout the writepage() operation and to
-	 * gauranty this we have to know that the transaction is not restarted.
+	 * guarantee this we have to know that the transaction is not restarted.
 	 * Can we count on that?
 	 */
 	if (next3_snapshot_should_cow_data(inode)) {
@@ -2329,7 +2329,7 @@ static int buffer_unmapped(handle_t *handle, struct buffer_head *bh)
  *
  *   It's a rare case: affects the final partial page, for journalled data
  *   where the file is subject to bith write() and writepage() in the same
- *   transaction.  To fix it we'll need a custom block_write_full_page().
+ *   transction.  To fix it we'll need a custom block_write_full_page().
  *   We'll probably need that anyway for journalling writepage() output.
  *
  * We don't honour synchronous mounts for writepage().  That would be

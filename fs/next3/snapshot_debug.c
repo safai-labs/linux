@@ -255,13 +255,13 @@ static void next3_snapshot_dump_ind(int n, int l,
 }
 
 /*
- * next3_snapshot_dump_dind - dump double or tripple indirect block
+ * next3_snapshot_dump_dind - dump double or triple indirect block
  *	@n:	prints debug level
  *	@l:	prints indentation level
  *	@di:	snapshot dump state
  *	@nr:	address of double indirect block
  *	@idx:	index of double indirect block
- *	@tind:	recursive dump of tripple indirect block
+ *	@tind:	recursive dump of triple indirect block
  *
  * Sample output:
  * 	dind[1] = [30728/35]
@@ -377,7 +377,7 @@ void next3_snapshot_dump(int n, struct inode *inode)
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)
 		next3_snapshot_dump_dind(n, 0, &di, nr, 0, 0);
-	/* print tripple indirect branch (rest of snapshot image) */
+	/* print triple indirect branch (rest of snapshot image) */
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)
 		next3_snapshot_dump_dind(n, 0, &di, nr, 0, 1);

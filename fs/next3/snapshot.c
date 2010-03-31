@@ -158,11 +158,11 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	if (list_empty(prev))
 		/* not on snapshots list? */
 		return -EIO;
-	
+
 	if (next3_snapshot_is_active(inode))
 		/* active snapshot - read through to block device */
 		return 1;
-	
+
 	if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
 		/* last snapshot not yet activated - access denied */
 //EZK: if the error is simply an "access denied" then why scare the caller with -EIO? fix comment or return val.
@@ -260,7 +260,7 @@ next3_snapshot_complete_cow(handle_t *handle,
 		sync_dirty_buffer(sbh);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
-	/* COW operetion is complete */
+	/* COW operation is complete */
 	next3_snapshot_end_pending_cow(sbh);
 #endif
 	return err;
@@ -381,7 +381,7 @@ next3_snapshot_init_cow_bitmap(struct super_block *sb,
 	 * to copy it.  Copying committed_data will keep us
 	 * protected from these changes.  At this point we are
 	 * guaranteed that the only difference between block bitmap
-	 * and commited_data are the new active snapshot blocks,
+	 * and committed_data are the new active snapshot blocks,
 	 * because before allocating/freeing any other blocks a task
 	 * must first get_undo_access() and get here.
 	 */
@@ -465,7 +465,7 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_BITMAP
 //EZK: u just read the cow_bitmap_blk above under a spinlock, then u go ahead and re-lock and re-read it again. you can combine the two tries into a do-until loop instead.
-	/* handle concurrect COW bitmap operations */
+	/* handle concurrent COW bitmap operations */
 	while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk) {
 //EZK: cow_bitmap_blk can have three status: equal to 0; equal to bitmap_blk; or some other value. explain somewhere in code+wiki what each of those states means and how its value moves b/t those states.
 		spin_lock(sb_bgl_lock(sbi, block_group));
@@ -776,7 +776,7 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid) {
 			/*
 			 * this is the first time this block was COWed
-			 * in the runnning transaction.
+			 * in the running transaction.
 			 * update the COW tid in the journal head
 			 * to mark that this block doesn't need to be COWed.
 			 */
@@ -799,7 +799,7 @@ static inline void next3_snapshot_cow_begin(handle_t *handle)
 		 * so it is possible that there is no bug here, just another
 		 * false alarm.
 		 */
-		snapshot_debug_hl(1, "warning: insuffiecient buffer/user "
+		snapshot_debug_hl(1, "warning: insufficient buffer/user "
 				  "credits (%d/%d) for COW operation?\n",
 				  handle->h_buffer_credits,
 				  handle->h_user_credits);

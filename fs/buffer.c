@@ -412,8 +412,8 @@ static void end_buffer_tracked_read(struct buffer_head *bh)
 	clear_buffer_mapped(bh);
 	clear_buffer_tracked_read(bh);
 }
-
 #endif
+
 /*
  * I/O completion handler for block_read_full_page() - pages
  * which come unlocked at the end of I/O.

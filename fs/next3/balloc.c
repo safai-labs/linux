@@ -1027,7 +1027,7 @@ claim_block(struct super_block *sb, int group, spinlock_t *lock,
 	 * in-consistent state of a snapshot file block not marked excluded.
 	 * However, this kind of in-consistency can be neglected because when
 	 * the exclude bitmap is used for creating the COW bitmap it is masked
-	 * with the frozen copy of block bitmap in b_commited_data, where this
+	 * with the frozen copy of block bitmap in b_committed_data, where this
 	 * block is not marked allocated.
 	 */
 	if (ret && exclude_bitmap_bh &&

@@ -2772,7 +2772,8 @@ static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 				le32_to_cpu(es->s_snapshot_r_blocks_count))
 			buf->f_bavail = 0;
 		else
-			buf->f_bavail -= le32_to_cpu(es->s_snapshot_r_blocks_count);
+			buf->f_bavail -=
+				le32_to_cpu(es->s_snapshot_r_blocks_count);
 	}
 	buf->f_spare[0] = percpu_counter_sum_positive(&sbi->s_dirs_counter);
 	buf->f_spare[1] = sbi->s_overhead_last;

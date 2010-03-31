@@ -43,7 +43,7 @@
  * -----------------------
  * Snapshot COW code (in snapshot.c) is called from block access hooks during a
  * transaction (with a transaction handle). This guaranties safe read access to
- * s_active_snapshot, without taking snapshot_mutex, because the later is only
+ * s_active_snapshot, without taking snapshot_mutex, because the latter is only
  * changed under lock_journal_updates() (while no transaction handles exist).
  *
  * The transaction handle is a per task struct, so there is no need to protect
@@ -78,7 +78,7 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 
 	if (old == inode)
 		return NULL; /* no snapshot was deactivated */
-	
+
 	/* add new active snapshot reference */
 	if (inode && !igrab(inode))
 		return NULL;
@@ -144,7 +144,7 @@ static int next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
  *
  * 1. Creating a snapshot file
  * The snapfile flag is changed for directories only (chattr +x), so
- * snapshot files must be created inside a snapshots diretory.
+ * snapshot files must be created inside a snapshots directory.
  * They inherit the flag at birth and they die with it.
  * This helps to avoid various race conditions when changing
  * regular files to snapshots and back.
@@ -386,7 +386,7 @@ out:
 #endif
 
 /*
- * next3_snapshot_create() initilizes a snapshot file
+ * next3_snapshot_create() initializes a snapshot file
  * and adds it to the list of snapshots
  * Called under i_mutex and snapshot_mutex
  */
@@ -621,7 +621,8 @@ alloc_inode_blocks:
 	/* not same inode and bitmap blocks as prev snapshot */
 	prev_inode_blk = inode_blk;
 #endif
-	bmap_blk = imap_blk = 0;
+	bmap_blk = 0;
+	imap_blk = 0;
 	desc = next3_get_group_desc(sb, iloc.block_group, NULL);
 	if (!desc)
 		goto next_snapshot;
@@ -1975,10 +1976,10 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	if (!NEXT3_HAS_COMPAT_FEATURE(sb,
 		NEXT3_FEATURE_COMPAT_BIG_JOURNAL))
 		snapshot_debug(1, "warning: big_journal feature is not set - "
-			       "this might affect concurrnet filesystem "
+			       "this might affect concurrent filesystem "
 			       "writers performance!\n");
 #endif
-	
+
 	if (!*ino_next && active_ino) {
 		/* snapshots list is empty and active snapshot exists */
 		if (!read_only)
@@ -1997,7 +1998,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		 * as rw ext3 (only rw next3 or ro ext3/ext2).
 		 * We should never get here if the file system is consistent,
 		 * but if we find a last_snapshot inode, we try to load it.
-	         * If we succeed, we will fix the missing HAS_SNAPSHOT flag
+		 * If we succeed, we will fix the missing HAS_SNAPSHOT flag
 		 * and if we fail we will clear the last_snapshot field and
 		 * allow read-write mount.
 		 */
@@ -2090,7 +2091,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 }
 
 /*
- * next3_snapshot_destroy() releases the in-memoery snapshot list
+ * next3_snapshot_destroy() releases the in-memory snapshot list
  * Called from next3_put_super() under big kernel lock
  */
 //EZK: s_snapshot_list below needs snapshot mutex. taken?
@@ -2120,7 +2121,7 @@ void next3_snapshot_destroy(struct super_block *sb)
  * @sb: handle to file system super block.
  * @cleanup: if true, shrink/merge/cleanup all snapshots marked for deletion.
  * @read_only: if true, don't remove snapshot after failed take.
- * 
+ *
  * Called from next3_ioctl() under snapshot_mutex
  * Called from snapshot_load() under sb_lock with @cleanup=0
  */
@@ -2209,7 +2210,7 @@ update_snapshot:
 
 	if (!deleted) {
 		if (!found_active)
-			/* newer snapshots are potentialy used by
+			/* newer snapshots are potentially used by
 			 * this snapshot (when it is enabled) */
 			used_by = inode;
 		if (ei->i_flags & NEXT3_SNAPFILE_ENABLED_FL)
@@ -2258,4 +2259,3 @@ void next3_snapshot_destroy(struct super_block *sb)
 {
 }
 #endif
-

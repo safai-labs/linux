@@ -108,7 +108,7 @@ int __next3_journal_dirty_metadata(const char *where,
 		if (jh->b_modified && !jh->b_user_modified) {
 			/*
 			 * buffer_credits was decremented when buffer was
-			 * modified for the first time in the currect
+			 * modified for the first time in the current
 			 * transaction, which may have been during a COW
 			 * operation.  We decrement user_credits and mark
 			 * b_user_modified, on the first time that the buffer

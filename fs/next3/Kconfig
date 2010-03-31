@@ -3,7 +3,7 @@ config NEXT3_FS
 	select JBD
 	help
 	  This is the journalling version of the Second extended file system
-	  (often called next3), the de facto standard Linux file system
+	  (often called next3), the de-facto standard Linux file system
 	  (method to organize files on a storage device) for hard disks.
 
 	  The journalling code included in this driver means you do not have
@@ -34,12 +34,12 @@ config NEXT3_DEFAULTS_TO_ORDERED
 	help
 	  The journal mode options for next3 have different tradeoffs
 	  between when data is guaranteed to be on disk and
-	  performance.	The use of "data=writeback" can cause
+	  performance. The use of "data=writeback" can cause
 	  unwritten data to appear in files after an system crash or
-	  power failure, which can be a security issue.	 However,
+	  power failure, which can be a security issue.  However,
 	  "data=ordered" mode can also result in major performance
 	  problems, including seconds-long delays before an fsync()
-	  call returns.	 For details, see:
+	  call returns.  For details, see:
 
 	  http://ext4.wiki.kernel.org/index.php/Next3_data_mode_tradeoffs
 

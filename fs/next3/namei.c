@@ -1817,7 +1817,7 @@ retry:
 		drop_nlink(inode); /* is this nlink == 0? */
 		unlock_new_inode(inode);
 		/* no need to check for errors - we failed anyway */
-		(void)next3_mark_inode_dirty(handle, inode);
+		(void) next3_mark_inode_dirty(handle, inode);
 		iput(inode);
 		brelse(dir_block);
 		goto out_stop;

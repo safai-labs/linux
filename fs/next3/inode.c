@@ -3973,6 +3973,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		if (ei->i_data[NEXT3_IND_BLOCK] != 0) {
 			/* there should be no blocks on the indirect branch
 			   of exclude inode */
+//EZK: if the above "if" is for debugging purposes, then why not also check tind?
 			brelse(bh);
 			ret = -EIO;
 			goto bad_inode;
@@ -3989,6 +3990,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * 5. A healthy exclude inode has blocks only on the DIND branch
 		 * XXX: is that a problem?
 		 */
+//EZK: i dont understand something. you wanted a hack where your exclude inode has blocks only on the dind branch, right? and you say you wont have any blocks on ind or tind, right? so why do you go through the hack of copying the i_data from dind to ind here; and at other places you have to reset the i_data[IND] to zero. why not just leave both IND and TIND as zero and ONLY use DIND?  would that violate some sort of fundamental ext3 rule?
 		ei->i_data[NEXT3_IND_BLOCK] = ei->i_data[NEXT3_DIND_BLOCK];
 	}
 
@@ -4179,6 +4181,7 @@ static int next3_do_update_inode(handle_t *handle,
 	if (next3_snapshot_exclude_inode(inode) &&
 			raw_inode->i_block[NEXT3_IND_BLOCK] ==
 			raw_inode->i_block[NEXT3_DIND_BLOCK])
+//EZK: in next3_iget you checked the validity of the t/d/ind pointers of the inode. here u dont check validity but ignore if IND!=DIND. does it make sense to do the same sanity checking here as well?
 		/*
 		 * Remove duplicate reference to exclude inode indirect blocks
 		 * which was exposed in next3_iget() before storing to disk.

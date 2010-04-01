@@ -607,10 +607,12 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 */
 	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
 		if (next3_test_bit(bit, cow_bh->b_data))
+//EZK: dont increment inuse if all u use it is to see if its 0/1. such code is a bit misleading.
 			inuse++;
 		else
 			break;
 		bit++;
+//EZK: i dont like the idea of modifying formal params passed to a fxn. it works, but is just odd. i prefer to see a new automatic variable initalized from 'count' and decremented instead.
 		count--;
 	}
 
@@ -635,6 +637,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			"excluded file (ino=%lu) block [%d/%lu] is not "
 			"excluded! - run fsck to fix exclude bitmap.\n",
 			excluded->i_ino, bit, block_group);
+//EZK: if this is a serious enough problem to cause next3_error,  then why do you return 0 and not -EIO?
 		return 0;
 #endif
 	}

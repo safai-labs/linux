@@ -566,8 +566,11 @@ void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	next3_grpblk_t exclude_freed = 0;
+//EZK: no need to check "inode && next_snapshot_excluded" b/c the latter already checks if inode is null; also no need for ?: below -- just compare if something is zero or non-zero.
 	int excluded_block, excluded_file = (inode &&
 			next3_snapshot_excluded(inode)) ? 1 : 0;
+//EZK: the above four variables all related to exclusion, but they are hard to understand: what is each one of them for exactly?  is excluded_file a boolean or a number?
+//EZK: is seems to me that some of these variables are pretty close to each other in meaning. so for example can some of them be folded together to simplify the logic here?
 #endif
 #endif
 
@@ -654,6 +657,7 @@ do_more:
 			handle, &dummy_exclude_inode, exclude_bitmap_bh);
 		if (err)
 			goto error_return;
+//EZK: why reset exclude_freed to 0 here? it is already initialized to 0 above. any chance it wont be zero here?
 		exclude_freed = 0;
 	}
 
@@ -761,6 +765,7 @@ do_more:
 			 * next3_error() which commits the super block.
 			 * TODO: implement fix exclude bitmap in fsck.
 			 */
+//EZK: you say in comment above that fsck support is not done to fix exclude bitmap. so the printf below is misleading by saying to run fsck.
 			NEXT3_SET_RO_COMPAT_FEATURE(sb,
 					NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
 			next3_error(sb, __func__,
@@ -775,6 +780,8 @@ do_more:
 		}
 		if (excluded_block)
 			exclude_freed++;
+//EZK: u only test if exclude_freed is non-zero/zero, so no need to ++ it
+//EZK: can u document briefly what is purpose of exclude_freed?
 #endif
 	}
 	jbd_unlock_bh_state(bitmap_bh);
@@ -1041,6 +1048,7 @@ claim_block(struct super_block *sb, int group, spinlock_t *lock,
 		 * next3_error() which commits the super block.
 		 * TODO: implement fix exclude bitmap in fsck.
 		 */
+//EZK: the TODO above says fsck support isnt done, but prinf below says to run fsck. misleading.
 		jbd_unlock_bh_state(bh);
 		NEXT3_SET_RO_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);

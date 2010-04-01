@@ -1872,6 +1872,7 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 		snapshot_debug(1, "warning: exclude_inode feature not set - "
 			       "snapshot merge might not free all unused "
 			       "blocks!\n");
+//EZK: why return 0 here and not, say, EINVAL or some other -errno?
 		return 0;
 	}
 
@@ -1879,6 +1880,7 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	if (IS_ERR(inode)) {
 		snapshot_debug(1, "warning: bad exclude inode - "
 				"no exclude bitmap!\n");
+//EZK: bug below. should be "return PTR_ERR(inode)"
 		PTR_ERR(inode);
 	}
 

@@ -202,6 +202,7 @@ extern int next3_snapshot_test_and_move(const char *where,
  * = 0 - block was COWed or doesn't need to be COWed
  * < 0 - error
  */
+//EZK: there doesnt seem to be a reason to have this simple renaming inline fxn as it doesnt change any params of behavior.  remove it and change callers?
 static inline int next3_snapshot_get_write_access(handle_t *handle,
 		struct inode *inode, struct buffer_head *bh)
 {
@@ -431,8 +432,11 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
  * XXX: Excluded files code is experimental,
  *      but ignored files code isn't.
  */
+//EZK: the comment above sez it returns >0 for excluded file but code below returns -1 for exluded inode; do u want to document experimental or non-experimental code?
+//EZK: perhaps a better name for this fxn would be next3_exclude_from_snapshotting?
 static inline int next3_snapshot_excluded(struct inode *inode)
 {
+//EZK: does nonzero mean "exclude from snapshotting"?  if so, a zero means "to snaphost", right? if so, then returning zero for !S_ISREG seems odd.  It seems to me the first 'if' in this fxn should be a BUG_ON: should never happen.
 	if (!inode || !S_ISREG(inode->i_mode))
 		return 0;
 	if (next3_snapshot_file(inode))
@@ -445,6 +449,7 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	/* XXX: Experimental code */
+//EZK: btw this check below should perhaps be a static inline fxn, as per other flags?
 	if (NEXT3_I(inode)->i_flags & NEXT3_NOSNAP_FL)
 		/* exclude file with 'nosnap'/'nodump' flag */
 		return 1;

@@ -38,7 +38,7 @@ enum bh_state_bits {
 	BH_Quiet,	/* Buffer Error Prinks to be quiet */
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	BH_Move,	/* Block should be moved to snapshot */
+	BH_Partial_Write,	/* Buffer should be read before write */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
@@ -139,7 +139,7 @@ BUFFER_FNS(Ordered, ordered)
 BUFFER_FNS(Eopnotsupp, eopnotsupp)
 BUFFER_FNS(Unwritten, unwritten)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-BUFFER_FNS(Move, move)
+BUFFER_FNS(Partial_Write, partial_write)
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 BUFFER_FNS(Tracked_Read, tracked_read)

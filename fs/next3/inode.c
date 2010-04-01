@@ -1382,8 +1382,7 @@ retry:
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (!partial && create &&
-			next3_snapshot_should_cow_data(inode) &&
-			buffer_move(bh_result)) {
+			next3_snapshot_should_move_data(inode)) {
 		first_block = le32_to_cpu(chain[depth - 1].key);
 		blocks_to_boundary = 0;
 		/* should move 1 data block to snapshot? */
@@ -1503,8 +1502,7 @@ retry:
 		}
 		partial = next3_get_branch(inode, depth, offsets, chain, &err);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-		if (!partial && next3_snapshot_should_cow_data(inode) &&
-				buffer_move(bh_result)) {
+		if (!partial && next3_snapshot_should_move_data(inode)) {
 			first_block = le32_to_cpu(chain[depth - 1].key);
 			blocks_to_boundary = 0;
 			/* should move 1 data block to snapshot? */
@@ -1584,7 +1582,23 @@ retry:
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (*(partial->p)) {
-		/* re-allocated block - move old block to snapshot */
+		/* old block is being replaced with a new block */
+		if (buffer_partial_write(bh_result) &&
+				!buffer_uptodate(bh_result)) {
+			/* read old block data before moving it to snapshot */
+			map_bh(bh_result, inode->i_sb,
+					le32_to_cpu(*(partial->p)));
+			err = -EIO;
+			ll_rw_block(READ, 1, &bh_result);
+			wait_on_buffer(bh_result);
+			/* clear old block mapping */
+			clear_buffer_mapped(bh_result);
+			if (!buffer_uptodate(bh_result))
+				goto out_mutex;
+			/* prevent zero out of page in block_write_begin() */
+			SetPageUptodate(bh_result->b_page);
+		}
+		/* move old block to snapshot */
 		err = next3_snapshot_get_move_access(handle, inode,
 				le32_to_cpu(*(partial->p)), 1);
 		if (err < 1) {
@@ -1912,31 +1926,6 @@ static int do_journal_get_write_access(handle_t *handle,
 	return next3_journal_get_write_access(handle, bh);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-/* read non-uptodate buffer to cache and COW to snapshot */
-static int do_snapshot_get_write_access(handle_t *handle, struct inode *inode,
-					struct buffer_head *bh)
-{
-	int err;
-
-	if (!buffer_mapped(bh))
-		return -EIO;
-
-	if (!buffer_uptodate(bh)) {
-		ll_rw_block(READ, 1, &bh);
-		wait_on_buffer(bh);
-		if (!buffer_uptodate(bh))
-			return -EIO;
-	}
-
-	err = next3_snapshot_get_write_access(handle, inode, bh);
-	if (err)
-		next3_journal_abort_handle("next3_write_begin", __func__,
-				bh, handle, err);
-	return err;
-}
-
-#endif
 /*
  * Truncate blocks that were not used by write. We have to truncate the
  * pagecache as well so that corresponding buffers get properly unmapped.
@@ -1952,7 +1941,7 @@ static int next3_write_begin(struct file *file, struct address_space *mapping,
 				struct page **pagep, void **fsdata)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	struct buffer_head *bh;
+	struct buffer_head *bh = NULL;
 #endif
 	struct inode *inode = mapping->host;
 	int ret;
@@ -1990,18 +1979,18 @@ retry:
 	 * guarantee this we have to know that the transaction is not restarted.
 	 * Can we count on that?
 	 */
-	if (next3_snapshot_should_cow_data(inode)) {
+	if (next3_snapshot_should_move_data(inode)) {
 		if (!page_has_buffers(page))
 			create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
 		/* snapshots only work when blocksize == pagesize */
 		bh = page_buffers(page);
-		if (len == PAGE_CACHE_SIZE) {
-			/* move block inside get_block on full page write */
-			set_buffer_move(bh);
-			/* make sure that get_block() is called */
-			clear_buffer_mapped(bh);
-		} else
-			clear_buffer_move(bh);
+		if (len < PAGE_CACHE_SIZE)
+			/* read block before moving it to snapshot */
+			set_buffer_partial_write(bh);
+		else
+			clear_buffer_partial_write(bh);
+		/* make sure that get_block() is called */
+		clear_buffer_mapped(bh);
 	}
 
 #endif
@@ -2014,15 +2003,14 @@ retry:
 		ret = walk_page_buffers(handle, page_buffers(page),
 				from, to, NULL, do_journal_get_write_access);
 	}
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	if (next3_snapshot_should_cow_data(inode) && !buffer_move(bh))
-		/* COW block before partial page write */
-		ret = do_snapshot_get_write_access(handle, inode, bh);
-#endif
 write_begin_failed:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	/* keep buffer_move() inside the scope of this function */
-	clear_buffer_move(bh);
+	/*
+	 * buffer_partial_write() is only used by this function to pass the
+	 * information to next3_get_block() and should be cleared on exit.
+	 */
+	if (bh)
+		clear_buffer_partial_write(bh);
 #endif
 	if (ret) {
 		/*
@@ -2618,6 +2606,13 @@ static int next3_releasepage(struct page *page, gfp_t wait)
 	return journal_try_to_free_buffers(journal, page, wait);
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+/*
+ * snapshot support for direct I/O is not implemented,
+ * so direct I/O operation is disabled.
+ */
+#define next3_direct_IO NULL
+#else
 /*
  * If the O_DIRECT write will extend the file then add this inode to the
  * orphan list.  So recovery will truncate it back to the original size
@@ -2700,6 +2695,7 @@ static ssize_t next3_direct_IO(int rw, struct kiocb *iocb,
 out:
 	return ret;
 }
+#endif
 
 /*
  * Pages can be marked dirty completely asynchronously from next3's journalling
@@ -3508,6 +3504,14 @@ void next3_truncate(struct inode *inode)
 	if ((inode->i_size & (blocksize - 1)) == 0) {
 		/* Block boundary? Nothing to do */
 		page = NULL;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	} else if (next3_snapshot_should_move_data(inode)) {
+		/*
+		 * data blocks are not moved on next3_block_truncate_page(),
+		 * so skip page zero out to protect data in snapshot image.
+		 */
+		page = NULL;
+#endif
 	} else {
 		page = grab_cache_page(mapping,
 				inode->i_size >> PAGE_CACHE_SHIFT);

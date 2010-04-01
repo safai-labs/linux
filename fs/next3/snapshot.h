@@ -460,16 +460,15 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 /*
- * check if @inode data should be COWed or moved to snapshot
- * (blocks are moved only on full page write)
+ * check if @inode data blocks should be moved-on-write
  */
-static inline int next3_snapshot_should_cow_data(struct inode *inode)
+static inline int next3_snapshot_should_move_data(struct inode *inode)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_excluded(inode))
 		return 0;
 #endif
-	/* when data is journaled, it is already COWed as metadata */
+	/* when a data block is journaled, it is already COWed as metadata */
 	if (next3_should_journal_data(inode))
 		return 0;
 	return 1;

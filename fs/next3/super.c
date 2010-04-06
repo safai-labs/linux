@@ -1704,6 +1704,19 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 			    NULL, 0))
 		goto failed_mount;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	/* Next3 unsupported features */
+	if (sbi->s_mount_opt & NEXT3_MOUNT_JOURNAL_DATA) {
+		printk(KERN_ERR "NEXT3-fs: data=journal option is not "
+				"supported\n");
+		goto failed_mount;
+	}
+	if (test_opt(sb, QUOTA)) {
+		printk(KERN_ERR "NEXT3-fs: quota options are not supported.\n");
+		goto failed_mount;
+	}
+#endif
+
 	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
 		((sbi->s_mount_opt & NEXT3_MOUNT_POSIX_ACL) ? MS_POSIXACL : 0);
 
@@ -1735,8 +1748,13 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	}
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	/* Block size must be equal to page size */
+	if (blocksize != SNAPSHOT_BLOCK_SIZE) {
+#else
 	if (blocksize < NEXT3_MIN_BLOCK_SIZE ||
 	    blocksize > NEXT3_MAX_BLOCK_SIZE) {
+#endif
 		printk(KERN_ERR
 		       "NEXT3-fs: Unsupported filesystem blocksize %d on %s.\n",
 		       blocksize, sb->s_id);

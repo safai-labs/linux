@@ -400,7 +400,7 @@ struct next3_inode {
 			__le16	l_i_uid_high;	/* these 2 fields    */
 			__le16	l_i_gid_high;	/* were reserved2[0] */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-			__le32	l_i_snapshot_blocks_count; /* On-disk snapshot size */
+			__le32	l_i_snapshot_blocks_count; /* Snapshot size */
 #else
 			__u32	l_i_reserved2;
 #endif

@@ -72,6 +72,10 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (IS_NOQUOTA(inode))
 			goto flags_out;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* update snapshot 'open' flag under i_mutex */
+		next3_snapshot_get_flags(ei, filp);
+#endif
 		oldflags = ei->i_flags;
 
 		/* The JOURNAL_DATA flag is modifiable only by root */

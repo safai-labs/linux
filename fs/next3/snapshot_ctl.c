@@ -44,7 +44,7 @@
  * Snapshot COW code (in snapshot.c) is called from block access hooks during a
  * transaction (with a transaction handle). This guaranties safe read access to
  * s_active_snapshot, without taking snapshot_mutex, because the latter is only
- * changed under lock_journal_updates() (while no transaction handles exist).
+ * changed under journal_lock_updates() (while no transaction handles exist).
  *
  * The transaction handle is a per task struct, so there is no need to protect
  * fields on that struct (i.e. h_cowing, h_cow_*).
@@ -68,20 +68,12 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 {
 	struct inode *old = NEXT3_SB(sb)->s_active_snapshot;
 
-	if (inode && NEXT3_BLOCK_SIZE(sb) != SNAPSHOT_BLOCK_SIZE) {
-		snapshot_debug(1, "failed to activate snapshot (%u)"
-			       "because file system block size (%lu) != "
-			       "page size (%lu)\n", inode->i_generation,
-			       NEXT3_BLOCK_SIZE(sb), SNAPSHOT_BLOCK_SIZE);
-		return ERR_PTR(-EINVAL);
-	}
-
 	if (old == inode)
 		return NULL; /* no snapshot was deactivated */
 
 	/* add new active snapshot reference */
 	if (inode && !igrab(inode))
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	/* point of no return - replace old with new snapshot */
 	if (old) {
@@ -1674,7 +1666,7 @@ out_err:
  *
  * Called from next3_snapshot_update() under snapshot_mutex
  */
-#warning EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
+//EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
 static void next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 		int deleted, int *need_shrink, int *need_merge)
 {
@@ -1880,15 +1872,14 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	if (IS_ERR(inode)) {
 		snapshot_debug(1, "warning: bad exclude inode - "
 				"no exclude bitmap!\n");
-//EZK: bug below. should be "return PTR_ERR(inode)"
-		PTR_ERR(inode);
+		return PTR_ERR(inode);
 	}
 
 	if (create) {
 		/* start large transaction that will be extended/restarted */
 		handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
 		if (IS_ERR(handle))
-			PTR_ERR(handle);
+			return PTR_ERR(handle);
 		/* number of groups the filesystem can grow to */
 		max_groups = sbi->s_gdb_count +
 			le16_to_cpu(sbi->s_es->s_reserved_gdt_blocks);
@@ -2097,7 +2088,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
  * Called from next3_put_super() under big kernel lock
  */
 //EZK: s_snapshot_list below needs snapshot mutex. taken?
-#warning EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
+//EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
 void next3_snapshot_destroy(struct super_block *sb)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
@@ -2127,7 +2118,7 @@ void next3_snapshot_destroy(struct super_block *sb)
  * Called from next3_ioctl() under snapshot_mutex
  * Called from snapshot_load() under sb_lock with @cleanup=0
  */
-#warning EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
+//EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
 void next3_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 {
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);

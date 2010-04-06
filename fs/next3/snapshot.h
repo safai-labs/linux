@@ -15,6 +15,7 @@
 #ifndef _LINUX_NEXT3_SNAPSHOT_H
 #define _LINUX_NEXT3_SNAPSHOT_H
 
+#include <linux/delay.h>
 #include "next3_jbd.h"
 #include "snapshot_debug.h"
 
@@ -341,6 +342,17 @@ extern int next3_snapshot_load(struct super_block *sb,
 extern void next3_snapshot_destroy(struct super_block *sb);
 extern void next3_snapshot_update(struct super_block *sb, int cleanup,
 		int read_only);
+
+static inline int init_next3_snapshot(void)
+{
+	init_next3_snapshot_debug();
+	return 0;
+}
+
+static inline void exit_next3_snapshot(void)
+{
+	exit_next3_snapshot_debug();
+}
 
 
 /* balloc.c */

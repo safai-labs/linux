@@ -254,8 +254,10 @@ void __next3_journal_trace(int debug, const char *fn, const char *caller,
 #else
 #define next3_journal_trace(n, caller, handle, nblocks)
 #endif
-
+#else
+#define next3_journal_trace(n, caller, handle, nblocks)
 #endif
+
 handle_t *__next3_journal_start(const char *where,
 		struct super_block *sb, int nblocks);
 

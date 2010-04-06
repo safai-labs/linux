@@ -69,8 +69,19 @@ extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
 		}							\
 	} while (0)
 
-extern int init_next3_snapshot(void);
-extern void exit_next3_snapshot(void);
+extern void next3_create_debugfs_entry(void);
+extern void next3_remove_debugfs_entry(void);
+
+static inline void init_next3_snapshot_debug(void)
+{
+	next3_create_debugfs_entry();
+}
+
+static inline void exit_next3_snapshot_debug(void)
+{
+	next3_remove_debugfs_entry();
+}
+
 #else
 #define snapshot_test_delay(i)
 #define snapshot_test_delay_per_ticks(i, n)
@@ -78,8 +89,8 @@ extern void exit_next3_snapshot(void);
 #define snapshot_debug_l(n, l, f, a...)
 #define snapshot_debug_once(n, f, a...)
 #define SNAPSHOT_DEBUG_ONCE
-static inline int init_next3_snapshot(void) { return 0; }
-static inline void exit_next3_snapshot(void) { return; }
+#define init_next3_snapshot_debug()
+#define exit_next3_snapshot_debug()
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP

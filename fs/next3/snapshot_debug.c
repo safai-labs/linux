@@ -62,7 +62,7 @@ struct debugfs_blob_wrapper snapshot_version_blob = {
  * next3_create_debugfs_entry - register next3 debug hooks
  * Void function doesn't return error if debug hooks are not registered.
  */
-static void next3_create_debugfs_entry(void)
+void next3_create_debugfs_entry(void)
 {
 	int i;
 
@@ -86,7 +86,7 @@ static void next3_create_debugfs_entry(void)
  * next3_remove_debugfs_entry - unregister next3 debug hooks
  * checks if the hooks have been registered before unregistering them.
  */
-static void next3_remove_debugfs_entry(void)
+void next3_remove_debugfs_entry(void)
 {
 	int i;
 
@@ -100,20 +100,6 @@ static void next3_remove_debugfs_entry(void)
 	if (snapshot_debug)
 		debugfs_remove(snapshot_debug);
 	debugfs_remove(next3_debugfs_dir);
-}
-
-/*
- * next snapshot module ctor/dtor
- */
-int init_next3_snapshot(void)
-{
-	next3_create_debugfs_entry();
-	return 0;
-}
-
-void exit_next3_snapshot(void)
-{
-	next3_remove_debugfs_entry();
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_DUMP

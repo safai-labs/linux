@@ -264,7 +264,7 @@ config NEXT3_FS_SNAPSHOT_CTL_RESERVE
 
 config NEXT3_FS_SNAPSHOT_CTL_DUMP
 	bool "Next3 snapshot control - dump snapshot file blocks map"
-	depends on NEXT3_FS_SNAPSHOT_FILE
+	depends on NEXT3_FS_SNAPSHOT_CTL
 	depends on NEXT3_FS_DEBUG
 	default y
 	help

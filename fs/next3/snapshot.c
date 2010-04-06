@@ -78,11 +78,11 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t iblock, int count, int cmd,
 		struct inode **prev_snapshot)
 {
-	struct next3_inode_info *ei = NEXT3_I(inode);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 	struct list_head *prev;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
+	struct next3_inode_info *ei = NEXT3_I(inode);
 #ifdef CONFIG_NEXT3_FS_DEBUG
 	next3_fsblk_t block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = (iblock < SNAPSHOT_BLOCK_OFFSET ? -1 :
@@ -107,12 +107,16 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 #endif
 
 	if (!next3_snapshot_list(inode)) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 		prev = ei->i_list.prev;
 		if (prev && prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
 			/* allow access to snapshot being taken */
 			return 0;
 		/* snapshot not on the list - read/write access denied */
 		return -EPERM;
+#else
+		return 0;
+#endif
 	}
 
 	if (cmd) {

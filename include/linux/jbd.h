@@ -419,6 +419,9 @@ struct handle_s
 #define trace_cow_add(handle, name, num)
 #define trace_cow_inc(handle, name)
 #endif
+#else
+#define trace_cow_add(handle, name, num)
+#define trace_cow_inc(handle, name)
 #endif
 
 /* The transaction_t type is the guts of the journaling mechanism.  It

@@ -305,12 +305,10 @@ static int setup_new_group_blocks(struct super_block *sb,
 	next3_set_bit(input->inode_bitmap - start, bh->b_data);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-//EZK: no need for {} below
 	if (NEXT3_HAS_COMPAT_FEATURE(sb,
-		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
+		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE))
 		/* clear reserved exclude bitmap block */
 		itend++;
-	}
 
 #endif
 	/* Zero out all of the inode table blocks */
@@ -867,7 +865,6 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
 		int dind_offset = input->group / SNAPSHOT_ADDR_PER_BLOCK;
 		int ind_offset = input->group % SNAPSHOT_ADDR_PER_BLOCK;
-		int err;
 
 		exclude_inode = next3_iget(sb, NEXT3_EXCLUDE_INO);
 		if (IS_ERR(exclude_inode)) {
@@ -883,10 +880,9 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		if (!exclude_bh) {
 			snapshot_debug(1, "failed to read exclude inode "
 				       "indirect[%d] block\n", dind_offset);
-//EZK: its a bug to return here b/c you leave a refcnt up on exlcude_inode. instead u should set err=whatever_u_want and goto exit_put
-			return err ? err : -EIO;
+			err = -EIO;
+			goto exit_put;
 		}
-//EZK: cast below is wrong
 		exclude_bitmap = ((__le32 *)exclude_bh->b_data)[ind_offset];
 	}
 
@@ -979,6 +975,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	gdp->bg_inode_table = cpu_to_le32(input->inode_table);
 	gdp->bg_free_blocks_count = cpu_to_le16(input->free_blocks_count);
 	gdp->bg_free_inodes_count = cpu_to_le16(NEXT3_INODES_PER_GROUP(sb));
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (!exclude_inode)
 		goto no_exclude_inode;

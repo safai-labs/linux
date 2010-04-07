@@ -59,21 +59,19 @@
  * journal_lock_updates() and snapshot_mutex.
  * Called from next3_snapshot_{load,destroy}() under sb_lock.
  *
- * Returns the deactivated snapshot inode or NULL on success (NULL if no
- * snapshot was deactivated) and ERR_PTR() or error.
+ * Returns 0 on success and <0 on error.
  */
-__attribute__ ((warn_unused_result))
-static struct inode *
-next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
+static int next3_snapshot_set_active(struct super_block *sb,
+		struct inode *inode)
 {
 	struct inode *old = NEXT3_SB(sb)->s_active_snapshot;
 
 	if (old == inode)
-		return NULL; /* no snapshot was deactivated */
+		return 0;
 
 	/* add new active snapshot reference */
 	if (inode && !igrab(inode))
-		return ERR_PTR(-EINVAL);
+		return -EIO;
 
 	/* point of no return - replace old with new snapshot */
 	if (old) {
@@ -90,7 +88,7 @@ next3_snapshot_set_active(struct super_block *sb, struct inode *inode)
 	}
 	NEXT3_SB(sb)->s_active_snapshot = inode;
 
-	return old;
+	return 0;
 }
 #endif
 
@@ -1005,6 +1003,11 @@ fix_inode_copy:
 #endif
 #endif
 
+	/* set as in-memory active snapshot */
+	err = next3_snapshot_set_active(sb, inode);
+	if (err)
+		goto out_unlockfs;
+
 	/* set as on-disk active snapshot */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le32(snapshot_r_blocks);
@@ -1016,17 +1019,12 @@ fix_inode_copy:
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
 	sbi->s_es->s_snapshot_inum = inode->i_ino;
-	/* set as in-memory active snapshot */
-//EZK: fxn on next line can return err. test for it?
-	next3_snapshot_set_active(sb, inode);
 	/* reset COW bitmap cache */
 //EZK: fxn on next line can return err. test for it?
 	next3_snapshot_reset_bitmap_cache(sb, 0);
 
 	err = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 out_unlockfs:
-#endif
 	unlock_super(sb);
 	sb->s_op->unfreeze_fs(sb);
 
@@ -1942,13 +1940,12 @@ out:
  * Start with last (or active) snapshot and continue to older snapshots.
  * If snapshot load fails before active snapshot, force read-only mount.
  * If snapshot load fails after active snapshot, allow read-write mount.
- * Called from next3_fill_super() under sb_lock.
+ * Called from next3_fill_super() under sb_lock during mount time.
  *
  * Return values:
  * = 0 - on-disk snapshot list is empty or active snapshot loaded
  * < 0 - error loading active snapshot
  */
-//EZK: is this fxn called under snapshot mutex (neede for s_snapshot_list below)?
 int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		int read_only)
 {
@@ -2030,13 +2027,8 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 				ino_next = &es->s_snapshot_inum;
 				continue;
 			}
-			/* failed to load active snapshot */
-			snapshot_debug(1, "warning: failed to load "
-					"active snapshot (ino=%u) - "
-					"forcing read-only mount!\n",
-					le32_to_cpu(active_ino));
-			/* force read-only mount */
-			return read_only ? 0 : -EIO;
+			err = -EIO;
+			break;
 		}
 
 //EZK: the variable snapshot_id seems unnecessary in thix fxn.  u can just refer to inode->i_generation directly in the two snapshot_debug calls that use it.
@@ -2056,11 +2048,11 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 			has_snapshot = 1;
 		}
 
-		if (*ino_next == active_ino) {
+		if (!has_active && *ino_next == active_ino) {
 			/* active snapshot was loaded */
-//EZK: is snapshot mutex taken at this point? i dont see it in this fxn, and comment above fxn doesnt say if snapshot mutex must be taken here.
-//EZK: fxn on next line can return err. test for it?
-			next3_snapshot_set_active(sb, inode);
+			err = next3_snapshot_set_active(sb, inode);
+			if (err)
+				break;
 			has_active = 1;
 		}
 
@@ -2074,6 +2066,16 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		break;
 #endif
 	}
+	
+	if (err) {
+		/* failed to load active snapshot */
+		snapshot_debug(1, "warning: failed to load "
+				"active snapshot (ino=%u) - "
+				"forcing read-only mount!\n",
+				le32_to_cpu(active_ino));
+		/* force read-only mount */
+		return read_only ? 0 : err;
+	}
 
 	if (num > 0) {
 //EZK: fxn on next line SHOULD return err. test for it?
@@ -2085,10 +2087,9 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 
 /*
  * next3_snapshot_destroy() releases the in-memory snapshot list
- * Called from next3_put_super() under big kernel lock
+ * Called from next3_put_super() under sb_lock during umount time.
+ * This function cannot fail.
  */
-//EZK: s_snapshot_list below needs snapshot mutex. taken?
-//EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
 void next3_snapshot_destroy(struct super_block *sb)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
@@ -2103,10 +2104,8 @@ void next3_snapshot_destroy(struct super_block *sb)
 		iput(inode);
 	}
 #endif
-	/* if there is an active snapshot - deactivate it */
-//EZK: is snapshot mutex taken at this point? i dont see it in this fxn, and comment above fxn doesnt say if snapshot mutex must be taken here.
-//EZK: fxn on next line can return err. test for it?
-	next3_snapshot_set_active(sb, NULL);
+	/* deactivate in-memory active snapshot - cannot fail */
+	(void) next3_snapshot_set_active(sb, NULL);
 }
 
 /*
@@ -2226,9 +2225,8 @@ prev_snapshot:
 		/* lock journal updates before deactivating snapshot */
 		sb->s_op->freeze_fs(sb);
 		lock_super(sb);
-		/* deactivate in-memory active snapshot */
-//EZK: fxn on next line MIGHT return err. test for it?
-		next3_snapshot_set_active(sb, NULL);
+		/* deactivate in-memory active snapshot - cannot fail */
+		(void) next3_snapshot_set_active(sb, NULL);
 		/* clear on-disk active snapshot */
 		NEXT3_SB(sb)->s_es->s_snapshot_inum = 0;
 		unlock_super(sb);

@@ -97,14 +97,13 @@ static int next3_snapshot_set_active(struct super_block *sb,
  * next3_snapshot_reset_bitmap_cache():
  *
  * Resets the COW/exclude bitmap cache for all block groups.
- * Helper function for next3_snapshot_take() and
- * next3_snapshot_init_bitmap_cache().
  * COW/exclude bitmap cache is non-persistent, so no need to mark the group
- * desc blocks dirty.  Called under lock_super() or sb_lock
+ * desc blocks dirty.
+ *
+ * Called from init_bitmap_cache() with @init=1 under sb_lock during mount time.
+ * Called from snapshot_take() with @init=0 under journal_lock_updates().
  * Returns 0 on success and <0 on error.
  */
-//EZK: rename 'init' to 'init_exclude_bitmap' b/c that's what it is
-__attribute__ ((warn_unused_result))
 static int next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 {
 	struct next3_group_desc *desc;
@@ -114,7 +113,6 @@ static int next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 		desc = next3_get_group_desc(sb, i, NULL);
 		if (!desc)
 			return -EIO;
-//EZK: dont u need sb_bkl_lock before resetting bg_cow_bitmap?
 		desc->bg_cow_bitmap = 0;
 		if (init)
 			desc->bg_exclude_bitmap = 0;
@@ -1003,6 +1001,10 @@ fix_inode_copy:
 #endif
 #endif
 
+	/* reset COW bitmap cache */
+	err = next3_snapshot_reset_bitmap_cache(sb, 0);
+	if (err)
+		goto out_unlockfs;
 	/* set as in-memory active snapshot */
 	err = next3_snapshot_set_active(sb, inode);
 	if (err)
@@ -1019,9 +1021,6 @@ fix_inode_copy:
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
 	sbi->s_es->s_snapshot_inum = inode->i_ino;
-	/* reset COW bitmap cache */
-//EZK: fxn on next line can return err. test for it?
-	next3_snapshot_reset_bitmap_cache(sb, 0);
 
 	err = 0;
 out_unlockfs:
@@ -1838,7 +1837,7 @@ out:
  * exclude bitmap blocks.  Exclude bitmap cache is non-persistent, so no need
  * to mark the group desc blocks dirty.
  *
- * Helper function for snapshot_load().  Called under sb_lock.
+ * Called from snapshot_load() under sb_lock during mount time.
  * Returns 0 on success and <0 on error.
  */
 static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)

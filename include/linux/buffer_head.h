@@ -290,19 +290,19 @@ extern void cancel_buffer_tracked_read(struct buffer_head *bh);
  */
 #define BH_TRACKED_READERS_COUNT_SHIFT 16
 
-static inline void get_bh_tracked_reader(struct buffer_head *_bh)
+static inline void get_bh_tracked_reader(struct buffer_head *bdev_bh)
 {
-	atomic_add(1<<BH_TRACKED_READERS_COUNT_SHIFT, &_bh->b_count);
+	atomic_add(1<<BH_TRACKED_READERS_COUNT_SHIFT, &bdev_bh->b_count);
 }
 
-static inline void put_bh_tracked_reader(struct buffer_head *_bh)
+static inline void put_bh_tracked_reader(struct buffer_head *bdev_bh)
 {
-	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &_bh->b_count);
+	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &bdev_bh->b_count);
 }
 
-static inline int buffer_tracked_readers_count(struct buffer_head *_bh)
+static inline int buffer_tracked_readers_count(struct buffer_head *bdev_bh)
 {
-	return atomic_read(&_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
+	return atomic_read(&bdev_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
 }
 
 #endif

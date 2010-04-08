@@ -1584,18 +1584,19 @@ retry:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (*(partial->p)) {
 		/* old block is being replaced with a new block */
-		if (buffer_partial_write(bh_result) &&
-				!buffer_uptodate(bh_result)) {
+		if (buffer_partial_write(bh_result)) {
 			/* read old block data before moving it to snapshot */
-			map_bh(bh_result, inode->i_sb,
-					le32_to_cpu(*(partial->p)));
-			err = -EIO;
-			ll_rw_block(READ, 1, &bh_result);
-			wait_on_buffer(bh_result);
-			/* clear old block mapping */
-			clear_buffer_mapped(bh_result);
-			if (!buffer_uptodate(bh_result))
-				goto out_mutex;
+			if (!buffer_uptodate(bh_result)) {
+				map_bh(bh_result, inode->i_sb,
+						le32_to_cpu(*(partial->p)));
+				err = -EIO;
+				ll_rw_block(READ, 1, &bh_result);
+				wait_on_buffer(bh_result);
+				/* clear old block mapping */
+				clear_buffer_mapped(bh_result);
+				if (!buffer_uptodate(bh_result))
+					goto out_mutex;
+			}
 			/* prevent zero out of page in block_write_begin() */
 			SetPageUptodate(bh_result->b_page);
 		}
@@ -2882,6 +2883,20 @@ static int next3_block_truncate_page(handle_t *handle, struct page *page,
 			goto unlock;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	/* Should we move block to snapshot before zeroing end of block? */
+	if (next3_snapshot_should_move_data(inode)) {
+		err = next3_get_block(inode, iblock, bh, 1);
+		if (err)
+			goto unlock;
+		if (buffer_new(bh)) {
+			unmap_underlying_metadata(bh->b_bdev,
+					bh->b_blocknr);
+			clear_buffer_new(bh);
+		}
+	}
+
+#endif
 	if (next3_should_journal_data(inode)) {
 		BUFFER_TRACE(bh, "get write access");
 		err = next3_journal_get_write_access(handle, bh);
@@ -3506,14 +3521,6 @@ void next3_truncate(struct inode *inode)
 	if ((inode->i_size & (blocksize - 1)) == 0) {
 		/* Block boundary? Nothing to do */
 		page = NULL;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	} else if (next3_snapshot_should_move_data(inode)) {
-		/*
-		 * data blocks are not moved on next3_block_truncate_page(),
-		 * so skip page zero out to protect data in snapshot image.
-		 */
-		page = NULL;
-#endif
 	} else {
 		page = grab_cache_page(mapping,
 				inode->i_size >> PAGE_CACHE_SHIFT);

@@ -1075,7 +1075,6 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 	struct inode *inode, next3_fsblk_t block, int maxblocks, int move)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
-//EZK: the code path from write_begin leading to here, what locks does it take? and, are these the same locks that are used in next3_ioctl to set/clear/change an active snapshot? the problem is that next3_snapshot_has_active just returns s_active_snapshot w/o igrab-ing it. so what prevents an ioctl code path from changing the active snapshot, while the code here is trying to use it (the active snapshot inode gotten below could become stale/obsolete before this fxn returns, no?)
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	next3_fsblk_t blk = 0;
 	int err = 0, count = maxblocks;

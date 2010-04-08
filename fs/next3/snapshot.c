@@ -256,11 +256,15 @@ next3_snapshot_complete_cow(handle_t *handle,
 	}
 #endif
 
+//EZK: are you unlocking the buffer too early here? anyone who calls snapshot_test_pending_cow (others?) is waiting for the buf to be unlocked, and then do something?  would there be a race b/t that someone and the rest of this code? check other code which calls unlock_buffer for this possibility?
 	unlock_buffer(sbh);
 	if (handle)
 		err = next3_journal_dirty_data(handle, sbh);
+//EZK: if there was an err above, is it correct to continue with all the code below, or should u just return w/ an error right away. if u return right away, note that you've left a side effect of unlocking the buffer.
+//EZK: shouldnt u mark_buffer_dirty before calling journal_dirty_data above? that routine seems to check if the bh is dirty or not, and acts differently if it is.
 	mark_buffer_dirty(sbh);
 	if (sync)
+//EZK: or do you mark_buffer_dirty before you want to sync it below? if so, the mark dirty should be inside this "if"
 		sync_dirty_buffer(sbh);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
@@ -611,7 +615,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 */
 	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
 		if (next3_test_bit(bit, cow_bh->b_data))
-//EZK: dont increment inuse if all u use it is to see if its 0/1. such code is a bit misleading.
+//EZK: dont increment inuse if all u use it is to see if its 0/1. such code is a bit misleading. and the callers of this fxn never seem to care if the return from this fxn is greater than zero.
 			inuse++;
 		else
 			break;
@@ -1051,6 +1055,7 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 	struct inode *inode, next3_fsblk_t block, int maxblocks, int move)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
+//EZK: the code path from write_begin leading to here, what locks does it take? and, are these the same locks that are used in next3_ioctl to set/clear/change an active snapshot? the problem is that next3_snapshot_has_active just returns s_active_snapshot w/o igrab-ing it. so what prevents an ioctl code path from changing the active snapshot, while the code here is trying to use it (the active snapshot inode gotten below could become stale/obsolete before this fxn returns, no?)
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	next3_fsblk_t blk = 0;
 	int err = 0, count = maxblocks;

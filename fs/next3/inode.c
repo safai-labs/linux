@@ -1341,6 +1341,7 @@ retry:
 		read_through = next3_snapshot_get_inode_access(handle, inode,
 				iblock, maxblocks, create, &prev_snapshot);
 	else if (read_through)
+//EZK: sounds like this indicates a bug/corruption; add snapshot_debug/printk?
 		/* unexpected read through to non snapshot file */
 		goto out;
 	if (read_through < 0) {
@@ -1980,6 +1981,7 @@ retry:
 	 * Can we count on that?
 	 */
 	if (next3_snapshot_should_move_data(inode)) {
+//EZK: why do you create buffers for the page below?  under which conditions would the page have no buffers? do you need to create the buffers just so you can pass the partial_write flag to the get_block callback fxn from here? if so, what "bad" side effects, if any, could be caused by creating empty_buffers here (it appears you dont attemp to free them in this fxn).
 		if (!page_has_buffers(page))
 			create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
 		/* snapshots only work when blocksize == pagesize */

@@ -361,6 +361,7 @@ void cancel_buffer_tracked_read(struct buffer_head *bh)
 	BUG_ON(!_bh || _bh == bh);
 	put_bh_tracked_reader(_bh);
 	put_bh(_bh);
+//EZK: in start_buffer_tracked_read, you do turn on the tracked-read flag while holding a bh refcnt; you call put_bh only when you're done turning track-read flag and counting the number of tracked-readers.  But in this fxn, you put_bh BEFORE you reset the two clear_* fxns below.  There may be a very small race here.  At the very least, the code is not consistently "symmetric" and may look odd.
 	clear_buffer_tracked_read(bh);
 	clear_buffer_mapped(bh);
 }
@@ -405,11 +406,13 @@ static void end_buffer_tracked_read(struct buffer_head *bh)
 	put_bh_tracked_reader(_bh);
 	bh->b_this_page = bh;
 	put_bh(_bh);
+//EZK: same comment here as in clear_buffer_tracked_read. why put_bh before clear_* calls below?
 	/*
 	 * clear the buffer mapping to make sure
 	 * that get_block() will always be called
 	 */
 	clear_buffer_mapped(bh);
+//EZK: isnt it possible that some other thread would see a buffer with a low (zero?) refcount, and since the buffer is not mapped at this point, would kfree the buffer? if so, then the call below my deref junk/freed memory, no?
 	clear_buffer_tracked_read(bh);
 }
 

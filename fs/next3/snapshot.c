@@ -635,7 +635,6 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 */
 	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
 		if (next3_test_bit(bit, cow_bh->b_data))
-//EZK: dont increment inuse if all u use it is to see if its 0/1. such code is a bit misleading. and the callers of this fxn never seem to care if the return from this fxn is greater than zero.
 			inuse++;
 		else
 			break;
@@ -1106,6 +1105,7 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 			block, count, excluded ? inode : NULL);
 	if (err < 0)
 		goto out;
+	count = err;
 #else
 	if (excluded)
 		goto out;
@@ -1131,7 +1131,6 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 		goto out;
 	}
 
-	count = err;
 	/* count blocks are in use by snapshot - check if @block is mapped */
 	err = next3_snapshot_map_blocks(handle, active_snapshot, block, 1, &blk,
 					SNAPMAP_READ);

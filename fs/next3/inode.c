@@ -1981,7 +1981,6 @@ retry:
 	 * Can we count on that?
 	 */
 	if (next3_snapshot_should_move_data(inode)) {
-//EZK: why do you create buffers for the page below?  under which conditions would the page have no buffers? do you need to create the buffers just so you can pass the partial_write flag to the get_block callback fxn from here? if so, what "bad" side effects, if any, could be caused by creating empty_buffers here (it appears you dont attemp to free them in this fxn).
 		if (!page_has_buffers(page))
 			create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
 		/* snapshots only work when blocksize == pagesize */

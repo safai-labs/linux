@@ -1336,14 +1336,13 @@ retry:
 	ei = NEXT3_I(inode);
 	prev_snapshot = NULL;
 #endif
+	/* read through expected only to snapshot file */
+	BUG_ON(read_through && !next3_snapshot_file(inode));
 	if (next3_snapshot_file(inode))
-		/* snapshot file access */
+		/* normal or read through snapshot file access? */
 		read_through = next3_snapshot_get_inode_access(handle, inode,
 				iblock, maxblocks, create, &prev_snapshot);
-	else if (read_through)
-//EZK: sounds like this indicates a bug/corruption; add snapshot_debug/printk?
-		/* unexpected read through to non snapshot file */
-		goto out;
+
 	if (read_through < 0) {
 		err = read_through;
 		goto out;

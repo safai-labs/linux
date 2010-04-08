@@ -73,16 +73,46 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  * in which case 'prev_snapshot' is pointed to the previous snapshot
  * on the list or set to NULL to indicate read through to block device.
  */
-//EZK: say what locks shld be taken before calling this. verify snapshot_mutex is taken, which is protecting s_snapshot_list.
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
+/*
+ * Snapshot list manipulation is protected by snapshot_mutex, which is not
+ * being held here.  However, we get here only when reading from an enabled
+ * snapshot or when reading though from an enabled snapshot to a newer snapshot.
+ * Since only old unused disabled snapshots can be deleted, read through cannot
+ * be affected by snapshot list deletes.
+ *
+ * Snapshot B take is composed of the following steps:
+ * - Add snapshot B to head of list (active_snapshot is A).
+ * - Allocate and copy snapshot B inititial blocks.
+ * - Clear snapshot A 'active' flag.
+ * - Set snapshot B 'list' and 'active' flags.
+ * - Set snapshot B as active snapshot (active_snapshot=B).
+ *
+ * When reading from snapshot A during snapshot B take, we have 2 cases:
+ * 1. is_active(A) is tested before setting active_snapshot=B -
+ *    read through from A to block device.
+ * 2. is_active(A) is tested after setting active_snapshot=B -
+ *    read through from A to B.
+ *
+ * When reading from snapshot B during snapshot B take, we have 3 cases:
+ * 1. B->flags and B->prev are read before adding B to list -
+ *    access to B denied.
+ * 2. B->flags are read before setting the 'list' and 'active' flags -
+ *    normal file access to B.
+ * 3. B->flags are read after setting the 'list' and 'active' flags -
+ *    read through from B to block device.
+ */
+#endif
 int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		next3_fsblk_t iblock, int count, int cmd,
 		struct inode **prev_snapshot)
 {
+	struct next3_inode_info *ei = NEXT3_I(inode);
+	unsigned int flags = ei->i_flags;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
-	struct list_head *prev;
+	struct list_head *prev = ei->i_list.prev;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
-	struct next3_inode_info *ei = NEXT3_I(inode);
 #ifdef CONFIG_NEXT3_FS_DEBUG
 	next3_fsblk_t block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = (iblock < SNAPSHOT_BLOCK_OFFSET ? -1 :
@@ -99,18 +129,17 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		 * COWing or moving blocks to active snapshot
 		 */
 		BUG_ON(!handle || !handle->h_cowing);
-		BUG_ON(!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
+		BUG_ON(!(flags & NEXT3_SNAPFILE_ACTIVE_FL));
 		BUG_ON(iblock < SNAPSHOT_BLOCK_OFFSET);
 		return 0;
 	} else if (cmd)
 		BUG_ON(handle && handle->h_cowing);
 #endif
 
-	if (!next3_snapshot_list(inode)) {
+	if (!(flags & NEXT3_SNAPFILE_LIST_FL)) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
-		prev = ei->i_list.prev;
 		if (prev && prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
-			/* allow access to snapshot being taken */
+			/* normal access to snapshot being taken */
 			return 0;
 		/* snapshot not on the list - read/write access denied */
 		return -EPERM;
@@ -145,36 +174,27 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	 */
 	*prev_snapshot = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
-	/*
-	 * Snapshot list add/delete is protected by lock_super() and we
-	 * don't take lock_super() here.  However, since only
-	 * old/unused/disabled snapshots are deleted, then we cannot be
-	 * affected by deletes here.  If we are following the list
-	 * during snapshot take, then we have 3 cases:
-	 *
-	 * 1. we got here before it was added to list - no problem;
-	 * 2. we got here after it was added to list and after it was
-	 *    activated - no problem;
-	 * 3. we got here after it was added to list and before it was
-	 *    activated - we don't follow to prev of active snapshot.
-	 */
-	prev = ei->i_list.prev;
+	if (next3_snapshot_is_active(inode) ||
+			(flags & NEXT3_SNAPFILE_ACTIVE_FL))
+		/* read through from active snapshot to block device */
+		return 1;
+
 	if (list_empty(prev))
 		/* not on snapshots list? */
 		return -EIO;
 
-	if (next3_snapshot_is_active(inode))
-		/* active snapshot - read through to block device */
-		return 1;
-
 	if (prev == &NEXT3_SB(inode->i_sb)->s_snapshot_list)
-		/* last snapshot not yet activated - access denied */
-//EZK: if the error is simply an "access denied" then why scare the caller with -EIO? fix comment or return val.
+		/* active snapshot not found on list? */
 		return -EIO;
 
-	/* non last snapshot - read through to prev snapshot */
+	/* read through to prev snapshot on the list */
 	ei = list_entry(prev, struct next3_inode_info, i_list);
 	*prev_snapshot = &ei->vfs_inode;
+	
+	if (!next3_snapshot_file(*prev_snapshot))
+		/* non snapshot file on the list? */
+		return -EIO;
+
 	return 1;
 #else
 	return next3_snapshot_is_active(inode) ? 1 : 0;

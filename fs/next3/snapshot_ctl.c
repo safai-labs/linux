@@ -82,7 +82,8 @@ static int next3_snapshot_set_active(struct super_block *sb,
 		iput(old);
 	}
 	if (inode) {
-		NEXT3_I(inode)->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
+		NEXT3_I(inode)->i_flags |=
+			NEXT3_SNAPFILE_ACTIVE_FL|NEXT3_SNAPFILE_LIST_FL;
 		snapshot_debug(1, "snapshot (%u) activated\n",
 			       inode->i_generation);
 	}

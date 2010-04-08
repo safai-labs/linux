@@ -276,17 +276,17 @@ next3_snapshot_complete_cow(handle_t *handle,
 	}
 #endif
 
-//EZK: are you unlocking the buffer too early here? anyone who calls snapshot_test_pending_cow (others?) is waiting for the buf to be unlocked, and then do something?  would there be a race b/t that someone and the rest of this code? check other code which calls unlock_buffer for this possibility?
 	unlock_buffer(sbh);
-	if (handle)
+	if (handle) {
 		err = next3_journal_dirty_data(handle, sbh);
-//EZK: if there was an err above, is it correct to continue with all the code below, or should u just return w/ an error right away. if u return right away, note that you've left a side effect of unlocking the buffer.
-//EZK: shouldnt u mark_buffer_dirty before calling journal_dirty_data above? that routine seems to check if the bh is dirty or not, and acts differently if it is.
+		if (err)
+			goto out;
+	}
 	mark_buffer_dirty(sbh);
 	if (sync)
-//EZK: or do you mark_buffer_dirty before you want to sync it below? if so, the mark dirty should be inside this "if"
 		sync_dirty_buffer(sbh);
 
+out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	/* COW operation is complete */
 	next3_snapshot_end_pending_cow(sbh);

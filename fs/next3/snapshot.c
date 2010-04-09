@@ -75,15 +75,16 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 /*
- * Snapshot list manipulation is protected by snapshot_mutex, which is not
- * being held here.  However, we get here only when reading from an enabled
- * snapshot or when reading though from an enabled snapshot to a newer snapshot.
- * Since only old unused disabled snapshots can be deleted, read through cannot
- * be affected by snapshot list deletes.
+ * On-disk snapshot list manipulation is normally protected by
+ * snapshot_mutex, which is not being held here.  However, we get here only
+ * when reading from an enabled snapshot or when reading though from an
+ * enabled snapshot to a newer snapshot.  Since only old unused disabled
+ * snapshots can be deleted, read through cannot be affected by snapshot
+ * list deletes.
  *
  * Snapshot B take is composed of the following steps:
  * - Add snapshot B to head of list (active_snapshot is A).
- * - Allocate and copy snapshot B inititial blocks.
+ * - Allocate and copy snapshot B initial blocks.
  * - Clear snapshot A 'active' flag.
  * - Set snapshot B 'list' and 'active' flags.
  * - Set snapshot B as active snapshot (active_snapshot=B).
@@ -190,7 +191,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	/* read through to prev snapshot on the list */
 	ei = list_entry(prev, struct next3_inode_info, i_list);
 	*prev_snapshot = &ei->vfs_inode;
-	
+
 	if (!next3_snapshot_file(*prev_snapshot))
 		/* non snapshot file on the list? */
 		return -EIO;

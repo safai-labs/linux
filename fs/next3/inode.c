@@ -2885,11 +2885,9 @@ static int next3_block_truncate_page(handle_t *handle, struct page *page,
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-//EZK: is the comment below a question explaining the code, or an indication that yourenot sure what to do? if the latter, then perhaps it needs an "XXX" prefix.
-	/* Should we move block to snapshot before zeroing end of block? */
+	/* check if block needs to be moved to snapshot before zeroing */
 	if (next3_snapshot_should_move_data(inode)) {
 		err = next3_get_block(inode, iblock, bh, 1);
-//EZK: you pass @create=1 to get_block. wouldnt that cause new buffers to be returned, which forces you to check for it and unmap them below?  would it be ok to just pass @create=0 and skip the unmap+clear_new below?
 		if (err)
 			goto unlock;
 		if (buffer_new(bh)) {

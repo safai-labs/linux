@@ -75,7 +75,7 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 /*
- * On-disk snapshot list manipulation is normally protected by
+ * In-memory snapshot list manipulation is normally protected by
  * snapshot_mutex, which is not being held here.  However, we get here only
  * when reading from an enabled snapshot or when reading though from an
  * enabled snapshot to a newer snapshot.  Since only old unused disabled

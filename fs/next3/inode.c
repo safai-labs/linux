@@ -2515,7 +2515,6 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 	next3_fsblk_t bitmap_blk = 0;
 	int err;
 
-//EZK: if the only value @create can take is zero, then remove the BUG_ON and the formal param from being passed to this fxn
 	BUG_ON(create != 0);
 	BUG_ON(buffer_tracked_read(bh_result));
 
@@ -2527,7 +2526,6 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 		       bh_result->b_blocknr : 0, err);
 
 	if (err < 0)
-//EZK: is there a chance here that you'd need to cancel_tracked_read before returning?
 		return err;
 
 	if (!buffer_tracked_read(bh_result))
@@ -2536,14 +2534,11 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 	/* check for read through to block bitmap */
 	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
 	desc = next3_get_group_desc(inode->i_sb, block_group, NULL);
-//EZK: desc can be NULL here, indicating error. youre not handling it (cancel tracked read too?)
 	if (desc)
 		bitmap_blk = le32_to_cpu(desc->bg_block_bitmap);
 	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
 		/* copy fixed block bitmap directly to page buffer */
 		cancel_buffer_tracked_read(bh_result);
-//EZK: seems like a small race here. between cancel_tracked_read above and set_buffer_mapped below, the buffer has its mapped flag off then on again.  is there a risk someone else might see the buffer's state as unmapped during this split second, and take the wrong action? either way, it seems ugly to have to fix undesired side-effects like this.  it's better to have a new cancel_tracked_read fxn which wont call clear_buffer_mapped; maybe you can add an @should_we_clear_mapped flag tp cancel_buffer_tracked_read?
-//EZK: also, are there any other cases in the next3 code where you're calling ANY tracked_read helper function, and that function does some unwanted side effect (that perhaps you should have fixed back after the call to the helper)?
 		/* cancel_buffer_tracked_read() clears mapped flag */
 		set_buffer_mapped(bh_result);
 		snapshot_debug(2, "fixing snapshot block bitmap #%lu\n",

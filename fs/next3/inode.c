@@ -1330,7 +1330,6 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 retry:
-	err = -EIO;
 	blocks_to_boundary = 0;
 	count = 0;
 	ei = NEXT3_I(inode);
@@ -1366,10 +1365,9 @@ retry:
 				       bh_result->b_blocknr, err);
 			goto out;
 		}
-//EZK: what is this -EIO doing below? seems an orphan or unnecessary
-		err = -EIO;
 	}
 #endif
+	err = -EIO;
 #endif
 
 
@@ -1449,7 +1447,6 @@ retry:
 			}
 			/* repeat the same routine with prev snapshot */
 			inode = prev_snapshot;
-//EZK: sigh. this function was not pretty in ext3. next3 made it more convoluted, with goto labels going forward, backward, and crossing each other. this "goto retry" is essentially the main loop you have which walks over the entire snaplist. is there a way to pull the loop out of this function, into a helper iterator, and call this function inside such a helper?  I'm afraid bugs could continue to linger here for a while until this code can be simplified, no matter how much reviewing this fxn will get.
 			goto retry;
 		}
 #endif
@@ -1584,36 +1581,36 @@ retry:
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	if (*(partial->p)) {
-//EZK: this entire "if" is a bit too nested for my taste. perhaps flatten it with "if (!partial->p) goto next_stage"?
+		int ret;
+
 		/* old block is being replaced with a new block */
-		if (buffer_partial_write(bh_result)) {
+		if (buffer_partial_write(bh_result) &&
+				!buffer_uptodate(bh_result)) {
 			/* read old block data before moving it to snapshot */
+			map_bh(bh_result, inode->i_sb,
+					le32_to_cpu(*(partial->p)));
+			ll_rw_block(READ, 1, &bh_result);
+			wait_on_buffer(bh_result);
+			/* clear old block mapping */
+			clear_buffer_mapped(bh_result);
 			if (!buffer_uptodate(bh_result)) {
-				map_bh(bh_result, inode->i_sb,
-						le32_to_cpu(*(partial->p)));
 				err = -EIO;
-				ll_rw_block(READ, 1, &bh_result);
-				wait_on_buffer(bh_result);
-				/* clear old block mapping */
-				clear_buffer_mapped(bh_result);
-				if (!buffer_uptodate(bh_result))
-//EZK: u can move the err=-EIO above inside this "if"
-					goto out_mutex;
+				goto out_mutex;
 			}
+		}
+
+		if (buffer_partial_write(bh_result))
 			/* prevent zero out of page in block_write_begin() */
 			SetPageUptodate(bh_result->b_page);
-		}
+
 		/* move old block to snapshot */
-		err = next3_snapshot_get_move_access(handle, inode,
+		ret = next3_snapshot_get_move_access(handle, inode,
 				le32_to_cpu(*(partial->p)), 1);
-//EZK: its really odd looking to test if err<1 below. not what one expects from a variable called 'err'.
-		if (err < 1) {
+		if (ret < 1) {
 			/* failed to move to snapshot - free new block */
 			next3_free_blocks(handle, inode,
 					le32_to_cpu(partial->key), 1);
-//EZK: even stranger is to see a test for if "no err" below. all this is b/c get_move_access can return different indications of success/failure other than negative -errno numbers. i'd add some comments here to explain what's going on. handling of such multiple return states might be better done with a "switch" statement and multiple case's.
-			if (!err)
-				err = -EIO;
+			err = ret ? : -EIO;
 			goto out_mutex;
 		}
 		/* block moved to snapshot - continue to splice new block */

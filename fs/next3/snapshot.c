@@ -1128,6 +1128,7 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
 			SNAPSHOT_BLOCK_GROUP(block));
 		trace_cow_inc(handle, ok_bitmap);
+//EZK: the msg above suggests a real error. so why not return -EIO or so?
 		err = 0;
 		goto out;
 	}

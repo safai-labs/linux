@@ -1477,6 +1477,7 @@ retry:
 	 */
 	BUG_ON(next3_snapshot_is_active(inode) && !handle->h_cowing);
 	BUG_ON(!next3_snapshot_is_active(inode) && handle->h_cowing);
+//EZK: why call the 'nested' version of mutex lock below? really needed?
 	mutex_lock_nested(&ei->truncate_mutex, handle->h_cowing);
 #else
 	mutex_lock(&ei->truncate_mutex);

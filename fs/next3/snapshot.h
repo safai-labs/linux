@@ -157,20 +157,13 @@ extern int next3_snapshot_test_and_cow(const char *where,
 
 /*
  * test if a metadata block should be COWed
- */
-#define next3_snapshot_test_cow(handle, bh)			\
-	next3_snapshot_test_and_cow(__func__, handle, NULL,	\
-			bh, 0)
-/*
- * test if a metadata block should be COWed
  * and if it should, copy the block to the active snapshot
  */
-#define next3_snapshot_cow(handle, inode, bh)			\
+#define next3_snapshot_cow(handle, inode, bh, cow)		\
 	next3_snapshot_test_and_cow(__func__, handle, inode,	\
-			bh, 1)
+			bh, cow)
 #else
-#define next3_snapshot_test_cow(handle, bh) 0
-#define next3_snapshot_cow(handle, inode, bh) 0
+#define next3_snapshot_cow(handle, inode, bh, cow) 0
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
@@ -203,11 +196,10 @@ extern int next3_snapshot_test_and_move(const char *where,
  * = 0 - block was COWed or doesn't need to be COWed
  * < 0 - error
  */
-//EZK: there doesnt seem to be a reason to have this simple renaming inline fxn as it doesnt change any params of behavior.  remove it and change callers?
 static inline int next3_snapshot_get_write_access(handle_t *handle,
 		struct inode *inode, struct buffer_head *bh)
 {
-	return next3_snapshot_cow(handle, inode, bh);
+	return next3_snapshot_cow(handle, inode, bh, 1);
 }
 
 /*
@@ -228,9 +220,9 @@ static inline int next3_snapshot_get_undo_access(handle_t *handle,
 	 * undo access is only requested for block bitmaps, which should be
 	 * COWed in next3_snapshot_test_cow_bitmap(), even if we pass @cow=0.
 	 */
-	return next3_snapshot_test_cow(handle, bh);
+	return next3_snapshot_cow(handle, NULL, bh, 0);
 #else
-	return next3_snapshot_cow(handle, NULL, bh);
+	return next3_snapshot_cow(handle, NULL, bh, 1);
 #endif
 }
 
@@ -248,9 +240,9 @@ static inline int next3_snapshot_get_create_access(handle_t *handle,
 	 * This block shouldn't need to be COWed if get_delete_access() was
 	 * called for all deleted blocks.  However, it may need to be COWed
 	 * if fsck was run and if it had freed some blocks without moving them
-	 * to snapshot.  In the later case, -EIO will be returned.
+	 * to snapshot.  In the latter case, -EIO will be returned.
 	 */
-	return next3_snapshot_test_cow(handle, bh);
+	return next3_snapshot_cow(handle, NULL, bh, 0);
 }
 
 #endif

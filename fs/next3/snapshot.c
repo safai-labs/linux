@@ -75,13 +75,22 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 /*
- * In-memory snapshot list manipulation is normally protected by
- * snapshot_mutex, which is not being held here.  However, we get here only
- * when reading from an enabled snapshot or when reading though from an
- * enabled snapshot to a newer snapshot.  Since only old unused disabled
- * snapshots can be deleted, read through cannot be affected by snapshot
- * list deletes.
+ * In-memory snapshot list manipulation is protected by snapshot_mutex.
+ * In this function we read the in-memory snapshot list without holding
+ * snapshot_mutex, because we don't want to slow down snapshot read performance.
+ * Following is a proof, that even though we don't hold snapshot_mutex here,
+ * reading the list is safe from races with snapshot list delete and add (take).
  *
+ * Proof of no race with snapshot delete:
+ * --------------------------------------
+ * We get here only when reading from an enabled snapshot or when reading
+ * through from an enabled snapshot to a newer snapshot.  Snapshot delete
+ * operation is only allowed for a disabled snapshot, when no older enabled
+ * snapshot exists (i.e., the deleted snapshot in not 'in-use').  Hence,
+ * read through is safe from races with snapshot list delete operations.
+ *
+ * Proof of no race with snapshot take:
+ * ------------------------------------
  * Snapshot B take is composed of the following steps:
  * - Add snapshot B to head of list (active_snapshot is A).
  * - Allocate and copy snapshot B initial blocks.
@@ -98,9 +107,9 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
  * When reading from snapshot B during snapshot B take, we have 3 cases:
  * 1. B->flags and B->prev are read before adding B to list -
  *    access to B denied.
- * 2. B->flags are read before setting the 'list' and 'active' flags -
+ * 2. B->flags is read before setting the 'list' and 'active' flags -
  *    normal file access to B.
- * 3. B->flags are read after setting the 'list' and 'active' flags -
+ * 3. B->flags is read after setting the 'list' and 'active' flags -
  *    read through from B to block device.
  */
 #endif
@@ -1121,14 +1130,9 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 		/*
 		 * This is next3_group_extend() "freeing" the blocks that
 		 * were added to the block group.  These block should not be
-		 * in use by snapshot and should not be moved to snapshot.
+		 * moved to snapshot.
 		 */
-		snapshot_debug_hl(1, "warning: trying to move block [%lu/%lu]"
-			" to snapshot from NULL inode.\n",
-			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-			SNAPSHOT_BLOCK_GROUP(block));
 		trace_cow_inc(handle, ok_bitmap);
-//EZK: the msg above suggests a real error. so why not return -EIO or so?
 		err = 0;
 		goto out;
 	}

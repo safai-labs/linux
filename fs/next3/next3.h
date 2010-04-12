@@ -639,16 +639,10 @@ struct next3_super_block {
 	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT
 	 * is set.
 	 */
-//EZK: instead of s_last_snapshot, say s_last_snapshot_inum (and fix comment)
-//EZK: also, the word "last" could imply "oldest" snapshot, but you really mean most recent snapshot. so maybe call it s_newest_snapshot_inum?
-/*3F0*/	__le32	s_last_snapshot;	/* start of list of snapshot inodes */
-//EZK: it seems to me that the reserved snapshot blocks are reserved only for active snapshot *IF* you have an active one. if so, document this here and on wiki.
-	__le32	s_snapshot_r_blocks_count; /* Reserved snapshot blocks count */
-//EZK: rename s_snapshot_id to s_current_snapshot_id? or s_latest_snapshot_id?
-//EZK: MAJOR GRIPE. the whole s_snapshot_id field seems useless to me. u only use it for debugging purposes, it seems. however, you overload the inode->i_generation field with that value, and probably breaking nfs exporting of n/ext3 volumes. why cant u just refer to the inode->i_num as ur unique debugging identifier and void messing with i_generation?
-	__le32	s_snapshot_id;		/* running snapshot ID */
-//EZK: similar naming concern. maybe call s_snaphot_inum as s_active_snapshot_inum to mirror s_newest_snapshot_inum? i like code symmetry.
-	__le32	s_snapshot_inum;	/* inode number of active snapshot */
+/*3F0*/	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
+	__le32	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
+	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
+	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
 #else
 	__u32   s_reserved[162];        /* Padding to the end of the block */
 #endif

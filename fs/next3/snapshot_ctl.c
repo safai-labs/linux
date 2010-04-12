@@ -470,9 +470,7 @@ static int next3_snapshot_create(struct inode *inode)
 		goto out_handle;
 
 	/* record the new snapshot ID in the snapshot inode generation field */
-//EZK: how do u guarantee atomic updates to s_snapshot_id here and everywhere else?
 	inode->i_generation = le32_to_cpu(sbi->s_es->s_snapshot_id) + 1;
-//EZK: unless sbi->s_es_>s_snapshot_id can become -1, its impossible for inode->i_generation to become 0, so test below is unnecessary.
 	if (inode->i_generation == 0)
 		/* 0 is not a valid snapshot id */
 		inode->i_generation = 1;
@@ -497,7 +495,7 @@ static int next3_snapshot_create(struct inode *inode)
 	 */
 //EZK: I think you have to igrab(inode) before calling inode_list_add, not after
 	err = next3_inode_list_add(handle, inode, &NEXT_SNAPSHOT(inode),
-			&sbi->s_es->s_last_snapshot,
+			&sbi->s_es->s_snapshot_list,
 			list, "snapshot");
 	/* add snapshot list reference */
 	if (err || !igrab(inode)) {
@@ -509,7 +507,7 @@ static int next3_snapshot_create(struct inode *inode)
 #else
 	lock_super(sb);
 	err = next3_journal_get_write_access(handle, sbi->s_sbh);
-	sbi->s_es->s_last_snapshot = inode->i_ino;
+	sbi->s_es->s_snapshot_list = inode->i_ino;
 	if (!err)
 		err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
 	unlock_super(sb);
@@ -884,7 +882,7 @@ int next3_snapshot_take(struct inode *inode)
 	es->s_feature_ro_compat &=
 		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	es->s_snapshot_inum = 0;
-	es->s_last_snapshot = 0;
+	es->s_snapshot_list = 0;
 	es->s_feature_ro_compat |=
 		cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT);
 #endif
@@ -1017,7 +1015,6 @@ fix_inode_copy:
 #endif
 	sbi->s_es->s_snapshot_id =
 		cpu_to_le32(le32_to_cpu(sbi->s_es->s_snapshot_id)+1);
-//EZK: unless s_snapshot_id can become -1, its impossible for s_snapshot_id to become 0, so test below is unnecessary.
 	if (sbi->s_es->s_snapshot_id == 0)
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
@@ -1294,7 +1291,7 @@ static int next3_snapshot_remove(struct inode *inode)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	err = next3_inode_list_del(handle, inode, &NEXT_SNAPSHOT(inode),
-			&sbi->s_es->s_last_snapshot,
+			&sbi->s_es->s_snapshot_list,
 			&NEXT3_SB(inode->i_sb)->s_snapshot_list,
 			"snapshot");
 	if (err)
@@ -1305,7 +1302,7 @@ static int next3_snapshot_remove(struct inode *inode)
 #else
 	lock_super(inode->i_sb);
 	err = next3_journal_get_write_access(handle, sbi->s_sbh);
-	sbi->s_es->s_last_snapshot = 0;
+	sbi->s_es->s_snapshot_list = 0;
 	if (!err)
 		err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
 	unlock_super(inode->i_sb);
@@ -1953,7 +1950,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		int read_only)
 {
 //EZK: i dont see a reason why ino_next is a pointer here.  it doesnt seem needed and just complicates the code.
-	__le32 *ino_next = &es->s_last_snapshot;
+	__le32 *ino_next = &es->s_snapshot_list;
 	__le32 active_ino = es->s_snapshot_inum;
 	int err, num = 0, snapshot_id = 0;
 	int has_snapshot = 1, has_active = 0;

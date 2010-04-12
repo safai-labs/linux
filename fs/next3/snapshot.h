@@ -435,8 +435,8 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
  * Checks if the file should be excluded from snapshot.
  *
  * Returns 0 for normal file.
- * Returns < 0 for 'ignored' file.
  * Returns > 0 for 'excluded' file.
+ * Returns < 0 for 'ignored' file (stonger than 'excluded').
  *
  * Excluded and ignored file blocks are not moved to snapshot.
  * Ignored file metadata blocks are not COWed to snapshot.
@@ -444,26 +444,22 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
  * XXX: Excluded files code is experimental,
  *      but ignored files code isn't.
  */
-//EZK: the comment above sez it returns >0 for excluded file but code below returns -1 for exluded inode; do u want to document experimental or non-experimental code?
-//EZK: perhaps a better name for this fxn would be next3_exclude_from_snapshotting?
 static inline int next3_snapshot_excluded(struct inode *inode)
 {
-//EZK: does nonzero mean "exclude from snapshotting"?  if so, a zero means "to snaphost", right? if so, then returning zero for !S_ISREG seems odd.  It seems to me the first 'if' in this fxn should be a BUG_ON: should never happen.
+	/* directory blocks and global filesystem blocks cannot be 'excluded' */
 	if (!inode || !S_ISREG(inode->i_mode))
 		return 0;
+	/* snapshot files are 'ignored' */
 	if (next3_snapshot_file(inode))
-		/* ignore snapshot file */
 		return -1;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	/* exclude inode is 'ignored' */
 	if (next3_snapshot_exclude_inode(inode))
-		/* ignore exclude inode */
 		return -1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-	/* XXX: Experimental code */
-//EZK: btw this check below should perhaps be a static inline fxn, as per other flags?
+	/* XXX: exclude file with 'nosnap' flag (Experimental) */
 	if (NEXT3_I(inode)->i_flags & NEXT3_NOSNAP_FL)
-		/* exclude file with 'nosnap'/'nodump' flag */
 		return 1;
 #endif
 	return 0;

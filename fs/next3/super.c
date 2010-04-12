@@ -445,7 +445,6 @@ static void next3_put_super (struct super_block * sb)
 	lock_kernel();
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-//EZK: fxn on next line SHOULD return err. test for it?
 	next3_snapshot_destroy(sb);
 #endif
 	next3_xattr_put_super(sb);

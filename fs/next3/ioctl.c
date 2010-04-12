@@ -170,15 +170,16 @@ flags_err:
 
 		if ((flags | oldflags) & NEXT3_SNAPFILE_LIST_FL) {
 			/* clearing list flag - shrink/merge/remove snapshot */
-			int cleanup = !(flags & NEXT3_SNAPFILE_LIST_FL);
+			int ret, cleanup = !(flags & NEXT3_SNAPFILE_LIST_FL);
 
 			if (!(oldflags & NEXT3_SNAPFILE_LIST_FL))
 				/* setting list flag - take snapshot */
 				err = next3_snapshot_take(inode);
 
-			/* update/cleanup all snapshots on list */
-//EZK: fxn on next line SHOULD return err. test for it?
-			next3_snapshot_update(inode->i_sb, cleanup, 0);
+			/* update/cleanup snapshots list even if take failed */
+			ret = next3_snapshot_update(inode->i_sb, cleanup, 0);
+			if (!err)
+				err = ret;
 		}
 #endif
 flags_out:

@@ -1236,12 +1236,14 @@ static int next3_snapshot_delete(struct inode *inode)
 }
 
 /*
- * next3_snapshot_remove() removes a snapshot @inode from the list
- * of snapshots stored on disk and truncates the snapshot inode
- * Called from next3_snapshot_update/cleanup/merge() under snapshot_mutex
+ * next3_snapshot_remove - removes a snapshot from the list
+ * @inode: snapshot inode
+ *
+ * Removed the snapshot inode from in-memory and on-disk snapshots list of
+ * and truncates the snapshot inode.
+ * Called from next3_snapshot_update/cleanup/merge() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
  */
-//EZK: say what fxn returns on success/failure
-__attribute__ ((warn_unused_result))
 static int next3_snapshot_remove(struct inode *inode)
 {
 	handle_t *handle;
@@ -1251,8 +1253,7 @@ static int next3_snapshot_remove(struct inode *inode)
 
 	/* elevate ref count until final cleanup */
 	if (!igrab(inode))
-//EZK: why not return err on failure to igrab?
-		return 0;
+		return -EIO;
 
 	if (ei->i_flags & (NEXT3_SNAPFILE_ENABLED_FL | NEXT3_SNAPFILE_INUSE_FL
 			   | NEXT3_SNAPFILE_ACTIVE_FL)) {
@@ -1427,7 +1428,6 @@ static int next3_snapshot_shrink_range(handle_t *handle,
  * Called from next3_snapshot_update() under snapshot_mutex.
  * Returns 0 on success and <0 on error.
  */
-__attribute__ ((warn_unused_result))
 static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 int need_shrink)
 {
@@ -1566,7 +1566,6 @@ out_err:
  * Called from next3_snapshot_update() under snapshot_mutex.
  * Returns 0 on success and <0 on error.
  */
-__attribute__ ((warn_unused_result))
 static int next3_snapshot_merge(struct inode *start, struct inode *end,
 				int need_merge)
 {
@@ -1628,8 +1627,9 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 		/* we finished moving all blocks of interest from 'inode'
 		 * into 'start' so it is now safe to remove 'inode' from the
 		 * snapshots list forever */
-//EZK: fxn on next line can return err. test for it?
-		next3_snapshot_remove(inode);
+		err = next3_snapshot_remove(inode);
+		if (err)
+			goto out_err;
 
 		if (--need_merge <= 0)
 			break;
@@ -1662,18 +1662,17 @@ out_err:
  * Deleted snapshot with older enabled snapshot - add to shrink count
  * Non-deleted snapshot - shrink and merge deleted snapshots group
  *
- * Called from next3_snapshot_update() under snapshot_mutex
+ * Called from next3_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
  */
-//EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
-static void next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
+static int next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 		int deleted, int *need_shrink, int *need_merge)
 {
-	if (deleted && !used_by) {
+	int err = 0;
+
+	if (deleted && !used_by)
 		/* remove permanently unused deleted snapshot */
-//EZK: fxn on next line can return err. test for it?
-		next3_snapshot_remove(inode);
-		return;
-	}
+		return next3_snapshot_remove(inode);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_SHRINK
 	if (deleted) {
@@ -1687,26 +1686,30 @@ static void next3_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 			 * snapshot needs merging */
 			(*need_merge)++;
 #endif
-	} else {
-		/* non-deleted (or active) snapshot file */
-		if (*need_shrink)
-			/* pass 1: shrink all deleted snapshots
-			 * between 'used_by' and 'inode' */
-//EZK: fxn on next line can return err. test for it?
-			next3_snapshot_shrink(used_by, inode,
-					*need_shrink);
+		return 0;
+	}
+
+	/* non-deleted (or active) snapshot file */
+	if (*need_shrink) {
+		/* pass 1: shrink all deleted snapshots
+		 * between 'used_by' and 'inode' */
+		err = next3_snapshot_shrink(used_by, inode, *need_shrink);
+		if (err)
+			return err;
 		*need_shrink = 0;
+	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_MERGE
-		if (*need_merge)
-			/* pass 2: merge all shrunk snapshots
-			 * between 'used_by' and 'inode' */
-//EZK: fxn on next line can return err. test for it?
-			next3_snapshot_merge(used_by, inode,
-					*need_merge);
+	if (*need_merge) {
+		/* pass 2: merge all shrunk snapshots
+		 * between 'used_by' and 'inode' */
+		err = next3_snapshot_merge(used_by, inode, *need_merge);
+		if (err)
+			return err;
 		*need_merge = 0;
-#endif
 	}
 #endif
+#endif
+	return 0;
 }
 #endif
 #endif
@@ -2078,11 +2081,10 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 
 	if (num > 0) {
-//EZK: fxn on next line SHOULD return err. test for it?
-		next3_snapshot_update(sb, 0, read_only);
+		err = next3_snapshot_update(sb, 0, read_only);
 		snapshot_debug(1, "%d snapshots loaded\n", num);
 	}
-	return 0;
+	return err;
 }
 
 /*
@@ -2114,11 +2116,11 @@ void next3_snapshot_destroy(struct super_block *sb)
  * @cleanup: if true, shrink/merge/cleanup all snapshots marked for deletion.
  * @read_only: if true, don't remove snapshot after failed take.
  *
- * Called from next3_ioctl() under snapshot_mutex
- * Called from snapshot_load() under sb_lock with @cleanup=0
+ * Called from next3_ioctl() under snapshot_mutex.
+ * Called from snapshot_load() under sb_lock with @cleanup=0.
+ * Returns 0 on success and <0 on error.
  */
-//EZK: this function can fail inside!  it must return -errno on err, and callers must check for it. say what it returns on success/failure.
-void next3_snapshot_update(struct super_block *sb, int cleanup, int read_only)
+int next3_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 {
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
@@ -2136,6 +2138,7 @@ void next3_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 	int need_shrink = 0;
 	int need_merge = 0;
 #endif
+	int err = 0;
 
 	BUG_ON(read_only && cleanup);
 	if (active_snapshot)
@@ -2146,7 +2149,7 @@ void next3_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 	/* iterate safe from oldest snapshot backwards */
 	prev = NEXT3_SB(sb)->s_snapshot_list.prev;
 	if (list_empty(prev))
-		return;
+		return 0;
 
 update_snapshot:
 	ei = list_entry(prev, struct next3_inode_info, i_list);
@@ -2164,8 +2167,7 @@ update_snapshot:
 	 */
 	if (found_active || !active_snapshot) {
 		if (!read_only)
-//EZK: fxn on next line can return err. test for it?
-			next3_snapshot_remove(inode);
+			err = next3_snapshot_remove(inode);
 		goto prev_snapshot;
 	}
 
@@ -2190,14 +2192,12 @@ update_snapshot:
 			!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	if (cleanup)
-//EZK: fxn on next line SHOULD return err. test for it?
-		next3_snapshot_cleanup(inode, used_by, deleted,
+		err = next3_snapshot_cleanup(inode, used_by, deleted,
 				&need_shrink, &need_merge);
 #else
 	if (cleanup && deleted && !used_by)
 		/* remove permanently unused deleted snapshot */
-//EZK: fxn on next line can return err. test for it?
-		next3_snapshot_remove(inode);
+		err = next3_snapshot_remove(inode);
 #endif
 
 	if (!deleted) {
@@ -2210,14 +2210,16 @@ update_snapshot:
 	}
 
 prev_snapshot:
-//EZK: is this goto update_snapshot just a way to get a while() loop to iterate over all snapshots? if so, why not use a proper while loop or iterator. if the code nesting becomes too deep, consider extracting some of the main loop body code into a helper.
+	if (err)
+		return err;
+	/* update prev snapshot */
 	if (prev != &NEXT3_SB(sb)->s_snapshot_list)
 		goto update_snapshot;
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
 	if (!active_snapshot || !cleanup || used_by)
-		return;
+		return 0;
 
 	/* if all snapshots are deleted - deactivate active snapshot */
 	deleted = NEXT3_I(active_snapshot)->i_flags & NEXT3_SNAPFILE_DELETED_FL;
@@ -2232,12 +2234,12 @@ prev_snapshot:
 		unlock_super(sb);
 		sb->s_op->unfreeze_fs(sb);
 		/* remove unused deleted active snapshot */
-//EZK: fxn on next line can return err. test for it?
-		next3_snapshot_remove(active_snapshot);
+		err = next3_snapshot_remove(active_snapshot);
 		/* drop the refcount to 0 */
 		iput(active_snapshot);
 	}
 #endif
+	return err;
 }
 #else
 int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,

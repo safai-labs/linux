@@ -339,9 +339,9 @@ extern int next3_snapshot_get_inode_access(handle_t *handle,
  */
 extern int next3_snapshot_load(struct super_block *sb,
 		struct next3_super_block *es, int read_only);
-extern void next3_snapshot_destroy(struct super_block *sb);
-extern void next3_snapshot_update(struct super_block *sb, int cleanup,
+extern int next3_snapshot_update(struct super_block *sb, int cleanup,
 		int read_only);
+extern void next3_snapshot_destroy(struct super_block *sb);
 
 static inline int init_next3_snapshot(void)
 {

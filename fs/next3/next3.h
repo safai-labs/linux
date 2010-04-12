@@ -681,7 +681,7 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 
 #define NEXT_ORPHAN(inode) NEXT3_I(inode)->i_dtime
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-#define NEXT_SNAPSHOT(inode) (NEXT3_I(inode)->i_next)
+#define NEXT_SNAPSHOT(inode) (NEXT3_I(inode)->i_next_snapshot_ino)
 #endif
 
 /*

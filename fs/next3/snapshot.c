@@ -120,7 +120,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	unsigned int flags = ei->i_flags;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
-	struct list_head *prev = ei->i_list.prev;
+	struct list_head *prev = ei->i_snaplist.prev;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
 #ifdef CONFIG_NEXT3_FS_DEBUG
@@ -198,7 +198,7 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		return -EIO;
 
 	/* read through to prev snapshot on the list */
-	ei = list_entry(prev, struct next3_inode_info, i_list);
+	ei = list_entry(prev, struct next3_inode_info, i_snaplist);
 	*prev_snapshot = &ei->vfs_inode;
 
 	if (!next3_snapshot_file(*prev_snapshot))

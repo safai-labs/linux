@@ -3956,7 +3956,8 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 
 	if (next3_snapshot_file(inode)) {
-		ei->i_next = le32_to_cpu(raw_inode->i_next_snapshot);
+		ei->i_next_snapshot_ino =
+			le32_to_cpu(raw_inode->i_next_snapshot);
 		/*
 		 * Dynamic snapshot flags are not stored on-disk, so
 		 * at this point, we only know that this inode has the
@@ -4180,7 +4181,8 @@ static int next3_do_update_inode(handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 	if (next3_snapshot_file(inode)) {
-		raw_inode->i_next_snapshot = cpu_to_le32(ei->i_next);
+		raw_inode->i_next_snapshot =
+			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~NEXT3_FL_SNAPSHOT_DYN_MASK);
 		/* snapshot size is stored in i_snapshot_blocks_count */

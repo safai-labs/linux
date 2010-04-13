@@ -279,10 +279,13 @@ next3_snapshot_complete_cow(handle_t *handle,
 			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
 			    buffer_tracked_readers_count(bh));
 		/*
-		 * "This is extremely improbable, so msleep(1) is sufficient
-		 *  and there is no need for a wait queue." (dm-snap.c)
+		 * Quote from LVM snapshot pending_complete() function:
+	         * "Check for conflicting reads. This is extremely improbable,
+		 *  so msleep(1) is sufficient and there is no need for a wait
+		 *  queue." (drivers/md/dm-snap.c).
 		 */
 		msleep(1);
+		/* XXX: Should we fail after N retries? */
 	}
 #endif
 
@@ -497,15 +500,22 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		return NULL;
 
 	bitmap_blk = le32_to_cpu(desc->bg_block_bitmap);
-	spin_lock(sb_bgl_lock(sbi, block_group));
-	cow_bitmap_blk = le32_to_cpu(desc->bg_cow_bitmap);
-	spin_unlock(sb_bgl_lock(sbi, block_group));
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_BITMAP
-//EZK: u just read the cow_bitmap_blk above under a spinlock, then u go ahead and re-lock and re-read it again. you can combine the two tries into a do-until loop instead.
-	/* handle concurrent COW bitmap operations */
-	while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk) {
-//EZK: cow_bitmap_blk can have three status: equal to 0; equal to bitmap_blk; or some other value. explain somewhere in code+wiki what each of those states means and how its value moves b/t those states.
+	/*
+	 * Handle concurrent COW bitmap operations.
+	 * bg_cow_bitmap has 3 states:
+	 * = 0 - uninitialized (after mount and after snapshot take).
+	 * = bg_block_bitmap - marks pending COW of block bitmap.
+	 * other - location of initialized COW bitmap block.
+	 *
+	 * The first task to access block group after mount or snapshot take,
+	 * will read the uninitialized state, mark pending COW state, initialize
+	 * the COW bitmap block and update COW bitmap cache.  Other tasks will
+	 * busy wait until the COW bitmap cache is in initialized state, before
+	 * reading the COW bitmap block.
+	 */
+	do {
 		spin_lock(sb_bgl_lock(sbi, block_group));
 		cow_bitmap_blk = le32_to_cpu(desc->bg_cow_bitmap);
 		if (cow_bitmap_blk == 0)
@@ -514,16 +524,16 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		spin_unlock(sb_bgl_lock(sbi, block_group));
 
 		if (cow_bitmap_blk == 0) {
-			snapshot_debug(3, "COWing bitmap #%u of snapshot "
-				       "(%u)...\n", block_group,
-				       snapshot->i_generation);
+			snapshot_debug(3, "initializing COW bitmap #%u "
+					"of snapshot (%u)...\n",
+					block_group, snapshot->i_generation);
 			/* sleep 1 tunable delay unit */
 			snapshot_test_delay(SNAPTEST_BITMAP);
 			break;
 		}
 		if (cow_bitmap_blk == bitmap_blk) {
 			/* wait for another task to COW bitmap block */
-			snapshot_debug_once(2, "waiting for pending cow "
+			snapshot_debug_once(2, "waiting for pending COW "
 					    "bitmap #%d...\n", block_group);
 			/*
 			 * This is an unlikely event that can happen only once
@@ -532,9 +542,13 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			 */
 			msleep(1);
 		}
-	}
+		/* XXX: Should we fail after N retries? */
+	} while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk);
+#else
+	spin_lock(sb_bgl_lock(sbi, block_group));
+	cow_bitmap_blk = le32_to_cpu(desc->bg_cow_bitmap);
+	spin_unlock(sb_bgl_lock(sbi, block_group));
 #endif
-
 	if (cow_bitmap_blk)
 		return sb_bread(sb, cow_bitmap_blk);
 
@@ -576,29 +590,30 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (err)
 		goto out;
 
-	snapshot_debug(3, "COW bitmap #%u of snapshot (%u) "
-			"mapped to block [%lld/%lld]\n",
-			block_group, snapshot->i_generation,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bh->b_blocknr),
-			SNAPSHOT_BLOCK_GROUP(cow_bh->b_blocknr));
-
 	trace_cow_inc(handle, bitmaps);
 out:
-	spin_lock(sb_bgl_lock(sbi, block_group));
 	if (!err && cow_bh) {
-		/* update cow bitmap cache with snapshot cow bitmap block */
-		desc->bg_cow_bitmap = cow_bh->b_blocknr;
+		/* initialized COW bitmap block */
+		cow_bitmap_blk = cow_bh->b_blocknr;
+		snapshot_debug(3, "COW bitmap #%u of snapshot (%u) "
+				"mapped to block [%lu/%lu]\n",
+				block_group, snapshot->i_generation,
+				SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bitmap_blk),
+				SNAPSHOT_BLOCK_GROUP(cow_bitmap_blk));
 	} else {
-		/* reset cow bitmap cache */
-		desc->bg_cow_bitmap = 0;
+		/* uninitialized COW bitmap block */
+		cow_bitmap_blk = 0;
+		snapshot_debug(1, "failed to read COW bitmap #%u of snapshot "
+				"(%u)\n", block_group, snapshot->i_generation);
 		brelse(cow_bh);
 		cow_bh = NULL;
 	}
+
+	/* update or reset COW bitmap cache */
+	spin_lock(sb_bgl_lock(sbi, block_group));
+	desc->bg_cow_bitmap = cpu_to_le32(cow_bitmap_blk);
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 
-	if (!cow_bh)
-		snapshot_debug(1, "failed to read COW bitmap %u of snapshot "
-				"(%u)\n", block_group, snapshot->i_generation);
 	return cow_bh;
 }
 

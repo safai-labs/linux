@@ -537,7 +537,6 @@ static inline void next3_snapshot_end_pending_cow(struct buffer_head *sbh)
 /*
  * Test for pending COW operation and wait for its completion.
  */
-//EZK: there's a chance that this routine will never return.  perhaps add a failsafe method that if it went into the while loop more than N times and still didn't terminate, you abort with some error?
 static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
 						sector_t blocknr)
 {
@@ -562,6 +561,7 @@ static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
 		 * no need for a wait queue.
 		 */
 		msleep(1);
+		/* XXX: Should we fail after N retries? */
 	}
 }
 #endif

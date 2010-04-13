@@ -298,7 +298,7 @@ static inline int next3_snapshot_get_delete_access(handle_t *handle,
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 extern int next3_snapshot_exclude_blocks(handle_t *handle,
-		struct super_block *sb, next3_fsblk_t block, int count);
+		struct super_block *sb, next3_fsblk_t block, int maxblocks);
 
 /*
  * get_clear_access() - mark snapshot blocks excluded

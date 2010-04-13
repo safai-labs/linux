@@ -473,13 +473,14 @@ int next3_snapshot_read_block_bitmap(struct super_block *sb,
  * @snapshot:	active snapshot
  * @block_group: block group
  *
+ * Reads the COW bitmap block (i.e., the active snapshot copy of block bitmap).
  * Creates the COW bitmap on first access to @block_group after snapshot take.
- * COW bitmap cache is non-persistent, so no need to mark the group desc
- * block dirty.
+ * COW bitmap cache is non-persistent, so no need to mark the group descriptor
+ * block dirty.  COW bitmap races are handled internally, so no locks are
+ * required when calling this function, only a valid @handle.
  *
  * Return COW bitmap buffer on success or NULL in case of failure.
  */
-//EZK: locking semantics?
 static struct buffer_head *
 next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       unsigned int block_group)
@@ -622,7 +623,7 @@ out:
  * @handle:	JBD handle
  * @snapshot:	active snapshot
  * @block:	address of block
- * @count:	no. of blocks to be tested
+ * @maxblocks:	max no. of blocks to be tested
  * @excluded:	if not NULL, blocks belong to this excluded inode
  *
  * If the block bit is set in the COW bitmap, than it was allocated at the time
@@ -635,12 +636,13 @@ out:
  */
 static int
 next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
-		next3_fsblk_t block, int count, struct inode *excluded)
+		next3_fsblk_t block, int maxblocks, struct inode *excluded)
 {
 	struct buffer_head *cow_bh;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	int snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
+	int count = maxblocks;
 	int inuse = 0;
 
 	if (block >= snapshot_blocks)
@@ -664,7 +666,6 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		else
 			break;
 		bit++;
-//EZK: i dont like the idea of modifying formal params passed to a fxn. it works, but is just odd. i prefer to see a new automatic variable initalized from 'count' and decremented instead.
 		count--;
 	}
 
@@ -689,8 +690,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			"excluded file (ino=%lu) block [%d/%lu] is not "
 			"excluded! - run fsck to fix exclude bitmap.\n",
 			excluded->i_ino, bit, block_group);
-//EZK: if this is a serious enough problem to cause next3_error,  then why do you return 0 and not -EIO?
-		return 0;
+		return -EIO;
 #endif
 	}
 	return inuse;
@@ -706,12 +706,13 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
  * < 0 - error
  */
 int next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
-			      next3_fsblk_t block, int count)
+			      next3_fsblk_t block, int maxblocks)
 {
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	int err = 0, n = 0, excluded = 0;
+	int count = maxblocks;
 
 	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
 	if (!exclude_bitmap_bh)
@@ -842,8 +843,10 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 }
 #endif
 
-//EZK this is called under which kind of lock(s)?
-//EZK (perhaps h_cowing should be updated via atomic_set?)
+/*
+ * Begin COW or move operation.
+ * No locks needed here, because @handle is a per-task struct.
+ */
 static inline void next3_snapshot_cow_begin(handle_t *handle)
 {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
@@ -864,8 +867,10 @@ static inline void next3_snapshot_cow_begin(handle_t *handle)
 	handle->h_cowing = 1;
 }
 
-//EZK this is called under which kind of lock(s)?
-//EZK (perhaps h_cowing should be updated via atomic_set?)
+/*
+ * End COW or move operation.
+ * No locks needed here, because @handle is a per-task struct.
+ */
 static inline void next3_snapshot_cow_end(const char *where,
 		handle_t *handle, next3_fsblk_t block, int err)
 {

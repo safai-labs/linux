@@ -196,21 +196,20 @@ read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 {
 	struct next3_group_desc *desc;
 	struct buffer_head *bh = NULL;
-	next3_fsblk_t bitmap_blk;
+	next3_fsblk_t exclude_bitmap_blk;
 
 	desc = next3_get_group_desc(sb, block_group, NULL);
 	if (!desc)
 		return NULL;
-	bitmap_blk = le32_to_cpu(desc->bg_exclude_bitmap);
-	if (!bitmap_blk)
+	exclude_bitmap_blk = le32_to_cpu(desc->bg_exclude_bitmap);
+	if (!exclude_bitmap_blk)
 		return NULL;
-	bh = sb_getblk(sb, bitmap_blk);
+	bh = sb_getblk(sb, exclude_bitmap_blk);
 	if (unlikely(!bh)) {
 		next3_error(sb, __func__,
 			    "Cannot read exclude bitmap - "
-			    "block_group = %d, exclude_bitmap = %u",
-//EZK: use "bitmap_blk" in next3_error instead of le32_to_cpu(...)
-			    block_group, le32_to_cpu(desc->bg_exclude_bitmap));
+			    "block_group = %d, exclude_bitmap = %lu",
+			    block_group, exclude_bitmap_blk);
 		return NULL;
 	}
 	if (likely(bh_uptodate_or_lock(bh)))
@@ -220,9 +219,8 @@ read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 		brelse(bh);
 		next3_error(sb, __func__,
 			    "Cannot read exclude bitmap - "
-			    "block_group = %d, exclude_bitmap = %u",
-//EZK: use "bitmap_blk" in next3_error instead of le32_to_cpu(...)
-			    block_group, le32_to_cpu(desc->bg_exclude_bitmap));
+			    "block_group = %d, exclude_bitmap = %lu",
+			    block_group, exclude_bitmap_blk);
 		return NULL;
 	}
 	return bh;
@@ -565,12 +563,11 @@ void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 	next3_grpblk_t group_skipped = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
-	next3_grpblk_t exclude_freed = 0;
-//EZK: no need to check "inode && next_snapshot_excluded" b/c the latter already checks if inode is null; also no need for ?: below -- just compare if something is zero or non-zero.
-	int excluded_block, excluded_file = (inode &&
-			next3_snapshot_excluded(inode)) ? 1 : 0;
-//EZK: the above four variables all related to exclusion, but they are hard to understand: what is each one of them for exactly?  is excluded_file a boolean or a number?
-//EZK: is seems to me that some of these variables are pretty close to each other in meaning. so for example can some of them be folded together to simplify the logic here?
+	int  exclude_bitmap_dirty = 0;
+	/* excluded_file is an attribute of the inode */
+	int excluded_file = next3_snapshot_excluded(inode);
+	/* excluded_block is determined by testing exclude bitmap */
+	int excluded_block;
 #endif
 #endif
 
@@ -657,8 +654,7 @@ do_more:
 			handle, &dummy_exclude_inode, exclude_bitmap_bh);
 		if (err)
 			goto error_return;
-//EZK: why reset exclude_freed to 0 here? it is already initialized to 0 above. any chance it wont be zero here?
-		exclude_freed = 0;
+		exclude_bitmap_dirty = 0;
 	}
 
 #endif
@@ -754,7 +750,8 @@ do_more:
 		excluded_block = (exclude_bitmap_bh &&
 			next3_clear_bit_atomic(sb_bgl_lock(sbi, block_group),
 				bit + i, exclude_bitmap_bh->b_data)) ? 1 : 0;
-		if (excluded_block != excluded_file) {
+		if ((excluded_block && !excluded_file) ||
+			(excluded_file && !excluded_block)) {
 			jbd_unlock_bh_state(bitmap_bh);
 			/*
 			 * Freeing an excluded block of a non-excluded file
@@ -765,7 +762,6 @@ do_more:
 			 * next3_error() which commits the super block.
 			 * TODO: implement fix exclude bitmap in fsck.
 			 */
-//EZK: you say in comment above that fsck support is not done to fix exclude bitmap. so the printf below is misleading by saying to run fsck.
 			NEXT3_SET_RO_COMPAT_FEATURE(sb,
 					NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
 			next3_error(sb, __func__,
@@ -779,9 +775,7 @@ do_more:
 			jbd_lock_bh_state(bitmap_bh);
 		}
 		if (excluded_block)
-			exclude_freed++;
-//EZK: u only test if exclude_freed is non-zero/zero, so no need to ++ it
-//EZK: can u document briefly what is purpose of exclude_freed?
+			exclude_bitmap_dirty = 1;
 #endif
 	}
 	jbd_unlock_bh_state(bitmap_bh);
@@ -805,7 +799,7 @@ do_more:
 	err = next3_journal_dirty_metadata(handle, bitmap_bh);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (exclude_bitmap_bh && exclude_freed) {
+	if (exclude_bitmap_bh && exclude_bitmap_dirty) {
 		ret = next3_journal_dirty_metadata(handle, exclude_bitmap_bh);
 		if (!err)
 			err = ret;
@@ -1048,7 +1042,6 @@ claim_block(struct super_block *sb, int group, spinlock_t *lock,
 		 * next3_error() which commits the super block.
 		 * TODO: implement fix exclude bitmap in fsck.
 		 */
-//EZK: the TODO above says fsck support isnt done, but prinf below says to run fsck. misleading.
 		jbd_unlock_bh_state(bh);
 		NEXT3_SET_RO_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
@@ -1679,13 +1672,21 @@ out:
 		return ret;
 	}
 
-	BUFFER_TRACE(bitmap_bh, "journal_release_buffer");
-	next3_journal_release_buffer(handle, bitmap_bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh)
-//EZK: fxn on next line can return err. test for it?
-		next3_journal_release_buffer(handle, exclude_bitmap_bh);
+		fatal = next3_journal_release_buffer(handle, exclude_bitmap_bh);
 	brelse(exclude_bitmap_bh);
+#endif
+	BUFFER_TRACE(bitmap_bh, "journal_release_buffer");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
+	if (!fatal)
+		fatal = next3_journal_release_buffer(handle, bitmap_bh);
+	if (fatal) {
+		*errp = fatal;
+		return -1;
+	}
+#else
+	next3_journal_release_buffer(handle, bitmap_bh);
 #endif
 	return ret;
 }
@@ -1701,15 +1702,13 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 	next3_fsblk_t free_blocks, root_blocks;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	next3_fsblk_t snapshot_r_blocks;
-//EZK: rename 'snaphot' var below to active_snapshot (name is too generic)
-	struct inode *snapshot = sbi->s_active_snapshot;
 	handle_t *handle = journal_current_handle();
 #endif
 
 	free_blocks = percpu_counter_read_positive(&sbi->s_freeblocks_counter);
 	root_blocks = le32_to_cpu(sbi->s_es->s_r_blocks_count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
-	if (snapshot && handle) {
+	if (handle && sbi->s_active_snapshot) {
 		snapshot_r_blocks =
 			le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
 		/*

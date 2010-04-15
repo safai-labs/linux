@@ -682,7 +682,6 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		 * anyway, but this can indicate a messed up exclude bitmap.
 		 * mark that exclude bitmap needs to be fixed and call
 		 * next3_error() which commits the super block.
-		 * TODO: implement fix exclude/COW bitmap in fsck.
 		 */
 		NEXT3_SET_RO_COMPAT_FEATURE(excluded->i_sb,
 				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);

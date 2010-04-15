@@ -760,7 +760,6 @@ do_more:
 			 * but this indicates a messed up exclude bitmap.
 			 * mark that exclude bitmap needs to be fixed and call
 			 * next3_error() which commits the super block.
-			 * TODO: implement fix exclude bitmap in fsck.
 			 */
 			NEXT3_SET_RO_COMPAT_FEATURE(sb,
 					NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
@@ -1040,7 +1039,6 @@ claim_block(struct super_block *sb, int group, spinlock_t *lock,
 		 * but this indicates a messed up exclude bitmap.
 		 * mark that exclude bitmap needs to be fixed and call
 		 * next3_error() which commits the super block.
-		 * TODO: implement fix exclude bitmap in fsck.
 		 */
 		jbd_unlock_bh_state(bh);
 		NEXT3_SET_RO_COMPAT_FEATURE(sb,

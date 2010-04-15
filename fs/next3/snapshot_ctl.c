@@ -972,11 +972,13 @@ fix_inode_copy:
 		 * so they appear to be not allocated in the snapshot's
 		 * block bitmap.  If we want the snapshot image to pass
 		 * fsck with no errors, we need to detach those blocks
-		 * from the copy of the snapshot inode.
+		 * from the copy of the snapshot inode, so we fix the
+		 * snapshot inodes to appear as empty regular files.
 		 */
 		raw_inode->i_size = temp_inode.i_size;
 		raw_inode->i_size_high = temp_inode.i_size_high;
 		raw_inode->i_blocks = temp_inode.i_blocks;
+		raw_inode->i_flags &= ~NEXT3_FL_SNAPSHOT_MASK;
 		memcpy(raw_inode->i_block, temp_inode.i_block,
 				sizeof(raw_inode->i_block));
 		memset(&temp_inode, 0, sizeof(temp_inode));

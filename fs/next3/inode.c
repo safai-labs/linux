@@ -2543,8 +2543,25 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 		set_buffer_mapped(bh_result);
 		snapshot_debug(2, "fixing snapshot block bitmap #%lu\n",
 				block_group);
+		/*
+		 * XXX: if we return unmapped buffer, the page will be zeroed
+		 * but if we return mapped to block device and uptodate buffer
+		 * next readpage may read directly from block device without
+		 * fixing block bitmap.  This only affects fsck of snapshots.
+		 */
 		return next3_snapshot_read_block_bitmap(inode->i_sb,
 				block_group, bh_result);
+	}
+	/* check for read through to exclude bitmap */
+	if (desc)
+		bitmap_blk = le32_to_cpu(desc->bg_exclude_bitmap);
+	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+		/* return unmapped buffer to zero out page */
+		cancel_buffer_tracked_read(bh_result);
+		/* cancel_buffer_tracked_read() clears mapped flag */
+		snapshot_debug(2, "zeroing snapshot exclude bitmap #%lu\n",
+				block_group);
+		return 0;
 	}
 
 #ifdef CONFIG_NEXT3_FS_DEBUG

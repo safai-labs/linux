@@ -224,15 +224,7 @@ static inline void
 __next3_snapshot_copy_buffer(struct buffer_head *sbh,
 		struct buffer_head *bh)
 {
-	char *src;
-
-	/*
-	 * in journaled data mode, @bh can be a user page buffer
-	 * that has to be kmapped.
-	 */
-	src = kmap_atomic(bh->b_page, KM_USER0);
-	memcpy(sbh->b_data, src, SNAPSHOT_BLOCK_SIZE);
-	kunmap_atomic(src, KM_USER0);
+	memcpy(sbh->b_data, bh->b_data, SNAPSHOT_BLOCK_SIZE);
 	set_buffer_uptodate(sbh);
 }
 
@@ -249,8 +241,11 @@ __next3_snapshot_copy_bitmap(struct buffer_head *sbh,
 	u32 *pd = (u32 *)dst;
 	int i;
 
-	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
-		*pd++ = *ps++ & ~*pm++;
+	if (mask) {
+		for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++)
+			*pd++ = *ps++ & ~*pm++;
+	} else
+		memcpy(dst, src, SNAPSHOT_BLOCK_SIZE);
 
 	set_buffer_uptodate(sbh);
 }
@@ -642,8 +637,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	int snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
-	int count = maxblocks;
-	int inuse = 0;
+	int inuse;
 
 	if (block >= snapshot_blocks)
 		/*
@@ -660,38 +654,43 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * if the bit is set in the COW bitmap,
 	 * then the block is in use by snapshot
 	 */
-	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
-		if (next3_test_bit(bit, cow_bh->b_data))
-			inuse++;
-		else
+	for (inuse = 0; inuse < maxblocks && bit+inuse < SNAPSHOT_BLOCKS_PER_GROUP;
+			inuse++) {
+		if (!next3_test_bit(bit+inuse, cow_bh->b_data))
 			break;
-		bit++;
-		count--;
 	}
 
-	if (inuse && excluded) {
-		/* don't COW excluded inode blocks */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	if (inuse && excluded) {
+		int i, err;
+
+		/* don't COW excluded inode blocks */
 		if (!NEXT3_HAS_COMPAT_FEATURE(excluded->i_sb,
 			NEXT3_FEATURE_COMPAT_EXCLUDE_INODE))
 			/* no exclude inode/bitmap */
 			return 0;
 		/*
 		 * We should never get here because excluded file blocks should
-		 * be excluded from COW bitmap.  The block will not be COWed
+		 * be excluded from COW bitmap.  The blocks will not be COWed
 		 * anyway, but this can indicate a messed up exclude bitmap.
-		 * mark that exclude bitmap needs to be fixed and call
-		 * next3_error() which commits the super block.
+		 * Mark that exclude bitmap needs to be fixed and clear blocks
+		 * from COW bitmap.
 		 */
 		NEXT3_SET_RO_COMPAT_FEATURE(excluded->i_sb,
 				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
-		next3_error(excluded->i_sb, __func__,
-			"excluded file (ino=%lu) block [%d/%lu] is not "
-			"excluded! - run fsck to fix exclude bitmap.\n",
-			excluded->i_ino, bit, block_group);
-		return -EIO;
-#endif
+		next3_warning(excluded->i_sb, __func__,
+			"clearing excluded file (ino=%lu) blocks [%d-%d/%lu] "
+			"from COW bitmap! - running fsck to fix exclude bitmap "
+			"is recommended.\n",
+			excluded->i_ino, bit, bit+inuse-1, block_group);
+		for (i = 0; i < inuse; i++)
+			next3_clear_bit(bit+i, cow_bh->b_data);
+		err = next3_journal_dirty_data(handle, cow_bh);
+		mark_buffer_dirty(cow_bh);
+		return err;
 	}
+
+#endif
 	return inuse;
 }
 #endif

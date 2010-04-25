@@ -154,9 +154,56 @@ int __next3_journal_stop(const char *where, handle_t *handle)
 	return err;
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+/* record error messages after journal super block */
+static void next3_record_journal_err(struct super_block *sb, const char *where,
+		const char *function, const char *fmt, va_list args)
+{
+#define MSGLEN 256
+	journal_t *journal = NEXT3_SB(sb)->s_journal;
+	char *buf;
+	unsigned offset;
+	int len;
+	
+	if (!journal)
+		return;
+
+	buf = (char *)journal->j_superblock;
+	offset = (unsigned)buf % sb->s_blocksize;
+	buf += sizeof(journal_superblock_t);
+	offset += sizeof(journal_superblock_t);
+
+	/* seek to end of message buffer */
+	while (offset < sb->s_blocksize && *buf) {
+		buf += MSGLEN;
+		offset += MSGLEN;
+	}
+
+	if (offset+MSGLEN > sb->s_blocksize)
+		/* no space left in message buffer */
+		return;
+
+	len = snprintf(buf, MSGLEN, "%s: %s: ", where, function);
+	len += vsnprintf(buf+len, MSGLEN-len, fmt, args);
+}
+
+static void next3_record_journal_errstr(struct super_block *sb,
+		const char *where, const char *function, ...)
+{
+	va_list args;
+
+	va_start(args, function);
+	next3_record_journal_err(sb, where, function, "%s\n", args);
+	va_end(args);
+}
+
+#endif
 void next3_journal_abort_handle(const char *caller, const char *err_fn,
 		struct buffer_head *bh, handle_t *handle, int err)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	struct super_block *sb = handle->h_transaction->t_journal->j_private;
+#endif
 	char nbuf[16];
 	const char *errstr = next3_decode_error(NULL, err, nbuf);
 
@@ -172,6 +219,11 @@ void next3_journal_abort_handle(const char *caller, const char *err_fn,
 	printk(KERN_ERR "%s: aborting transaction: %s in %s\n",
 	       caller, errstr, err_fn);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	/* record error message in journal super block */
+	next3_record_journal_errstr(sb, caller, err_fn, errstr);
+
+#endif
 	journal_abort_handle(handle);
 }
 
@@ -226,6 +278,9 @@ void next3_error (struct super_block * sb, const char * function,
 	printk(KERN_CRIT "NEXT3-fs error (device %s): %s: ",sb->s_id, function);
 	vprintk(fmt, args);
 	printk("\n");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	next3_record_journal_err(sb, __func__, function, fmt, args);
+#endif
 	va_end(args);
 
 	next3_handle_error(sb);
@@ -294,6 +349,11 @@ void __next3_std_error (struct super_block * sb, const char * function,
 	printk (KERN_CRIT "NEXT3-fs error (device %s) in %s: %s\n",
 		sb->s_id, function, errstr);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	/* record error message in journal super block */
+	next3_record_journal_errstr(sb, __func__, function, errstr);
+
+#endif
 	next3_handle_error(sb);
 }
 
@@ -318,6 +378,10 @@ void next3_abort (struct super_block * sb, const char * function,
 	printk(KERN_CRIT "NEXT3-fs error (device %s): %s: ",sb->s_id, function);
 	vprintk(fmt, args);
 	printk("\n");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	/* record error message in journal super block */
+	next3_record_journal_err(sb, __func__, function, fmt, args);
+#endif
 	va_end(args);
 
 	if (test_opt(sb, ERRORS_PANIC))
@@ -344,6 +408,10 @@ void next3_warning (struct super_block * sb, const char * function,
 	       sb->s_id, function);
 	vprintk(fmt, args);
 	printk("\n");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	/* record error message in journal super block */
+	next3_record_journal_err(sb, __func__, function, fmt, args);
+#endif
 	va_end(args);
 }
 
@@ -2476,6 +2544,27 @@ static void next3_clear_journal_err(struct super_block * sb,
 	j_errno = journal_errno(journal);
 	if (j_errno) {
 		char nbuf[16];
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+		char *buf1, *buf2;
+		unsigned offset1, offset2;
+		int len1, len2;
+
+		/* copy message buffer from journal to super block */
+		buf1 = (char *)journal->j_superblock;
+		offset1 = (unsigned)buf1 % sb->s_blocksize;
+		buf1 += sizeof(journal_superblock_t);
+		offset1 += sizeof(journal_superblock_t);
+		len1 = sb->s_blocksize - offset1;
+		buf2 = (char *)NEXT3_SB(sb)->s_es;
+		offset2 = (unsigned)buf2 % sb->s_blocksize;
+		buf2 += sizeof(struct next3_super_block);
+		offset2 += sizeof(struct next3_super_block);
+		len2 = sb->s_blocksize - offset2;
+		if (len2 > len1)
+			len2 = len1;
+		if (len2 > 0 && *buf1)
+			memcpy(buf2, buf1, len2);
+#endif	
 
 		errstr = next3_decode_error(sb, j_errno, nbuf);
 		next3_warning(sb, __func__, "Filesystem error recorded "
@@ -2483,6 +2572,12 @@ static void next3_clear_journal_err(struct super_block * sb,
 		next3_warning(sb, __func__, "Marking fs in need of "
 			     "filesystem check.");
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+		/* clear journal message buffer */
+		if (len1 > 0)
+			memset(buf1, 0, len1);
+
+#endif	
 		NEXT3_SB(sb)->s_mount_state |= NEXT3_ERROR_FS;
 		es->s_state |= cpu_to_le16(NEXT3_ERROR_FS);
 		next3_commit_super (sb, es, 1);

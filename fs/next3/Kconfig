@@ -280,11 +280,12 @@ config NEXT3_FS_SNAPSHOT_JOURNAL
 	  with the file system operation that triggered them.
 
 config NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
-	bool "Next3 snapshot journaled - record journal error"
+	bool "Next3 snapshot journaled - record errors in journal"
 	depends on NEXT3_FS_SNAPSHOT_JOURNAL
 	default y
 	help
-	  Snapshot errors are recorded as journal errors.
+	  Next3 error state is recorded in the journal super block and error
+	  messages are recorder in free space after the journal super block.
 	  Next3 should be mounted with errors=remount-ro.
 	  After a snapshot error, the file system will be in read-only mode.
 	  The administrator must un-mount the file system and run fsck

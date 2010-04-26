@@ -1957,7 +1957,6 @@ out:
 int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		int read_only)
 {
-//EZK: i dont see a reason why ino_next is a pointer here.  it doesnt seem needed and just complicates the code.
 	__le32 *ino_next = &es->s_snapshot_list;
 	__le32 active_ino = es->s_snapshot_inum;
 	int err, num = 0, snapshot_id = 0;
@@ -2015,16 +2014,16 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		struct inode *inode;
 
 		inode = next3_orphan_get(sb, le32_to_cpu(*ino_next));
-//EZK: where do u check that a snapshot inode loaded from disk is indeed a snapshot inode (eg it is marked with snapshot flag?). if somehow the wrong inode got into the snapshot list, it should be an EIO and force fsck.
 		if (IS_ERR(inode) || !next3_snapshot_file(inode)) {
 			if (has_active || !has_snapshot) {
 				/* active snapshot was loaded or not found */
 				snapshot_debug(1,
 					"warning: failed to load snapshot "
 					"(ino=%u) after snapshot (%d) - "
-					"aborting snapshots load!\n",
+					"terminating snapshots list!\n",
 					le32_to_cpu(*ino_next), snapshot_id);
-				/* allow read-write mount */
+				/* reset list head and allow read-write mount */
+				*ino_next = 0;
 				break;
 			} else if (num == 0 && *ino_next != active_ino) {
 				/* failed to load last non-active snapshot */

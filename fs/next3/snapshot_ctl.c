@@ -283,8 +283,8 @@ out:
 	 * retake reserve inode write from next3_ioctl() and mark inode
 	 * dirty
 	 */
-//EZK: fxn on next line can return err. test for it?
-	next3_mark_inode_dirty(handle, inode);
+	if (!err)
+		err = next3_mark_inode_dirty(handle, inode);
 	return err;
 }
 
@@ -309,20 +309,21 @@ static int __extend_or_restart_transaction(const char *where,
 	if (err < 0)
 		return err;
 	if (err) {
-		if (inode)
+		if (inode) {
 			/* lazy way to do mark_iloc_dirty() */
-//EZK: fxn on next line can return err. test for it?
-			next3_mark_inode_dirty(handle, inode);
+			err = next3_mark_inode_dirty(handle, inode);
+			if (err)
+				return err;
+		}
 		err = __next3_journal_restart(where, handle, nblocks);
 		if (err)
 			return err;
 		if (inode)
 			/* lazy way to do reserve_inode_write() */
-//EZK: fxn on next line can return err. test for it?
-			next3_mark_inode_dirty(handle, inode);
+			err = next3_mark_inode_dirty(handle, inode);
 	}
 
-	return 0;
+	return err;
 }
 
 #define extend_or_restart_transaction(handle, nblocks)			\
@@ -379,8 +380,6 @@ out:
  * and adds it to the list of snapshots
  * Called under i_mutex and snapshot_mutex
  */
-//EZK: this fxn has both forward and backward goto calls. can it be simplified to avoid the backward jumps?
-//EZK: a 300 LoC complex function.  if you can simplify it, great. otherwise i fear some bugs may lurk here for a long time.
 static int next3_snapshot_create(struct inode *inode)
 {
 	handle_t *handle;
@@ -388,7 +387,7 @@ static int next3_snapshot_create(struct inode *inode)
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	struct next3_inode_info *ei = NEXT3_I(inode);
-	int i, err;
+	int i, err, ret;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
 	int count;
 	struct buffer_head *bh = NULL;
@@ -486,6 +485,11 @@ static int next3_snapshot_create(struct inode *inode)
 			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	/* add snapshot list reference */
+	if (!igrab(inode)) {
+		err = -EIO;
+		goto out_handle;
+	}
 	/*
 	 * First, the snapshot is added to the in-memory and on-disk list.
 	 * At the end of snapshot_take(), it will become the active snapshot
@@ -493,14 +497,14 @@ static int next3_snapshot_create(struct inode *inode)
 	 * Finally, if snapshot_create() or snapshot_take() has failed,
 	 * snapshot_update() will remove it from the in-memory and on-disk list.
 	 */
-//EZK: I think you have to igrab(inode) before calling inode_list_add, not after
 	err = next3_inode_list_add(handle, inode, &NEXT_SNAPSHOT(inode),
 			&sbi->s_es->s_snapshot_list,
 			list, "snapshot");
 	/* add snapshot list reference */
-	if (err || !igrab(inode)) {
+	if (err) {
 		snapshot_debug(1, "failed to add snapshot (%u) to list\n",
 			       inode->i_generation);
+		iput(inode);
 		goto out_handle;
 	}
 	l = list->next;
@@ -582,7 +586,6 @@ static int next3_snapshot_create(struct inode *inode)
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
-//EZK: i dont understand why we have to deal with the journal inode fix code here. is this the code that makes an ext3 snapshot into a readonly ext2 file? if so, then where is the code that removes the journal from the new snapshot? be sure you are not breaking the actual ext3 journal here.
 	/* start with journal inode and continue with snapshot list */
 	ino = NEXT3_JOURNAL_INO;
 alloc_inode_blocks:
@@ -674,8 +677,9 @@ next_snapshot:
 	snapshot_debug(1, "snapshot (%u) created\n", inode->i_generation);
 	err = 0;
 out_handle:
-//EZK: fxn on next line can return err. test for it?
-	next3_journal_stop(handle);
+	ret = next3_journal_stop(handle);
+	if (!err)
+		err = ret;
 	return err;
 }
 
@@ -827,21 +831,22 @@ int next3_snapshot_take(struct inode *inode)
 			       "take\n", inode->i_generation);
 		goto out_err;
 	}
-	/* calculate disk space for potential snapshot file growth based on:
+	/*
+	 * Calculate maximum disk space for snapshot file metadata based on:
 	 * 1 indirect block per 1K fs blocks (to map moved data blocks)
 	 * +1 data block per 1K fs blocks (to copy indirect blocks)
 	 * +1 data block per fs meta block (to copy meta blocks)
 	 * +1 data block per directory (to copy small directory index blocks)
 	 * +1 data block per 64 inodes (to copy large directory index blocks)
+	 * XXX: reserved space may be too small in data jounaling mode,
+	 *      which is currently not supported.
 	 */
-//EZK: be sure to explain on wiki ur heuristics for calculating snapshot_r_blocks
 	snapshot_r_blocks = 2 * (statfs.f_blocks >>
 				 SNAPSHOT_ADDR_PER_BLOCK_BITS) +
 		statfs.f_spare[0] + statfs.f_spare[1] +
 		(statfs.f_files - statfs.f_ffree) / 64;
 
 	/* verify enough free space before taking the snapshot */
-//EZK: the -ENOSPC below suggests that snapshot_r_blocks is MINIMUM required blocks.  is it?  i thought it was just a "nice to have space to grow into in the future". if so, then maybe u dont need to return ENOSPC at at this point? or maybe its better to be safe than sorry.
 	if (statfs.f_bfree < snapshot_r_blocks) {
 		err = -ENOSPC;
 		goto out_err;
@@ -1248,7 +1253,7 @@ static int next3_snapshot_remove(struct inode *inode)
 	handle_t *handle;
 	struct next3_sb_info *sbi;
 	struct next3_inode_info *ei = NEXT3_I(inode);
-	int err = 0;
+	int err = 0, ret;
 
 	/* elevate ref count until final cleanup */
 	if (!igrab(inode))
@@ -1287,9 +1292,8 @@ static int next3_snapshot_remove(struct inode *inode)
 #endif
 
 	err = extend_or_restart_transaction_inode(handle, inode, 2);
-//EZK: shouldnt this below be 'goto out_handle'? i dont see extend_or_* above stopping the journal txn, or does it?
 	if (err)
-		goto out_err;
+		goto out_handle;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	err = next3_inode_list_del(handle, inode, &NEXT_SNAPSHOT(inode),
@@ -1298,8 +1302,7 @@ static int next3_snapshot_remove(struct inode *inode)
 			"snapshot");
 	if (err)
 		goto out_handle;
-	/* remove snapshot list reference */
-//EZK: u have 2 iputs below. say which one is for the igrab above, and which one is for the original igrab of the inode. come to think of it, if the inode here is guaranteed to have an elevated refcnt, and there's no chance someone else could iput it, then perhaps the igran in this fxn is unecessary?
+	/* remove snapshot list reference - taken on snapshot_create() */
 	iput(inode);
 #else
 	lock_super(inode->i_sb);
@@ -1323,8 +1326,9 @@ static int next3_snapshot_remove(struct inode *inode)
 	ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
 
 out_handle:
-//EZK: fxn on next line can return err. test for it?
-	next3_journal_stop(handle);
+	ret = next3_journal_stop(handle);
+	if (!err)
+		err = ret;
 	if (err)
 		goto out_err;
 
@@ -1334,7 +1338,7 @@ out_handle:
 
 	err = 0;
 out_err:
-	/* drop final ref count */
+	/* drop final ref count - taken on entry to this function */
 	iput(inode);
 	if (err) {
 		snapshot_debug(1, "failed to delete snapshot (%u)\n",
@@ -1435,12 +1439,13 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	struct buffer_head cow_bitmap, *cow_bh = NULL;
 	next3_fsblk_t block = 0;
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
+	/* blocks beyond the size of @start are not in-use by @start */
 	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
 	unsigned long count = le32_to_cpu(sbi->s_es->s_blocks_count);
 	unsigned long block_groups = sbi->s_groups_count;
 	long block_group = -1;
 	next3_fsblk_t bg_boundary = 0;
-	int err;
+	int err, ret;
 
 	snapshot_debug(3, "snapshot (%u-%u) shrink: "
 			"count = 0x%lx, need_shrink = %d\n",
@@ -1512,7 +1517,6 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	if (err)
 		goto out_err;
 
-//EZK: maybe say "iterate on (@start <= snapshot < @end)" in comment?
 	/* iterate on (@start < snapshot < @end) */
 	list_for_each_prev(l, &NEXT3_I(start)->i_snaplist) {
 		struct next3_inode_info *ei;
@@ -1540,7 +1544,9 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 
 	err = 0;
 out_err:
-	next3_journal_stop(handle);
+	ret = next3_journal_stop(handle);
+	if (!err)
+		err = ret;
 	if (need_shrink)
 		snapshot_debug(1, "snapshot (%u-%u) shrink: "
 			       "need_shrink=%d(>0!), err=%d\n",
@@ -1571,13 +1577,11 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 	struct list_head *l, *n;
 	handle_t *handle = NULL;
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
-	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
-	int err;
+	int err, ret;
 
 	snapshot_debug(3, "snapshot (%u-%u) merge: need_merge=%d\n",
 			start->i_generation, end->i_generation, need_merge);
 
-//EZK: is it "@start <= snapshot" instead?
 	/* iterate safe on (@start < snapshot < @end) */
 	list_for_each_prev_safe(l, n, &NEXT3_I(start)->i_snaplist) {
 		struct next3_inode_info *ei = list_entry(l,
@@ -1585,8 +1589,8 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 						 i_snaplist);
 		struct inode *inode = &ei->vfs_inode;
 		next3_fsblk_t block = 0;
-//EZK: if snapshot_blocks can change per snapshot, then you need to recalculate it each time in this loop. o/w the integer snapshot_blocks above is a wasted decl.
-		int count = snapshot_blocks;
+		/* blocks beyond the size of @start are not in-use by @start */
+		int count = SNAPSHOT_BLOCKS(start);
 
 		if (n == &sbi->s_snapshot_list || inode == end ||
 			!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
@@ -1619,9 +1623,10 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 			count -= err;
 		}
 
-//EZK: fxn on next line can return err. test for it?
-		next3_journal_stop(handle);
+		err = next3_journal_stop(handle);
 		handle = NULL;
+		if (err)
+			goto out_err;
 
 		/* we finished moving all blocks of interest from 'inode'
 		 * into 'start' so it is now safe to remove 'inode' from the
@@ -1636,9 +1641,11 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 
 	err = 0;
 out_err:
-	if (handle)
-//EZK: fxn on next line can return err. test for it?
-		next3_journal_stop(handle);
+	if (handle) {
+		ret = next3_journal_stop(handle);
+		if (!err)
+			err = ret;
+	}
 	if (need_merge)
 		snapshot_debug(1, "snapshot (%u-%u) merge: need_merge=%d(>0!), "
 			       "err=%d\n", start->i_generation,
@@ -1796,7 +1803,6 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 		/* past last block group - just allocating indirect blocks */
 		goto out;
 
-//EZK: cast below is wrong
 	exclude_bitmap = ((__le32 *)ind_bh->b_data)[ind_offset];
 	if (exclude_bitmap)
 		goto out;
@@ -1814,7 +1820,6 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 	if (!bh)
 		goto alloc_out;
 	brelse(bh);
-//EZK: cast below is wrong
 	exclude_bitmap = ((__le32 *)ind_bh->b_data)[ind_offset];
 alloc_out:
 	if (exclude_bitmap)
@@ -1851,7 +1856,7 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	struct inode *inode;
 	__le32 exclude_bitmap = 0;
 	int grp, max_groups = sbi->s_groups_count;
-	int err = 0;
+	int err = 0, ret;
 	loff_t i_size;
 
 	/* reset COW/exclude bitmap cache */
@@ -1861,10 +1866,10 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 
 	if (!NEXT3_HAS_COMPAT_FEATURE(sb,
 				      NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
+		/* exclude inode is a recommended feature - don't force it */
 		snapshot_debug(1, "warning: exclude_inode feature not set - "
 			       "snapshot merge might not free all unused "
 			       "blocks!\n");
-//EZK: why return 0 here and not, say, EINVAL or some other -errno?
 		return 0;
 	}
 
@@ -1895,8 +1900,7 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 		exclude_bitmap = next3_exclude_inode_getblk(handle, inode, grp,
 				create);
 		if (create && grp >= sbi->s_groups_count)
-//EZK: if this if cond is true, wouldn't it be true for the remainder of the for loop? if so, you can change "continue" to "break", right? (careful about what err should be)
-			/* only allocating indirect blocks */
+			/* only allocating indirect blocks with getblk above */
 			continue;
 
 		if (create && !exclude_bitmap)
@@ -1923,9 +1927,11 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	NEXT3_I(inode)->i_disksize = i_size;
 	err = next3_mark_inode_dirty(handle, inode);
 out:
-	if (handle)
-//EZK: fxn on next line can return err. test for it?
-		next3_journal_stop(handle);
+	if (handle) {
+		ret = next3_journal_stop(handle);
+		if (!err)
+			err = ret;
+	}
 	iput(inode);
 	return err;
 }
@@ -2033,7 +2039,6 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 			break;
 		}
 
-//EZK: the variable snapshot_id seems unnecessary in thix fxn.  u can just refer to inode->i_generation directly in the two snapshot_debug calls that use it.
 		snapshot_id = inode->i_generation;
 		snapshot_debug(1, "snapshot (%d) loaded\n",
 			       snapshot_id);

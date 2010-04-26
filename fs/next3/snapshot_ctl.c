@@ -1352,7 +1352,7 @@ out_err:
  * next3_snapshot_shrink_range - free unused blocks from deleted snapshots
  * @handle: JBD handle for this transaction
  * @start:	latest non-deleted snapshot before deleted snapshots group
- * @end:	first non-deleted snapshot after deleted snapshot group
+ * @end:	first non-deleted snapshot after deleted snapshots group
  * @iblock:	inode offset to first data block to shrink
  * @maxblocks:	inode range of data blocks to shrink
  * @cow_bh:	buffer head to map the COW bitmap block of snapshot @start
@@ -1387,25 +1387,34 @@ static int next3_snapshot_shrink_range(handle_t *handle,
 	list_for_each_prev(l, &NEXT3_I(start)->i_snaplist) {
 		err = next3_snapshot_shrink_blocks(handle, inode,
 				iblock, count, cow_bh, shrink, &mapped);
-//EZK: if snapshot_shrink_blocks returns -EIO, i agree u want to return right away. but can it return other less critical errors? if so, perhaps it would be best to continue and try to shrink other snapshots? (perhaps if disk space had become short, we want to reclaim as much as possible?)
 		if (err < 0)
 			return err;
 
 		/* 0 < new range <= old range */
-//EZK: the BUG_ON(!err) will fail oops if number of shrunk blocks was 0. is it possible for snapshot_shrink_blocks to already be shrunk or find no blocks to shrink? if so, it shouldnt be an error, and u just continue to the next snapshot to try and shrink.
 		BUG_ON(!err || err > count);
 		count = err;
-//EZK: the logic for setting 'shrink' below is a bit convoluted. also cow_bh cannot change inside this list iterator, so why repeat the check here?
 
-		if (!cow_bh)
-			/* no COW bitmap - free all blocks in range */
+		/*
+		 * shrink mode state transitions:
+		 * 1. on @start, shrink is set to 0 ('don't free' mode).
+		 * 2. after @start, shrink is incremented until mapped blocks
+		 *    are found in the shrunk range ('free unused' mode).
+		 * 3. after mapped block were found, or if cow_bh is NULL,
+		 *    shrink is set to -1 and decremented until the end of
+		 *    the deleted snapshots group ('free all' mode).
+		 */
+		if (shrink < 0)
+			/* stay in 'free all' mode */
+			shrink--;
+		else if (!cow_bh)
+			/* no COW bitmap - enter 'free all' mode */
 			shrink = -1;
 		else if (mapped)
-			/* past first mapped range - free all blocks in range */
+			/* found mapped blocks - enter 'free all' mode */
 			shrink = -1;
-		else if (!shrink)
-			/* past @start snapshot - free unused blocks in range */
-			shrink = 1;
+		else
+			/* enter/stay in 'free unused' mode */
+			shrink++;
 
 		if (l == &sbi->s_snapshot_list)
 			/* didn't reach @end */
@@ -1422,7 +1431,7 @@ static int next3_snapshot_shrink_range(handle_t *handle,
  * next3_snapshot_shrink - free unused blocks from deleted snapshot files
  * @handle: JBD handle for this transaction
  * @start:	latest non-deleted snapshot before deleted snapshots group
- * @end:	first non-deleted snapshot after deleted snapshot group
+ * @end:	first non-deleted snapshot after deleted snapshots group
  * @need_shrink: no. of deleted snapshots in the group
  *
  * Frees all blocks in subsequent deleted snapshots starting after @start and
@@ -1536,7 +1545,6 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			if (!err)
 				next3_mark_iloc_dirty(handle, &ei->vfs_inode,
 						      &iloc);
-//EZK: is there a chance that by this time, need_shrink would no longer reflect the actual no. of snapshots that need to be shrunk? be sure snapshot_mutex protects anyone who may change this need_shrink value (as well as need_delete)
 			if (--need_shrink <= 0)
 				break;
 		}
@@ -1561,7 +1569,7 @@ out_err:
  * next3_snapshot_merge - merge deleted snapshots
  * @handle: JBD handle for this transaction
  * @start:	latest non-deleted snapshot before deleted snapshots group
- * @end:	first non-deleted snapshot after deleted snapshot group
+ * @end:	first non-deleted snapshot after deleted snapshots group
  * @need_merge: no. of deleted snapshots in the group
  *
  * Move all blocks from deleted snapshots group starting after @start and

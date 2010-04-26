@@ -603,7 +603,7 @@ static int next3_blks_to_skip(struct inode *inode, long i_block,
  * @maxblocks:	inode range of data blocks to shrink
  * @cow_bh:	buffer head to map the COW bitmap block
  *		if NULL, don't look for COW bitmap block
- * @shrink:	shrink mode: 0 (don't free), 1 (free unused), -1 (free all)
+ * @shrink:	shrink mode: 0 (don't free), >0 (free unused), <0 (free all)
  * @pmapped:	return no. of mapped blocks or 0 for skipped holes
  *
  * Frees @maxblocks blocks starting at offset @iblock in @inode, which are not

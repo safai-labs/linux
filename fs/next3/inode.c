@@ -2630,10 +2630,16 @@ static int next3_releasepage(struct page *page, gfp_t wait)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 /*
  * snapshot support for direct I/O is not implemented,
- * so direct I/O operation is disabled.
+ * so direct I/O operation is disabled in next3.
  */
-#define next3_direct_IO NULL
-#else
+static ssize_t next3_no_direct_IO(int rw, struct kiocb *iocb,
+			const struct iovec *iov, loff_t offset,
+			unsigned long nr_segs)
+{
+	return -EOPNOTSUPP;
+}
+
+#endif
 /*
  * If the O_DIRECT write will extend the file then add this inode to the
  * orphan list.  So recovery will truncate it back to the original size
@@ -2716,7 +2722,6 @@ static ssize_t next3_direct_IO(int rw, struct kiocb *iocb,
 out:
 	return ret;
 }
-#endif
 
 /*
  * Pages can be marked dirty completely asynchronously from next3's journalling
@@ -2747,7 +2752,7 @@ static const struct address_space_operations next3_ordered_aops = {
 	.bmap			= next3_bmap,
 	.invalidatepage		= next3_invalidatepage,
 	.releasepage		= next3_releasepage,
-	.direct_IO		= next3_direct_IO,
+	.direct_IO		= next3_no_direct_IO,
 	.migratepage		= buffer_migrate_page,
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };
@@ -2762,7 +2767,7 @@ static const struct address_space_operations next3_writeback_aops = {
 	.bmap			= next3_bmap,
 	.invalidatepage		= next3_invalidatepage,
 	.releasepage		= next3_releasepage,
-	.direct_IO		= next3_direct_IO,
+	.direct_IO		= next3_no_direct_IO,
 	.migratepage		= buffer_migrate_page,
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };

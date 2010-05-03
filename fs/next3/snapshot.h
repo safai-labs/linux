@@ -151,6 +151,8 @@ extern void next3_snapshot_copy_buffer(struct buffer_head *sbh,
 extern int next3_snapshot_read_block_bitmap(struct super_block *sb,
 		unsigned int block_group, struct buffer_head *bitmap_bh);
 
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_COW
 extern int next3_snapshot_test_and_cow(const char *where,
 		handle_t *handle, struct inode *inode,
 		struct buffer_head *bh, int cow);

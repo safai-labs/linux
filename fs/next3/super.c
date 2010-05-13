@@ -2238,6 +2238,14 @@ static journal_t *next3_get_journal(struct super_block *sb,
 		return NULL;
 	}
 
+	if ((journal_inode->i_size >> NEXT3_BLOCK_SIZE_BITS(sb)) <
+			NEXT3_BIG_JOURNAL_BLOCKS)
+		snapshot_debug(1, "warning: journal is not big enough "
+			"(%lld < %u) - this might affect concurrent "
+			"filesystem writers performance!\n",
+			journal_inode->i_size >> NEXT3_BLOCK_SIZE_BITS(sb),
+			NEXT3_BIG_JOURNAL_BLOCKS);
+
 #endif
 	journal = journal_init_inode(journal_inode);
 	if (!journal) {

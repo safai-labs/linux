@@ -480,6 +480,9 @@ struct next3_inode {
 #define EXT2_FLAGS_SIGNED_HASH		0x0001  /* Signed dirhash in use */
 #define EXT2_FLAGS_UNSIGNED_HASH	0x0002  /* Unsigned dirhash in use */
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+#define NEXT3_FLAGS_BIG_JOURNAL		0x1000	/* Has a big (>=2G) journal */
+#endif
 
 /*
  * Mount flags
@@ -733,7 +736,6 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL	0x1000 /* Has big journal */
 #define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000 /* Has exclude inode */
 #endif
 

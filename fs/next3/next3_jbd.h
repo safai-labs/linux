@@ -125,8 +125,10 @@
 
 /*
  * Next3 is not designed for filesystems under 4G with journal size < 128M
+ * Recommended journal size is 2G (created with 'mke2fs -j -J big')
  */
 #define NEXT3_MIN_JOURNAL_BLOCKS	32768U
+#define NEXT3_BIG_JOURNAL_BLOCKS	(16*NEXT3_MIN_JOURNAL_BLOCKS)
 #else
 #define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
 	(handle->h_buffer_credits >= (n))

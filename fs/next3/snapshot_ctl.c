@@ -1977,14 +1977,6 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	if (!NEXT3_HAS_COMPAT_FEATURE(sb,
-		NEXT3_FEATURE_COMPAT_BIG_JOURNAL))
-		snapshot_debug(1, "warning: big_journal feature is not set - "
-			       "this might affect concurrent filesystem "
-			       "writers performance!\n");
-#endif
-
 	if (!*ino_next && active_ino) {
 		/* snapshots list is empty and active snapshot exists */
 		if (!read_only)

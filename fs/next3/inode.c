@@ -3120,10 +3120,9 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 	for (p = first; p < last; p++) {
 		u32 nr = le32_to_cpu(*p);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-		if (nr && bitmap && next3_test_bit(bit, bitmap))
+		if (nr && bitmap && next3_test_bit(bit + (p - first), bitmap))
 			/* don't free block used by older snapshot */
 			nr = 0;
-		bit++;
 #endif
 		if (nr) {
 			struct buffer_head *bh;
@@ -3210,12 +3209,11 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 	for (p = first; p < last; p++) {
 		nr = le32_to_cpu(*p);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-		if (nr && bitmap && next3_test_bit(bit, bitmap))
+		if (nr && bitmap && next3_test_bit(bit + (p - first), bitmap))
 			/* don't free block used by older snapshot */
 			nr = 0;
 		if (nr && pfreed_blocks)
 			++(*pfreed_blocks);
-		bit++;
 #endif
 		if (nr) {
 			/* accumulate blocks to free if they're contiguous */
@@ -3230,7 +3228,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 				next3_clear_blocks_cow(handle, inode, this_bh,
 					       block_to_free, count,
 					       block_to_free_p, p, bitmap,
-					       bit - (p - block_to_free_p),
+					       bit + (block_to_free_p - first),
 					       pblocks);
 #else
 				next3_clear_blocks(handle, inode, this_bh,
@@ -3253,7 +3251,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
 	if (count > 0)
 		next3_clear_blocks_cow(handle, inode, this_bh,
 				block_to_free, count, block_to_free_p, p,
-				bitmap, bit - (p - block_to_free_p), pblocks);
+				bitmap, bit + (block_to_free_p - first), pblocks);
 	if (pblocks)
 		return;
 #else

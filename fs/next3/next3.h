@@ -405,11 +405,7 @@ struct next3_inode {
 			__u16	i_pad1;
 			__le16	l_i_uid_high;	/* these 2 fields    */
 			__le16	l_i_gid_high;	/* were reserved2[0] */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-			__le32	l_i_snapshot_blocks_count; /* Snapshot size */
-#else
 			__u32	l_i_reserved2;
-#endif
 		} linux2;
 		struct {
 			__u8	h_i_frag;	/* Fragment number */
@@ -444,11 +440,7 @@ struct next3_inode {
 #define i_gid_low	i_gid
 #define i_uid_high	osd2.linux2.l_i_uid_high
 #define i_gid_high	osd2.linux2.l_i_gid_high
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
-#define i_snapshot_blocks_count	osd2.linux2.l_i_snapshot_blocks_count
-#else
 #define i_reserved2	osd2.linux2.l_i_reserved2
-#endif
 
 #elif defined(__GNU__)
 

@@ -3990,13 +3990,10 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 */
 		ei->i_flags &= ~NEXT3_FL_SNAPSHOT_DYN_MASK;
 		/*
-		 * snapshot size is stored in i_snapshot_blocks_count. in-memory
-		 * i_disksize of snapshot files is set to snapshot size.
-		 * in-memory i_size of snapshot files is set to 0.
+		 * snapshot volume size is stored in i_disksize.
+		 * in-memory i_size of snapshot files is set to 0 (disabled).
+		 * enabling a snapshot is setting i_size to i_disksize.
 		 */
-		ei->i_disksize = le32_to_cpu(
-				raw_inode->i_snapshot_blocks_count);
-		ei->i_disksize <<= SNAPSHOT_BLOCK_SIZE_BITS;
 		SNAPSHOT_SET_DISABLED(inode);
 	}
 
@@ -4202,9 +4199,6 @@ static int next3_do_update_inode(handle_t *handle,
 			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~NEXT3_FL_SNAPSHOT_DYN_MASK);
-		/* snapshot size is stored in i_snapshot_blocks_count */
-		raw_inode->i_snapshot_blocks_count =
-			cpu_to_le32(ei->i_disksize >> SNAPSHOT_BLOCK_SIZE_BITS);
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE

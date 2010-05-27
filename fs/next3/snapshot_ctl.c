@@ -1149,12 +1149,9 @@ static int next3_snapshot_enable(struct inode *inode)
 		return -EINVAL;
 	}
 
-	if ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) ||
-		!(ei->i_flags & NEXT3_SNAPFILE_LIST_FL)) {
-		snapshot_debug(1, "enable of %s snapshot (%u) "
+	if (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) {
+		snapshot_debug(1, "enable of deleted snapshot (%u) "
 				"is not permitted\n",
-				(ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) ?
-				"deleted" : "detached",
 				inode->i_generation);
 		return -EPERM;
 	}
@@ -2174,6 +2171,11 @@ update_snapshot:
 		goto prev_snapshot;
 	}
 
+	deleted = ei->i_flags & NEXT3_SNAPFILE_DELETED_FL;
+	if (!deleted && read_only)
+		/* auto enable snapshots on readonly mount */
+		next3_snapshot_enable(inode);
+
 	/*
 	 * after completion of a snapshot management operation,
 	 * only the active snapshot can have the ACTIVE flag
@@ -2181,6 +2183,7 @@ update_snapshot:
 	if (inode == active_snapshot) {
 		ei->i_flags |= NEXT3_SNAPFILE_ACTIVE_FL;
 		found_active = 1;
+		deleted = 0;
 	} else
 		ei->i_flags &= ~NEXT3_SNAPFILE_ACTIVE_FL;
 
@@ -2191,8 +2194,6 @@ update_snapshot:
 		/* snapshot is not in use by older enabled snapshots */
 		ei->i_flags &= ~NEXT3_SNAPFILE_INUSE_FL;
 
-	deleted = ((ei->i_flags & NEXT3_SNAPFILE_DELETED_FL) &&
-			!(ei->i_flags & NEXT3_SNAPFILE_ACTIVE_FL));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 	if (cleanup)
 		err = next3_snapshot_cleanup(inode, used_by, deleted,

@@ -233,7 +233,8 @@ struct next3_group_desc
 
 /* non-persistent snapshot status flags */
 #define NEXT3_FL_SNAPSHOT_DYN_MASK		\
-	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ACTIVE_FL| \
+	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL| \
+	 NEXT3_SNAPFILE_ACTIVE_FL| \
 	 NEXT3_SNAPFILE_OPEN_FL|NEXT3_SNAPFILE_INUSE_FL)
 
 /* snapshot flags visible to lsattr */

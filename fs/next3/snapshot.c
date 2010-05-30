@@ -482,6 +482,7 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 {
 	struct super_block *sb = snapshot->i_sb;
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
+	struct next3_group_info *gi = sbi->s_group_info + block_group;
 	struct next3_group_desc *desc;
 	struct buffer_head *cow_bh;
 	next3_fsblk_t bitmap_blk;
@@ -513,10 +514,10 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 */
 	do {
 		spin_lock(sb_bgl_lock(sbi, block_group));
-		cow_bitmap_blk = le32_to_cpu(desc->bg_cow_bitmap);
+		cow_bitmap_blk = gi->bg_cow_bitmap;
 		if (cow_bitmap_blk == 0)
 			/* mark pending COW of bitmap block */
-			desc->bg_cow_bitmap = bitmap_blk;
+			gi->bg_cow_bitmap = bitmap_blk;
 		spin_unlock(sb_bgl_lock(sbi, block_group));
 
 		if (cow_bitmap_blk == 0) {
@@ -542,7 +543,7 @@ next3_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	} while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk);
 #else
 	spin_lock(sb_bgl_lock(sbi, block_group));
-	cow_bitmap_blk = le32_to_cpu(desc->bg_cow_bitmap);
+	cow_bitmap_blk = gi->bg_cow_bitmap;
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 #endif
 	if (cow_bitmap_blk)
@@ -607,7 +608,7 @@ out:
 
 	/* update or reset COW bitmap cache */
 	spin_lock(sb_bgl_lock(sbi, block_group));
-	desc->bg_cow_bitmap = cpu_to_le32(cow_bitmap_blk);
+	gi->bg_cow_bitmap = cow_bitmap_blk;
 	spin_unlock(sb_bgl_lock(sbi, block_group));
 
 	return cow_bh;

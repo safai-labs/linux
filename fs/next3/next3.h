@@ -135,23 +135,11 @@ struct next3_group_desc
 	__le16	bg_free_inodes_count;	/* Free inodes count */
 	__le16	bg_used_dirs_count;	/* Directories count */
 	__u16	bg_pad;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	/*
-	 * Fast cache for location of exclude/COW bitmap blocks.
-	 * Exclude bitmap blocks are allocated offline by mke2fs/tune2fs.
-	 * Location of exclude bitmap blocks is read from exclude inode to
-	 * initialize bg_exclude_bitmap on mount time.
-	 * bg_cow_bitmap is reset to zero on mount time and on every snapshot
-	 * take and initialized lazily on first block group write access.
-	 * bg_cow_bitmap is protected by sb_bgl_lock().
-	 */
-	__le32	bg_exclude_bitmap;	/* Exclude bitmap block */
-	__le32	bg_cow_bitmap;		/* COW bitmap block of active snapshot */
-	__le32	bg_reserved[1];
-#else
 	__le32	bg_reserved[3];
-#endif
 };
+
+#define bg_exclude_bitmap_old bg_reserved[0]	/* Old exclude bitmap cache */
+#define bg_cow_bitmap_old bg_reserved[1]	/* Old COW bitmap cache */
 
 /*
  * Macro-instructions used to manage group descriptors

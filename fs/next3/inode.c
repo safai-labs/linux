@@ -2512,6 +2512,7 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 {
 	unsigned long block_group;
 	struct next3_group_desc *desc;
+	struct next3_group_info *gi;
 	next3_fsblk_t bitmap_blk = 0;
 	int err;
 
@@ -2553,8 +2554,8 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 				block_group, bh_result);
 	}
 	/* check for read through to exclude bitmap */
-	if (desc)
-		bitmap_blk = le32_to_cpu(desc->bg_exclude_bitmap);
+	gi = NEXT3_SB(inode->i_sb)->s_group_info + block_group;
+	bitmap_blk = gi->bg_exclude_bitmap;
 	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
 		/* return unmapped buffer to zero out page */
 		cancel_buffer_tracked_read(bh_result);

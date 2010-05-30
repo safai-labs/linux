@@ -532,6 +532,12 @@ static void next3_put_super (struct super_block * sb)
 	for (i = 0; i < sbi->s_gdb_count; i++)
 		brelse(sbi->s_group_desc[i]);
 	kfree(sbi->s_group_desc);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	if (is_vmalloc_addr(sbi->s_group_info))
+		vfree(sbi->s_group_info);
+	else
+		kfree(sbi->s_group_info);
+#endif
 	percpu_counter_destroy(&sbi->s_freeblocks_counter);
 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
 	percpu_counter_destroy(&sbi->s_dirs_counter);
@@ -1677,6 +1683,10 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	int blocksize;
 	int hblock;
 	int db_count;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	unsigned long max_groups;
+	size_t size;
+#endif
 	int i;
 	int needs_recovery;
 	int ret = -EINVAL;
@@ -1979,6 +1989,23 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		printk(KERN_ERR "NEXT3-fs: group descriptors corrupted!\n");
 		goto failed_mount2;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	/* We allocate both existing and potentially added groups */
+	max_groups = (db_count + le16_to_cpu(es->s_reserved_gdt_blocks)) <<
+		NEXT3_DESC_PER_BLOCK_BITS(sb);
+	size = max_groups * sizeof(struct next3_group_info);
+	sbi->s_group_info = kzalloc(size, GFP_KERNEL);
+	if (sbi->s_group_info == NULL) {
+		sbi->s_group_info = vmalloc(size);
+		if (sbi->s_group_info)
+			memset(sbi->s_group_info, 0, size);
+	}
+	if (sbi->s_group_info == NULL) {
+		printk (KERN_ERR "NEXT3-fs: not enough memory for "
+				"%lu max groups\n", max_groups);
+		goto failed_mount2;
+	}
+#endif
 	sbi->s_gdb_count = db_count;
 	get_random_bytes(&sbi->s_next_generation, sizeof(u32));
 	spin_lock_init(&sbi->s_next_gen_lock);
@@ -2152,6 +2179,14 @@ failed_mount3:
 	percpu_counter_destroy(&sbi->s_freeblocks_counter);
 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
 	percpu_counter_destroy(&sbi->s_dirs_counter);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	if (sbi->s_group_info) {
+		if (is_vmalloc_addr(sbi->s_group_info))
+			vfree(sbi->s_group_info);
+		else
+			kfree(sbi->s_group_info);
+	}
+#endif
 failed_mount2:
 	for (i = 0; i < db_count; i++)
 		brelse(sbi->s_group_desc[i]);

@@ -194,14 +194,11 @@ read_block_bitmap(struct super_block *sb, unsigned int block_group)
 struct buffer_head *
 read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 {
-	struct next3_group_desc *desc;
+	struct next3_group_info *gi = NEXT3_SB(sb)->s_group_info + block_group;
 	struct buffer_head *bh = NULL;
 	next3_fsblk_t exclude_bitmap_blk;
 
-	desc = next3_get_group_desc(sb, block_group, NULL);
-	if (!desc)
-		return NULL;
-	exclude_bitmap_blk = le32_to_cpu(desc->bg_exclude_bitmap);
+	exclude_bitmap_blk = gi->bg_exclude_bitmap;
 	if (!exclude_bitmap_blk)
 		return NULL;
 	bh = sb_getblk(sb, exclude_bitmap_blk);

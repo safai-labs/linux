@@ -813,6 +813,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	struct next3_group_desc *gdp;
 	struct inode *inode = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	struct next3_group_info *gi = NEXT3_SB(sb)->s_group_info + input->group;
 	struct inode *exclude_inode = NULL;
 	struct buffer_head *exclude_bh = NULL;
 	__le32 exclude_bitmap = 0;
@@ -1019,7 +1020,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		next3_mark_iloc_dirty(handle, exclude_inode, &iloc);
 	}
 	/* update exclude bitmap cache */
-	gdp->bg_exclude_bitmap = exclude_bitmap;
+	gi->bg_exclude_bitmap = exclude_bitmap;
 no_exclude_inode:
 #endif
 	/*

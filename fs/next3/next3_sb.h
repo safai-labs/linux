@@ -29,6 +29,25 @@
 #endif
 #include <linux/rbtree.h>
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/*
+ * third extended-fs per-block-group data in memory
+ */
+struct next3_group_info {
+	/*
+	 * Fast cache for location of exclude/COW bitmap blocks.
+	 * Exclude bitmap blocks are allocated offline by mke2fs/tune2fs.
+	 * Location of exclude bitmap blocks is read from exclude inode to
+	 * initialize bg_exclude_bitmap on mount time.
+	 * bg_cow_bitmap is reset to zero on mount time and on every snapshot
+	 * take and initialized lazily on first block group write access.
+	 * bg_cow_bitmap is protected by sb_bgl_lock().
+	 */
+	unsigned long bg_exclude_bitmap;/* Exclude bitmap cache */
+	unsigned long bg_cow_bitmap;	/* COW bitmap cache */
+};
+
+#endif
 /*
  * third extended-fs super-block data in memory
  */
@@ -78,11 +97,11 @@ struct next3_sb_info {
 	struct journal_s * s_journal;
 	struct list_head s_orphan;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	/* protect active snapshot and snapshot list */
-	struct mutex s_snapshot_mutex;
-	struct inode *s_active_snapshot;
+	struct next3_group_info *s_group_info;	/* [ sb_bgl_lock ] */
+	struct mutex s_snapshot_mutex;		/* protects 2 fields below: */
+	struct inode *s_active_snapshot;	/* [ s_snapshot_mutex ] */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-	struct list_head s_snapshot_list;
+	struct list_head s_snapshot_list;	/* [ s_snapshot_mutex ] */
 #endif
 #endif
 	unsigned long s_commit_interval;

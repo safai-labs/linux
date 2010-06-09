@@ -677,8 +677,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		 * Mark that exclude bitmap needs to be fixed and clear blocks
 		 * from COW bitmap.
 		 */
-		NEXT3_SET_RO_COMPAT_FEATURE(excluded->i_sb,
-				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
+		NEXT3_SET_FLAGS(excluded->i_sb, NEXT3_FLAGS_FIX_EXCLUDE);
 		next3_warning(excluded->i_sb, __func__,
 			"clearing excluded file (ino=%lu) blocks [%d-%d/%lu] "
 			"from COW bitmap! - running fsck to fix exclude bitmap "

@@ -883,8 +883,7 @@ int next3_snapshot_take(struct inode *inode)
 		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	es->s_snapshot_inum = 0;
 	es->s_snapshot_list = 0;
-	es->s_feature_ro_compat |=
-		cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT);
+	es->s_flags |= cpu_to_le32(NEXT3_FLAGS_IS_SNAPSHOT);
 #endif
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
@@ -1890,6 +1889,20 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 		max_groups *= NEXT3_DESC_PER_BLOCK(sb);
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+	if (create && NEXT3_HAS_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_COMPAT_EXCLUDE_INODE_OLD)) {
+		/* journal exclude inode migration done inside next3_iget */
+		err = next3_journal_get_write_access(handle, sbi->s_sbh);
+		NEXT3_CLEAR_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_COMPAT_EXCLUDE_INODE_OLD);
+		if (!err)
+			err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
+		if (!err)
+			err = next3_mark_inode_dirty(handle, inode);
+	}
+
+#endif
 	/*
 	 * Init exclude bitmap blocks for all existing block groups and
 	 * allocate indirect blocks for all reserved block groups.
@@ -1964,6 +1977,49 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+	/* Migrate super block on-disk format */
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD) &&
+			!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		/* Copy snapshot fields to new positions */
+		active_ino = es->s_snapshot_inum = es->s_snapshot_inum_old;
+		es->s_snapshot_id = es->s_snapshot_id_old;
+		es->s_snapshot_r_blocks_count = es->s_snapshot_r_blocks_old;
+		es->s_snapshot_list = es->s_snapshot_list_old;
+		/* Clear old snapshot fields */
+		es->s_snapshot_inum_old = 0;
+		es->s_snapshot_id_old = 0;
+		es->s_snapshot_r_blocks_old = 0;
+		es->s_snapshot_list_old = 0;
+		/* Copy snapshot flags to new positions */
+		NEXT3_SET_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+		if (NEXT3_HAS_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_COMPAT_EXCLUDE_INODE_OLD))
+			NEXT3_SET_COMPAT_FEATURE(sb,
+					NEXT3_FEATURE_COMPAT_EXCLUDE_INODE);
+		if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD))
+			NEXT3_SET_FLAGS(sb, NEXT3_FLAGS_FIX_SNAPSHOT);
+		if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD))
+			NEXT3_SET_FLAGS(sb, NEXT3_FLAGS_FIX_EXCLUDE);
+		/* Clear old snapshot flags */
+		NEXT3_CLEAR_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD|
+				NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD|
+				NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD|
+				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD);
+		/* Clear deprecated big journal flag */
+		NEXT3_CLEAR_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_COMPAT_BIG_JOURNAL_OLD);
+		NEXT3_CLEAR_FLAGS(sb, NEXT3_FLAGS_BIG_JOURNAL);
+		/* Keep old exclude inode flag b/c inode was not moved yet */
+	}
+
+#endif
 	if (!*ino_next && active_ino) {
 		/* snapshots list is empty and active snapshot exists */
 		if (!read_only)

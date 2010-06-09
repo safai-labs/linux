@@ -3916,6 +3916,23 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		goto bad_inode;
 	bh = iloc.bh;
 	raw_inode = next3_raw_inode(&iloc);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+	/* Migrate old to new exclude inode on first iget */
+	if (ino == NEXT3_EXCLUDE_INO && NEXT3_HAS_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_COMPAT_EXCLUDE_INODE_OLD)) {
+		/* both inodes are on the same block */
+		char *old_inode = ((char *)raw_inode +
+			(NEXT3_EXCLUDE_INO_OLD - NEXT3_EXCLUDE_INO) *
+			NEXT3_INODE_SIZE(inode->i_sb));
+
+		/* copy old exclude inode */
+		memcpy((char *)raw_inode, old_inode,
+				NEXT3_INODE_SIZE(inode->i_sb));
+		/* clear old exclude inode */
+		memset(old_inode, 0, NEXT3_INODE_SIZE(inode->i_sb));
+		/* inode block will be marked dirty outside this function */
+	}
+#endif
 	inode->i_mode = le16_to_cpu(raw_inode->i_mode);
 	inode->i_uid = (uid_t)le16_to_cpu(raw_inode->i_uid_low);
 	inode->i_gid = (gid_t)le16_to_cpu(raw_inode->i_gid_low);

@@ -68,7 +68,10 @@
 #define NEXT3_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define NEXT3_JOURNAL_INO	 8	/* Journal inode */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
-#define NEXT3_EXCLUDE_INO		10	/* Snapshot exclude inode */
+#define NEXT3_EXCLUDE_INO		 9	/* Snapshot exclude inode */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+#define NEXT3_EXCLUDE_INO_OLD		10	/* Old exclude inode */
 #endif
 
 /* First non-reserved inode for old next3 filesystems */
@@ -137,9 +140,6 @@ struct next3_group_desc
 	__u16	bg_pad;
 	__le32	bg_reserved[3];
 };
-
-#define bg_exclude_bitmap_old bg_reserved[0]	/* Old exclude bitmap cache */
-#define bg_cow_bitmap_old bg_reserved[1]	/* Old COW bitmap cache */
 
 /*
  * Macro-instructions used to manage group descriptors
@@ -461,9 +461,21 @@ struct next3_inode {
 #define EXT2_FLAGS_SIGNED_HASH		0x0001  /* Signed dirhash in use */
 #define EXT2_FLAGS_UNSIGNED_HASH	0x0002  /* Unsigned dirhash in use */
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-#define NEXT3_FLAGS_BIG_JOURNAL		0x1000	/* Has a big (>=2G) journal */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT3_FLAGS_IS_SNAPSHOT		0x0010 /* Is a snapshot image */
+#define NEXT3_FLAGS_FIX_SNAPSHOT	0x0020 /* Corrupted snapshot */
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+#define NEXT3_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
+#endif
+
+#define NEXT3_SET_FLAGS(sb,mask) \
+	NEXT3_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
+#define NEXT3_CLEAR_FLAGS(sb,mask) \
+	NEXT3_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
 
 /*
  * Mount flags
@@ -617,20 +629,29 @@ struct next3_super_block {
 	__u8	s_log_groups_per_flex;  /* FLEX_BG group size */
 	__u8	s_reserved_char_pad2;
 	__le16  s_reserved_pad;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	__u32	s_reserved[158];	/* Padding to the end of the block */
+	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	/*
 	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT
 	 * is set.
 	 */
-/*3F0*/	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
-	__le32	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
+/*180*/	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
 	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
-	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
+	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
+	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
+	__u32	s_reserved[155];	/* Padding to the end of the block */
 #else
-	__u32   s_reserved[162];        /* Padding to the end of the block */
+	__u32   s_reserved[160];        /* Padding to the end of the block */
 #endif
 };
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+
+/* old snapshot field positions */
+#define s_snapshot_list_old	s_reserved[151] /* Old snapshot list head */
+#define s_snapshot_r_blocks_old	s_reserved[152] /* Old reserved for snapshot */
+#define s_snapshot_id_old	s_reserved[153] /* Old active snapshot ID */
+#define s_snapshot_inum_old	s_reserved[154] /* Old active snapshot inode */
+#endif
 
 #ifdef __KERNEL__
 #include "next3_i.h"
@@ -716,20 +737,25 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
-#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x2000 /* Has exclude inode */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x0080 /* Has exclude inode */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL_OLD	0x1000 /* Old big journal */
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE_OLD	0x2000 /* Old exclude inode */
 #endif
 
 #define NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
-#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x1000 /* Next3 has snapshots */
-#define NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT	0x2000 /* Is a snapshot image */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-#define NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT	0x4000 /* Corrupted snapshot */
-#define NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE	0x8000 /* Bad exclude bitmap */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Next3 has snapshots */
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
+#define NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
+#define NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
+#define NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
 #endif
 
 #define NEXT3_FEATURE_INCOMPAT_COMPRESSION	0x0001
@@ -742,11 +768,22 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_INCOMPAT_SUPP	(NEXT3_FEATURE_INCOMPAT_FILETYPE| \
 					 NEXT3_FEATURE_INCOMPAT_RECOVER| \
 					 NEXT3_FEATURE_INCOMPAT_META_BG)
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
+					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
+					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
+					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
+#else
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
+#endif
 #else
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \

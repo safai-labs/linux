@@ -758,8 +758,7 @@ do_more:
 			 * mark that exclude bitmap needs to be fixed and call
 			 * next3_error() which commits the super block.
 			 */
-			NEXT3_SET_RO_COMPAT_FEATURE(sb,
-					NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
+			NEXT3_SET_FLAGS(sb, NEXT3_FLAGS_FIX_EXCLUDE);
 			next3_error(sb, __func__,
 				"%sexcluded file (ino=%lu) block [%lu/%lu] "
 				"was %sexcluded! - "
@@ -1038,8 +1037,7 @@ claim_block(struct super_block *sb, int group, spinlock_t *lock,
 		 * next3_error() which commits the super block.
 		 */
 		jbd_unlock_bh_state(bh);
-		NEXT3_SET_RO_COMPAT_FEATURE(sb,
-				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE);
+		NEXT3_SET_FLAGS(sb, NEXT3_FLAGS_FIX_EXCLUDE);
 		next3_error(sb, __func__,
 			"new allocated block [%d/%d] is excluded! - "
 			"run fsck to fix exclude bitmap.\n",

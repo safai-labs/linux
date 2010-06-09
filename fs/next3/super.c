@@ -29,6 +29,7 @@
 #include <linux/fs.h>
 #include <linux/time.h>
 #include <linux/jbd.h>
+#include <linux/vmalloc.h>
 #include "next3.h"
 #include "next3_jbd.h"
 #include <linux/slab.h>

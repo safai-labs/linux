@@ -3058,7 +3058,7 @@ no_top:
  * @pblocks: 	pointer to counter of branch blocks
  *
  * If @pblocks is not NULL, don't free blocks, only update blocks counter and
- * mark blocks in exclude bitmap.
+ * test that blocks are excluded.
  */
 static void next3_clear_blocks_cow(handle_t *handle, struct inode *inode,
 		struct buffer_head *bh, next3_fsblk_t block_to_free,
@@ -3072,9 +3072,17 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 {
 	__le32 *p;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-	if (pblocks)
-		/* we're not actually deleting any blocks */
-		bh = NULL;
+
+	if (pblocks) {
+		/* test that blocks are excluded and update blocks counter */
+		next3_snapshot_test_excluded(handle, inode, block_to_free,
+						count);
+		if (is_handle_aborted(handle))
+			return;
+		*pblocks += count;
+		return;
+	}
+
 #endif
 	if (try_to_extend_transaction(handle, inode)) {
 		if (bh) {
@@ -3098,18 +3106,6 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 		}
 	}
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-	if (pblocks) {
-		/* mark blocks excluded and update blocks counter */
-		next3_snapshot_get_clear_access(handle, inode, block_to_free,
-						count);
-		if (is_handle_aborted(handle))
-			return;
-		*pblocks += count;
-		return;
-	}
-
-#endif
 	/*
 	 * Any buffers which are on the journal will be in memory. We find
 	 * them on the hash table so journal_revoke() will run journal_forget()
@@ -3165,7 +3161,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
  * @pblocks: 	pointer to counter of branch blocks
  *
  * If @pblocks is not NULL, don't free blocks, only update blocks counter and
- * mark blocks in exclude bitmap.
+ * test that blocks are excluded.
  */
 static void next3_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
@@ -3305,7 +3301,7 @@ static void next3_free_data(handle_t *handle, struct inode *inode,
  *	@pblocks: 	pointer to counter of branch blocks
  *
  *	If @pblocks is not NULL, don't free blocks, only update blocks counter
- *	and mark blocks in exclude bitmap.
+ *	and test that blocks are excluded.
  */
 void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,
@@ -3412,15 +3408,11 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 */
 			if (is_handle_aborted(handle))
 				return;
-			if (try_to_extend_transaction(handle, inode)) {
-				next3_mark_inode_dirty(handle, inode);
-				next3_journal_test_restart(handle, inode);
-			}
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
 			if (pblocks) {
-				/* mark block excluded and update counter */
-				next3_snapshot_get_clear_access(handle, inode,
+				/* test that block is excluded and update
+				   blocks counter */
+				next3_snapshot_test_excluded(handle, inode,
 								nr, 1);
 				if (is_handle_aborted(handle))
 					return;
@@ -3429,6 +3421,11 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			}
 
 #endif
+			if (try_to_extend_transaction(handle, inode)) {
+				next3_mark_inode_dirty(handle, inode);
+				next3_journal_test_restart(handle, inode);
+			}
+
 			next3_free_blocks(handle, inode, nr, 1);
 
 			if (parent_bh) {

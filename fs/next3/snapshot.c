@@ -697,14 +697,21 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 /*
- * next3_snapshot_exclude_blocks() marks blocks in exclude bitmap
+ * next3_snapshot_test_and_exclude() marks blocks in exclude bitmap
+ * @where:	name of caller function
+ * @handle:	JBD handle
+ * @sb:		super block handle
+ * @block:	address of first block to exclude
+ * @maxblocks:	max. blocks to exclude
+ * @exclude:	if false, return -EIO if block needs to be excluded
  *
  * Return values:
  * >= 0 - no. of blocks set in exclude bitmap
  * < 0 - error
  */
-int next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
-			      next3_fsblk_t block, int maxblocks)
+int next3_snapshot_test_and_exclude(const char *where, handle_t *handle,
+		struct super_block *sb, next3_fsblk_t block, int maxblocks,
+		int exclude)
 {
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
@@ -716,15 +723,18 @@ int next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
 	if (!exclude_bitmap_bh)
 		return 0;
 
-	err = next3_journal_get_write_access(handle, exclude_bitmap_bh);
+	if (exclude)
+		err = next3_journal_get_write_access(handle, exclude_bitmap_bh);
 	if (err)
-		return err;
+		goto out;
 
 	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
 		if (!next3_set_bit_atomic(sb_bgl_lock(NEXT3_SB(sb),
 						block_group),
 					bit, exclude_bitmap_bh->b_data)) {
 			n++;
+			if (!exclude)
+				break;
 		} else if (n) {
 			snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
 					bit-n, bit-1, block_group);
@@ -735,16 +745,27 @@ int next3_snapshot_exclude_blocks(handle_t *handle, struct super_block *sb,
 		count--;
 	}
 
+	if (n && !exclude) {
+		NEXT3_SET_FLAGS(sb, NEXT3_FLAGS_FIX_EXCLUDE);
+		next3_error(sb, where,
+			"snapshot file block [%d/%lu] not in exclude bitmap! - "
+			"running fsck to fix exclude bitmap is recommended.\n",
+			bit, block_group);
+		err = -EIO;
+		goto out;
+	}
+
 	if (n) {
 		snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
 				bit-n, bit-1, block_group);
 		excluded += n;
 	}
 
-	if (excluded) {
+	if (exclude && excluded) {
 		err = next3_journal_dirty_metadata(handle, exclude_bitmap_bh);
 		trace_cow_add(handle, excluded, excluded);
 	}
+out:
 	brelse(exclude_bitmap_bh);
 	return err ? err : excluded;
 }

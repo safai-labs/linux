@@ -20,7 +20,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.11 (7-Jun-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.11-1 (14-Jun-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -299,21 +299,33 @@ static inline int next3_snapshot_get_delete_access(handle_t *handle,
 
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-extern int next3_snapshot_exclude_blocks(handle_t *handle,
-		struct super_block *sb, next3_fsblk_t block, int maxblocks);
+extern int next3_snapshot_test_and_exclude(const char *where, handle_t *handle,
+		struct super_block *sb, next3_fsblk_t block, int maxblocks,
+		int exclude);
 
 /*
- * get_clear_access() - mark snapshot blocks excluded
+ * next3_snapshot_exclude_blocks() - exclude snapshot blocks
+ *
+ * Called from next3_snapshot_test_and_{cow,move}() when copying/moving
+ * blocks to active snapshot.
+ *
+ * On error handle is aborted.
+ */
+#define next3_snapshot_exclude_blocks(handle, sb, block, count) \
+	next3_snapshot_test_and_exclude(__func__, (handle), (sb), \
+			(block), (count), 1)
+
+/*
+ * next3_snapshot_test_excluded() - test that snapshot blocks are excluded
+ *
  * Called from next3_snapshot_clean(), next3_free_branches_cow() and
  * next3_clear_blocks_cow() under snapshot_mutex.
  *
  * On error handle is aborted.
  */
-static inline void next3_snapshot_get_clear_access(handle_t *handle,
-		struct inode *inode, next3_fsblk_t block, int count)
-{
-	next3_snapshot_exclude_blocks(handle, inode->i_sb, block, count);
-}
+#define next3_snapshot_test_excluded(handle, inode, block, count) \
+	next3_snapshot_test_and_exclude(__func__, (handle), (inode)->i_sb, \
+			(block), (count), 0)
 
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ

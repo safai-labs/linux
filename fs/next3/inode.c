@@ -3354,6 +3354,16 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 					(__le32 *)bh->b_data,
 					(__le32 *)bh->b_data + addr_per_block,
 					depth, pblocks);
+			if (pblocks) {
+				/* test that block is excluded and update
+				   blocks counter */
+				next3_snapshot_test_excluded(handle, inode,
+								nr, 1);
+				if (is_handle_aborted(handle))
+					return;
+				*pblocks += 1;
+				continue;
+			}
 #else
 			next3_free_branches(handle, inode, bh,
 					   (__le32*)bh->b_data,
@@ -3380,15 +3390,6 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 * revoke records must be emitted *before* clearing
 			 * this block's bit in the bitmaps.
 			 */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-			if (!pblocks)
-				next3_forget(handle, 1, inode, bh,
-					     bh->b_blocknr);
-			if (is_handle_aborted(handle))
-				return;
-#else
-			next3_forget(handle, 1, inode, bh, bh->b_blocknr);
-#endif
 
 			/*
 			 * Everything below this this pointer has been
@@ -3408,24 +3409,12 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 			 */
 			if (is_handle_aborted(handle))
 				return;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-			if (pblocks) {
-				/* test that block is excluded and update
-				   blocks counter */
-				next3_snapshot_test_excluded(handle, inode,
-								nr, 1);
-				if (is_handle_aborted(handle))
-					return;
-				*pblocks += 1;
-				continue;
-			}
-
-#endif
 			if (try_to_extend_transaction(handle, inode)) {
 				next3_mark_inode_dirty(handle, inode);
 				next3_journal_test_restart(handle, inode);
 			}
 
+			next3_forget(handle, 1, inode, bh, bh->b_blocknr);
 			next3_free_blocks(handle, inode, nr, 1);
 
 			if (parent_bh) {

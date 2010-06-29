@@ -976,7 +976,8 @@ fix_inode_copy:
 		 */
 		raw_inode->i_size = temp_inode.i_size;
 		raw_inode->i_size_high = temp_inode.i_size_high;
-		raw_inode->i_blocks = temp_inode.i_blocks;
+		raw_inode->i_blocks_lo = temp_inode.i_blocks_lo;
+		raw_inode->i_blocks_high = temp_inode.i_blocks_high;
 		raw_inode->i_flags &= ~NEXT3_FL_SNAPSHOT_MASK;
 		memcpy(raw_inode->i_block, temp_inode.i_block,
 				sizeof(raw_inode->i_block));
@@ -1977,6 +1978,12 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	/* Snapshot files are huge (same size as the file system)
+	   so we need to enable huge file support */
+	NEXT3_SET_RO_COMPAT_FEATURE(sb, NEXT3_FEATURE_RO_COMPAT_HUGE_FILE);
+
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
 	/* Migrate super block on-disk format */
 	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,

@@ -1619,10 +1619,20 @@ static loff_t next3_max_size(int bits)
 	 * __u32 i_blocks representing the total number of
 	 * 512 bytes blocks of the file
 	 */
-	upper_limit = (1LL << 32) - 1;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	/*
+	 * We use 48 bit ext4_inode i_blocks
+	 * With EXT4_HUGE_FILE_FL set the i_blocks
+	 * represent total number of blocks in
+	 * file system block size
+	 */
+	upper_limit = (1LL << 48) - 1;
+#else
+	upper_limit = (1LL << 32) - 1;
 	/* total blocks in file system block size */
 	upper_limit >>= (bits - 9);
+#endif
 
 
 	/* indirect blocks */
@@ -1825,6 +1835,18 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		       sb->s_id, le32_to_cpu(features));
 		goto failed_mount;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	/*
+	 * Large file size enabled file system can only be mounted
+	 * read-write on 32-bit systems if kernel is built with CONFIG_LBDAF
+	 */
+	if (!(sb->s_flags & MS_RDONLY) && sizeof(blkcnt_t) < sizeof(u64)) {
+		printk(KERN_ERR "NEXT3-fs: Filesystem with snapshots support "
+				"cannot be mounted RDWR without "
+				"CONFIG_LBDAF");
+		goto failed_mount;
+	}
+#endif
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT

@@ -174,6 +174,16 @@ config NEXT3_FS_SNAPSHOT_FILE_STORE
 	  During store and load of snapshot inode, some of the inode flags
 	  and fields are converted.
 
+config NEXT3_FS_SNAPSHOT_FILE_HUGE
+	bool "snapshot file - break the 2TB upper limit on file size"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Files larger than 2TB use Ext4 huge_file flag to store i_blocks
+	  in file system blocks units, so the upper limit on snapshot actual
+	  size is increased from 512*2^32 = 2TB to 4K*2^32 = 16TB,
+	  which is also the upper limit on file system size.
+
 config NEXT3_FS_SNAPSHOT_FILE_OLD
 	bool "snapshot file - migrate old on-disk format"
 	depends on NEXT3_FS_SNAPSHOT_FILE

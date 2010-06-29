@@ -3878,6 +3878,32 @@ void next3_get_inode_flags(struct next3_inode_info *ei)
 		ei->i_flags |= NEXT3_DIRSYNC_FL;
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+static blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
+		struct next3_inode_info *ei)
+{
+	blkcnt_t i_blocks;
+	struct inode *inode = &(ei->vfs_inode);
+	struct super_block *sb = inode->i_sb;
+
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HUGE_FILE)) {
+		/* we never set i_blocks_high, but fsck may do it when it fixes
+		   i_blocks */
+		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
+					le32_to_cpu(raw_inode->i_blocks_lo);
+		if (ei->i_flags & NEXT3_HUGE_FILE_FL) {
+			/* i_blocks represent file system block size */
+			return i_blocks  << (inode->i_blkbits - 9);
+		} else {
+			return i_blocks;
+		}
+	} else {
+		return le32_to_cpu(raw_inode->i_blocks_lo);
+	}
+}
+
+#endif
 struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 {
 	struct next3_iloc iloc;
@@ -3954,8 +3980,13 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * recovery code: that's fine, we're about to complete
 		 * the process of deleting those. */
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	ei->i_flags = le32_to_cpu(raw_inode->i_flags);
+	inode->i_blocks = next3_inode_blocks(raw_inode, ei);
+#else
 	inode->i_blocks = le32_to_cpu(raw_inode->i_blocks);
 	ei->i_flags = le32_to_cpu(raw_inode->i_flags);
+#endif
 #ifdef NEXT3_FRAGMENTS
 	ei->i_faddr = le32_to_cpu(raw_inode->i_faddr);
 	ei->i_frag_no = raw_inode->i_frag;
@@ -4091,6 +4122,50 @@ bad_inode:
 	return ERR_PTR(ret);
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+static int next3_inode_blocks_set(handle_t *handle,
+				struct next3_inode *raw_inode,
+				struct next3_inode_info *ei)
+{
+	struct inode *inode = &(ei->vfs_inode);
+	u64 i_blocks = inode->i_blocks;
+	struct super_block *sb = inode->i_sb;
+
+	if (!next3_snapshot_file(inode) && i_blocks <= ~0U) {
+		/*
+		 * i_blocks can be represnted in a 32 bit variable
+		 * as multiple of 512 bytes
+		 * snapshot files are always represented as huge files
+		 */
+		raw_inode->i_blocks_lo   = cpu_to_le32(i_blocks);
+		raw_inode->i_blocks_high = 0;
+		ei->i_flags &= ~NEXT3_HUGE_FILE_FL;
+		return 0;
+	}
+	if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HUGE_FILE))
+		return -EFBIG;
+
+	i_blocks = i_blocks >> (inode->i_blkbits - 9);
+	if (i_blocks <= ~0U) {
+		/*
+		 * i_blocks can be represnted in a 32 bit variable
+		 * as multiple of file system block size
+		 */
+		raw_inode->i_blocks_lo   = cpu_to_le32(i_blocks);
+		raw_inode->i_blocks_high = 0;
+		ei->i_flags |= NEXT3_HUGE_FILE_FL;
+		return 0;
+	}
+	
+	/*
+	 * there is no sense in storing a 48 bit representation of i_blocks
+	 * on a file system whose blocks address space is 32 bit
+	 */
+	return -EFBIG;
+}
+
+#endif
 /*
  * Post the struct inode info into an on-disk inode location in the
  * buffer-cache.  This gobbles the caller's reference to the
@@ -4143,7 +4218,14 @@ static int next3_do_update_inode(handle_t *handle,
 	raw_inode->i_atime = cpu_to_le32(inode->i_atime.tv_sec);
 	raw_inode->i_ctime = cpu_to_le32(inode->i_ctime.tv_sec);
 	raw_inode->i_mtime = cpu_to_le32(inode->i_mtime.tv_sec);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	if (next3_inode_blocks_set(handle, raw_inode, ei))
+		next3_warning(inode->i_sb, __func__,
+				"ino=%lu, i_blocks=%lld is too big",
+				inode->i_ino, inode->i_blocks);
+#else
 	raw_inode->i_blocks = cpu_to_le32(inode->i_blocks);
+#endif
 	raw_inode->i_dtime = cpu_to_le32(ei->i_dtime);
 	raw_inode->i_flags = cpu_to_le32(ei->i_flags);
 #ifdef NEXT3_FRAGMENTS

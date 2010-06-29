@@ -188,6 +188,7 @@ struct next3_group_desc
 #define NEXT3_DIRSYNC_FL			0x00010000 /* dirsync behaviour (directories only) */
 #define NEXT3_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT3_HUGE_FILE_FL		0x00040000 /* Set to each huge file */
 /* snapshot non-persistent flags */
 #define NEXT3_SNAPFILE_LIST_FL		0x00100000 /* snapshot is on list (S) */
 #define NEXT3_SNAPFILE_ACTIVE_FL	0x00200000 /* snapshot is active (a) */
@@ -231,7 +232,7 @@ struct next3_group_desc
 	 NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
 
 /* User visible flags */
-#define NEXT3_FL_USER_VISIBLE		(NEXT3_FL_SNAPSHOT_MASK|0x0003DFFF)
+#define NEXT3_FL_USER_VISIBLE		(NEXT3_FL_SNAPSHOT_MASK|0x0007DFFF)
 /* User modifiable flags */
 #define NEXT3_FL_USER_MODIFIABLE	(NEXT3_FL_SNAPSHOT_RW_MASK|0x000380FF)
 
@@ -364,7 +365,11 @@ struct next3_inode {
 	__le32	i_dtime;	/* Deletion Time */
 	__le16	i_gid;		/* Low 16 bits of Group Id */
 	__le16	i_links_count;	/* Links count */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	__le32	i_blocks_lo;	/* Blocks count */
+#else
 	__le32	i_blocks;	/* Blocks count */
+#endif
 	__le32	i_flags;	/* File flags */
 	union {
 		struct {
@@ -388,8 +393,12 @@ struct next3_inode {
 	__le32	i_faddr;	/* Fragment address */
 	union {
 		struct {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+			__le16	l_i_blocks_high;/* Blocks count */
+#else
 			__u8	l_i_frag;	/* Fragment number */
 			__u8	l_i_fsize;	/* Fragment size */
+#endif
 			__u16	i_pad1;
 			__le16	l_i_uid_high;	/* these 2 fields    */
 			__le16	l_i_gid_high;	/* were reserved2[0] */
@@ -422,8 +431,12 @@ struct next3_inode {
 #else
 #define i_reserved1	osd1.linux1.l_i_reserved1
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+#define i_blocks_high	osd2.linux2.l_i_blocks_high
+#else
 #define i_frag		osd2.linux2.l_i_frag
 #define i_fsize		osd2.linux2.l_i_fsize
+#endif
 #define i_uid_low	i_uid
 #define i_gid_low	i_gid
 #define i_uid_high	osd2.linux2.l_i_uid_high
@@ -749,6 +762,7 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT3_FEATURE_RO_COMPAT_HUGE_FILE	0x0008
 #define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Next3 has snapshots */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
@@ -772,6 +786,7 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
+					 NEXT3_FEATURE_RO_COMPAT_HUGE_FILE| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
 					 NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
@@ -781,6 +796,7 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #else
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
+					 NEXT3_FEATURE_RO_COMPAT_HUGE_FILE| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
 #endif

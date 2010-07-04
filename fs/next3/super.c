@@ -163,14 +163,14 @@ static void next3_record_journal_err(struct super_block *sb, const char *where,
 #define MSGLEN 256
 	journal_t *journal = NEXT3_SB(sb)->s_journal;
 	char *buf;
-	unsigned offset;
+	unsigned long offset;
 	int len;
 	
 	if (!journal)
 		return;
 
 	buf = (char *)journal->j_superblock;
-	offset = (unsigned)buf % sb->s_blocksize;
+	offset = (unsigned long)buf % sb->s_blocksize;
 	buf += sizeof(journal_superblock_t);
 	offset += sizeof(journal_superblock_t);
 
@@ -1647,7 +1647,11 @@ static loff_t next3_max_size(int bits)
 
 	res += 1LL << (bits-2);
 	res += 1LL << (2*(bits-2));
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
 	res += 1LL << (3*(bits-2));
+#else
+	res += NEXT3_SNAPSHOT_NTIND_BLOCKS * (1LL << (3*(bits-2)));
+#endif
 	res <<= bits;
 	if (res > upper_limit)
 		res = upper_limit;
@@ -2613,17 +2617,17 @@ static void next3_clear_journal_err(struct super_block * sb,
 		char nbuf[16];
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 		char *buf1, *buf2;
-		unsigned offset1, offset2;
+		unsigned long offset1, offset2;
 		int len1, len2;
 
 		/* copy message buffer from journal to super block */
 		buf1 = (char *)journal->j_superblock;
-		offset1 = (unsigned)buf1 % sb->s_blocksize;
+		offset1 = (unsigned long)buf1 % sb->s_blocksize;
 		buf1 += sizeof(journal_superblock_t);
 		offset1 += sizeof(journal_superblock_t);
 		len1 = sb->s_blocksize - offset1;
 		buf2 = (char *)NEXT3_SB(sb)->s_es;
-		offset2 = (unsigned)buf2 % sb->s_blocksize;
+		offset2 = (unsigned long)buf2 % sb->s_blocksize;
 		buf2 += sizeof(struct next3_super_block);
 		offset2 += sizeof(struct next3_super_block);
 		len2 = sb->s_blocksize - offset2;

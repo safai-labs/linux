@@ -20,7 +20,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.11-WIP (28-Jun-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.12-WIP (4-Jul-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -35,9 +35,7 @@
  * Snapshot inode single indirect blocks are not used.
  * Snapshot image starts at the first double indirect block.
  * This way, a snapshot image block group can be mapped with 1 double
- * indirect block + 32 indirect blocks.  To mount the snapshot image, the
- * loop device should be configured with:
- * '-o <SNAPSHOT_BYTES_OFFSET>' (i.e., (12+1k)*4k = 4243456)
+ * indirect block + 32 indirect blocks.
  */
 #define SNAPSHOT_BLOCK_SIZE		PAGE_SIZE
 #define SNAPSHOT_BLOCK_SIZE_BITS	PAGE_SHIFT
@@ -53,6 +51,9 @@
 	((block)>>SNAPSHOT_BLOCKS_PER_GROUP_BITS)
 #define SNAPSHOT_BLOCK_GROUP_OFFSET(block)	\
 	((block)&(SNAPSHOT_BLOCKS_PER_GROUP-1))
+#define SNAPSHOT_BLOCK_TUPLE(block)		\
+	(next3_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block), \
+	(next3_fsblk_t)SNAPSHOT_BLOCK_GROUP(block)
 #define SNAPSHOT_IND_PER_BLOCK_GROUP_BITS				\
 	(SNAPSHOT_BLOCKS_PER_GROUP_BITS-SNAPSHOT_ADDR_PER_BLOCK_BITS)
 #define SNAPSHOT_IND_PER_BLOCK_GROUP			\
@@ -68,23 +69,12 @@
 	((next3_snapblk_t)(iblock) - SNAPSHOT_BLOCK_OFFSET)
 #define SNAPSHOT_IBLOCK(block)						\
 	(next3_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
-#define SNAPSHOT_META_BLOCK(inode, iblock)	\
-	(NEXT3_I(inode)->i_data[iblock])
 
 #define SNAPSHOT_BYTES_OFFSET					\
 	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_ISIZE(size)			\
 	((size) + SNAPSHOT_BYTES_OFFSET)
 
-/*
- * snapshot meta blocks:
- */
-#define SNAPSHOT_META_DIND	0 /* dind is pre-allocated here */
-#define SNAPSHOT_META_TIND	1 /* tind is pre-allocated here */
-#define SNAPSHOT_META_BLOCKS	2
-
-#define SNAPSHOT_META_SIZE					\
-	(SNAPSHOT_META_BLOCKS << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_SET_SIZE(inode, size)				\
 	(NEXT3_I(inode)->i_disksize = SNAPSHOT_ISIZE(size))
 #define SNAPSHOT_SIZE(inode)					\
@@ -558,9 +548,8 @@ static inline void next3_snapshot_test_pending_cow(struct buffer_head *sbh,
 	while (buffer_new(sbh)) {
 		/* wait for pending COW to complete */
 		snapshot_debug_once(2, "waiting for pending cow: "
-				    "block = [%lld/%lld]...\n",
-				    SNAPSHOT_BLOCK_GROUP_OFFSET(blocknr),
-				    SNAPSHOT_BLOCK_GROUP(blocknr));
+				"block = [%lu/%lu]...\n",
+				SNAPSHOT_BLOCK_TUPLE(blocknr));
 		/*
 		 * An unusually long pending COW operation can be caused by
 		 * the debugging function snapshot_test_delay(SNAPTEST_COW)

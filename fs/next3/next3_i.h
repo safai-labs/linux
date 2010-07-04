@@ -68,7 +68,11 @@ struct next3_block_alloc_info {
  * third extended file system inode data in memory
  */
 struct next3_inode_info {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	__le32	i_data[NEXT3_SNAPSHOT_N_BLOCKS]; /* unconverted */
+#else
 	__le32	i_data[15];	/* unconverted */
+#endif
 	__u32	i_flags;
 #ifdef NEXT3_FRAGMENTS
 	__u32	i_faddr;

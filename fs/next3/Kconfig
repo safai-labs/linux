@@ -175,7 +175,7 @@ config NEXT3_FS_SNAPSHOT_FILE_STORE
 	  and fields are converted.
 
 config NEXT3_FS_SNAPSHOT_FILE_HUGE
-	bool "snapshot file - break the 2TB upper limit on file size"
+	bool "snapshot file - increase maximum file size limit to 16TB"
 	depends on NEXT3_FS_SNAPSHOT_FILE
 	default y
 	help
@@ -183,6 +183,9 @@ config NEXT3_FS_SNAPSHOT_FILE_HUGE
 	  in file system blocks units, so the upper limit on snapshot actual
 	  size is increased from 512*2^32 = 2TB to 4K*2^32 = 16TB,
 	  which is also the upper limit on file system size.
+	  To map 2^32 logical blocks, 4 triple indirect blocks are used instead
+	  of just one.  The extra 3 triple indirect blocks are stored in-place
+	  of direct blocks, which are not in use by snapshot files.
 
 config NEXT3_FS_SNAPSHOT_FILE_OLD
 	bool "snapshot file - migrate old on-disk format"

@@ -337,9 +337,10 @@ static inline int next3_snapshot_shift_blocks(struct next3_inode_info *ei,
 {
 	int i, err = -EIO;
 
-	/* the ranges must not overlap */
-	BUG_ON(from < 0 || from + count > to);
-	BUG_ON(to + count > NEXT3_N_BLOCKS);
+	/* move from direct blocks range */
+	BUG_ON(from < 0 || from + count > NEXT3_NDIR_BLOCKS);
+	/* to indirect blocks range */
+	BUG_ON(to < NEXT3_NDIR_BLOCKS || to + count > NEXT3_SNAPSHOT_N_BLOCKS);
 
 	/*
 	 * truncate_mutex is held whenever allocating or freeing inode
@@ -384,7 +385,8 @@ static int next3_snapshot_create(struct inode *inode)
 	struct next3_inode_info *ei = NEXT3_I(inode);
 	int i, err, ret;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
-	int count;
+	int count, nind;
+	const long double_blocks = (1 << (2 * SNAPSHOT_ADDR_PER_BLOCK_BITS));
 	struct buffer_head *bh = NULL;
 	struct next3_group_desc *desc;
 	unsigned long ino;
@@ -435,7 +437,7 @@ static int next3_snapshot_create(struct inode *inode)
 		return -EINVAL;
 	}
 
-	/* verify that all inode's direct blocks are not allocated */
+	/* verify that no inode blocks are allocated */
 	for (i = 0; i < NEXT3_N_BLOCKS; i++) {
 		if (ei->i_data[i])
 			break;
@@ -519,19 +521,32 @@ static int next3_snapshot_create(struct inode *inode)
 		goto out_handle;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_INIT
+	/* small filesystems can be mapped with just 1 double indirect block */
+	nind = 1;
+	if (snapshot_blocks > double_blocks)
+		/* add up to 4 triple indirect blocks to map 2^32 blocks */
+		nind += ((snapshot_blocks - double_blocks) >>
+			(3 * SNAPSHOT_ADDR_PER_BLOCK_BITS)) + 1;
+	if (nind > NEXT3_SNAPSHOT_NTIND_BLOCKS + 1) {
+		snapshot_debug(1, "need too many [d,t]ind blocks (%d) "
+				"for snapshot (%u)\n",
+				nind, inode->i_generation);
+		err = -EFBIG;
+		goto out_handle;
+	}
+
 	err = extend_or_restart_transaction_inode(handle, inode,
-				  SNAPSHOT_META_BLOCKS *
-				  NEXT3_DATA_TRANS_BLOCKS(sb));
+			nind * NEXT3_DATA_TRANS_BLOCKS(sb));
 	if (err)
 		goto out_handle;
 
-	/* allocate and zero out snapshot meta blocks */
-	for (i = 0; i < SNAPSHOT_META_BLOCKS; i++) {
+	/* pre-allocate and zero out [d,t]ind blocks */
+	for (i = 0; i < nind; i++) {
 		brelse(bh);
 		bh = next3_getblk(handle, inode, i, SNAPMAP_WRITE, &err);
 		if (!bh || err)
 			break;
-		/* zero out meta block and journal as dirty metadata */
+		/* zero out indirect block and journal as dirty metadata */
 		err = next3_journal_get_write_access(handle, bh);
 		if (err)
 			break;
@@ -545,14 +560,13 @@ static int next3_snapshot_create(struct inode *inode)
 	}
 	brelse(bh);
 	if (!bh || err) {
-		snapshot_debug(1, "failed to initiate meta block (%d) "
+		snapshot_debug(1, "failed to initiate [d,t]ind block (%d) "
 				"for snapshot (%u)\n",
 				i, inode->i_generation);
 		goto out_handle;
 	}
 	/* place pre-allocated [d,t]ind blocks in position */
-	err = next3_snapshot_shift_blocks(ei,
-			SNAPSHOT_META_DIND, NEXT3_DIND_BLOCK, 2);
+	err = next3_snapshot_shift_blocks(ei, 0, NEXT3_DIND_BLOCK, nind);
 	if (err) {
 		snapshot_debug(1, "failed to move pre-allocated [d,t]ind blocks"
 				" for snapshot (%u)\n",
@@ -715,10 +729,9 @@ static struct buffer_head *next3_snapshot_copy_block(struct inode *snapshot,
 
 	if (err || !sbh || sbh->b_blocknr == bh->b_blocknr) {
 		snapshot_debug(1, "failed to copy %s (%lu) "
-				"block [%lld/%lld] to snapshot (%u)\n",
+				"block [%lu/%lu] to snapshot (%u)\n",
 				name, idx,
-				SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-				SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
+				SNAPSHOT_BLOCK_TUPLE(bh->b_blocknr),
 				snapshot->i_generation);
 		brelse(sbh);
 		return NULL;
@@ -726,11 +739,10 @@ static struct buffer_head *next3_snapshot_copy_block(struct inode *snapshot,
 
 	next3_snapshot_copy_buffer(sbh, bh, mask);
 
-	snapshot_debug(4, "copied %s (%lu) block [%lld/%lld] "
+	snapshot_debug(4, "copied %s (%lu) block [%lu/%lu] "
 			"to snapshot (%u)\n",
 			name, idx,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-			SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
+			SNAPSHOT_BLOCK_TUPLE(bh->b_blocknr),
 			snapshot->i_generation);
 	return sbh;
 }
@@ -796,8 +808,8 @@ int next3_snapshot_take(struct inode *inode)
 		goto out_err;
 	else if (sbi->s_sbh->b_blocknr != 0) {
 		snapshot_debug(1, "warning: unexpected super block at block "
-			       "(%lld:%d)!\n", sbi->s_sbh->b_blocknr,
-			       (char *)sbi->s_es - (char *)sbi->s_sbh->b_data);
+			"(%lld:%d)!\n", (long long)sbi->s_sbh->b_blocknr,
+			(int)((char *)sbi->s_es - (char *)sbi->s_sbh->b_data));
 	} else if (sbi->s_es->s_magic != cpu_to_le16(NEXT3_SUPER_MAGIC)) {
 		snapshot_debug(1, "warning: super block of snapshot (%u) is "
 			       "broken!\n", inode->i_generation);
@@ -812,7 +824,7 @@ int next3_snapshot_take(struct inode *inode)
 	} else {
 		snapshot_debug(4, "super block of snapshot (%u) mapped to "
 			       "block (%lld)\n", inode->i_generation,
-			       sbh->b_blocknr);
+			       (long long)sbh->b_blocknr);
 		es = (struct next3_super_block *)(sbh->b_data +
 						  ((char *)sbi->s_es -
 						   sbi->s_sbh->b_data));
@@ -1090,9 +1102,8 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 	 * No need to add inode to orphan list for post crash truncate, because
 	 * snapshot is still on the snapshot list and marked for deletion.
 	 */
-	for (i = 0; i < NEXT3_N_BLOCKS; i++) {
-		int depth = (i < NEXT3_NDIR_BLOCKS ? 0 :
-				i - NEXT3_NDIR_BLOCKS + 1);
+	for (i = NEXT3_DIND_BLOCK; i < NEXT3_SNAPSHOT_N_BLOCKS; i++) {
+		int depth = (i == NEXT3_DIND_BLOCK ? 2 : 3);
 		if (!ei->i_data[i])
 			continue;
 		next3_free_branches_cow(handle, inode, NULL,
@@ -1495,14 +1506,11 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 
 		if (buffer_mapped(&cow_bitmap) && buffer_new(&cow_bitmap)) {
 			snapshot_debug(2, "snapshot (%u-%u) shrink: "
-					"block group = %ld/%lu, "
-				       "COW bitmap = [%lld/%lld]\n",
-				       start->i_generation, end->i_generation,
-				       block_group, block_groups,
-				       SNAPSHOT_BLOCK_GROUP_OFFSET(
-					       cow_bitmap.b_blocknr),
-				       SNAPSHOT_BLOCK_GROUP(
-					       cow_bitmap.b_blocknr));
+				"block group = %ld/%lu, "
+				"COW bitmap = [%lu/%lu]\n",
+				start->i_generation, end->i_generation,
+				block_group, block_groups,
+				SNAPSHOT_BLOCK_TUPLE(cow_bitmap.b_blocknr));
 			clear_buffer_new(&cow_bitmap);
 		}
 
@@ -1769,7 +1777,7 @@ static struct buffer_head *next3_exclude_inode_bread(handle_t *handle,
 	}
 	snapshot_debug(2, "allocated exclude bitmap "
 			"indirect[%d] block (%lld)\n",
-			dind_offset, ind_bh->b_blocknr);
+			dind_offset, (long long)ind_bh->b_blocknr);
 	return ind_bh;
 }
 
@@ -1978,12 +1986,6 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	/* Snapshot files are huge (same size as the file system)
-	   so we need to enable huge file support */
-	NEXT3_SET_RO_COMPAT_FEATURE(sb, NEXT3_FEATURE_RO_COMPAT_HUGE_FILE);
-
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
 	/* Migrate super block on-disk format */
 	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,

@@ -241,13 +241,12 @@ static void next3_snapshot_dump_ind(int n, int l,
 }
 
 /*
- * next3_snapshot_dump_dind - dump double or triple indirect block
+ * next3_snapshot_dump_dind - dump double indirect block
  *	@n:	prints debug level
  *	@l:	prints indentation level
  *	@di:	snapshot dump state
  *	@nr:	address of double indirect block
  *	@idx:	index of double indirect block
- *	@tind:	recursive dump of triple indirect block
  *
  * Sample output:
  * 	dind[1] = [30728/35]
@@ -260,7 +259,7 @@ static void next3_snapshot_dump_ind(int n, int l,
  */
 static void next3_snapshot_dump_dind(int n, int l,
 		struct next3_dump_info *di,
-		u32 nr, int idx, int tind)
+		u32 nr, int idx)
 {
 	/* buffer of indirect blocks array */
 	struct buffer_head *bh;
@@ -268,8 +267,7 @@ static void next3_snapshot_dump_dind(int n, int l,
 	u32 key;
 	int i;
 
-	bh = next3_snapshot_read_array(n, l, di, nr,
-			tind ? "tind" : "dind", idx);
+	bh = next3_snapshot_read_array(n, l, di, nr, "dind", idx);
 	if (!bh)
 		return;
 
@@ -278,12 +276,53 @@ static void next3_snapshot_dump_dind(int n, int l,
 		key = le32_to_cpu(((__le32 *)bh->b_data)[i]);
 		if (!key)
 			continue;
-		if (tind)
-			/* 1-level recursion */
-			next3_snapshot_dump_dind(n, l+1, di, key, i+1, 0);
-		else
-			next3_snapshot_dump_ind(n, l+1, di, key,
+		next3_snapshot_dump_ind(n, l+1, di, key,
 				(idx << SNAPSHOT_ADDR_PER_BLOCK_BITS) + i);
+	}
+	snapshot_debug_l(n, l, "}\n");
+	brelse(bh);
+}
+
+/*
+ * next3_snapshot_dump_tind - dump triple indirect block
+ *	@n:	prints debug level
+ *	@l:	prints indentation level
+ *	@di:	snapshot dump state
+ *	@nr:	address of triple indirect block
+ *	@idx:	index of triple indirect block
+ *
+ * Sample output:
+ * tind[0] = [30721/35]
+ * {
+ * 	dind[1] = [30728/35]
+ * 	{
+ * 		ind[1120] = [30729/35]
+ * 		{
+ * 			block[0-2/35] = [30730-30732/35]
+ * 		}
+ * 		...
+ */
+static void next3_snapshot_dump_tind(int n, int l,
+		struct next3_dump_info *di,
+		u32 nr, int idx)
+{
+	/* buffer of indirect blocks array */
+	struct buffer_head *bh;
+	/* curr indirect block address */
+	u32 key;
+	int i;
+
+	bh = next3_snapshot_read_array(n, l, di, nr, "tind", idx);
+	if (!bh)
+		return;
+
+	snapshot_debug_l(n, l, "{\n");
+	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++) {
+		key = le32_to_cpu(((__le32 *)bh->b_data)[i]);
+		if (!key)
+			continue;
+		next3_snapshot_dump_dind(n, l+1, di, key,
+				(idx << SNAPSHOT_ADDR_PER_BLOCK_BITS) + i + 1);
 	}
 	snapshot_debug_l(n, l, "}\n");
 	brelse(bh);
@@ -362,11 +401,14 @@ void next3_snapshot_dump(int n, struct inode *inode)
 	/* print double indirect branch (start of snapshot image) */
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)
-		next3_snapshot_dump_dind(n, 0, &di, nr, 0, 0);
-	/* print triple indirect branch (rest of snapshot image) */
-	nr = le32_to_cpu(ei->i_data[i++]);
-	if (nr)
-		next3_snapshot_dump_dind(n, 0, &di, nr, 0, 1);
+		next3_snapshot_dump_dind(n, 0, &di, nr, 0);
+	/* print triple indirect branches (rest of snapshot image) */
+	do {
+		nr = le32_to_cpu(ei->i_data[i]);
+		if (nr)
+			next3_snapshot_dump_tind(n, 0, &di, nr,
+					i - NEXT3_TIND_BLOCK);
+	} while (++i < NEXT3_SNAPSHOT_N_BLOCKS);
 
 	nblocks = di.nmeta + di.nind + di.ncopied + di.nmoved;
 	snapshot_debug(n, "snapshot (%u) contains: %d (meta) + %d (indirect) "

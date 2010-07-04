@@ -51,14 +51,12 @@ int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 		*mapped = dummy.b_blocknr;
 
 	snapshot_debug_hl(4, "snapshot (%u) map_blocks "
-			  "[%lld/%lld] = [%lld/%lld] "
-			  "cmd=%d, maxblocks=%lu, mapped=%d\n",
-			  inode->i_generation,
-			  SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-			  SNAPSHOT_BLOCK_GROUP(block),
-			  SNAPSHOT_BLOCK_GROUP_OFFSET(dummy.b_blocknr),
-			  SNAPSHOT_BLOCK_GROUP(dummy.b_blocknr),
-			  cmd, maxblocks, err);
+			"[%lu/%lu] = [%lu/%lu] "
+			"cmd=%d, maxblocks=%lu, mapped=%d\n",
+			inode->i_generation,
+			SNAPSHOT_BLOCK_TUPLE(block),
+			SNAPSHOT_BLOCK_TUPLE(dummy.b_blocknr),
+			cmd, maxblocks, err);
 	return err;
 }
 #endif
@@ -268,11 +266,10 @@ next3_snapshot_complete_cow(handle_t *handle,
 	/* wait for completion of tracked reads before completing COW */
 	while (bh && buffer_tracked_readers_count(bh) > 0) {
 		snapshot_debug_once(2, "waiting for tracked reads: "
-			    "block = [%lld/%lld], "
-			    "tracked_readers_count = %d...\n",
-			    SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr),
-			    SNAPSHOT_BLOCK_GROUP(bh->b_blocknr),
-			    buffer_tracked_readers_count(bh));
+			"block = [%lu/%lu], "
+			"tracked_readers_count = %d...\n",
+			SNAPSHOT_BLOCK_TUPLE(bh->b_blocknr),
+			buffer_tracked_readers_count(bh));
 		/*
 		 * Quote from LVM snapshot pending_complete() function:
 	         * "Check for conflicting reads. This is extremely improbable,
@@ -362,11 +359,9 @@ next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
 	if (!sbh)
 		return -EIO;
 
-	snapshot_debug(3, "zeroing snapshot block [%lld/%lld] = [%lu/%lu]\n",
-			SNAPSHOT_BLOCK_GROUP_OFFSET(blk),
-			SNAPSHOT_BLOCK_GROUP(blk),
-			SNAPSHOT_BLOCK_GROUP_OFFSET(blocknr),
-			SNAPSHOT_BLOCK_GROUP(blocknr));
+	snapshot_debug(3, "zeroing snapshot block [%lu/%lu] = [%lu/%lu]\n",
+			SNAPSHOT_BLOCK_TUPLE(blk),
+			SNAPSHOT_BLOCK_TUPLE(blocknr));
 
 	lock_buffer(sbh);
 	memset(sbh->b_data, 0, SNAPSHOT_BLOCK_SIZE);
@@ -1055,12 +1050,10 @@ int next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	if (err)
 		goto out;
 	snapshot_debug(3, "block [%lu/%lu] of snapshot (%u) "
-			"mapped to block [%lld/%lld]\n",
-			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-			SNAPSHOT_BLOCK_GROUP(block),
+			"mapped to block [%lu/%lu]\n",
+			SNAPSHOT_BLOCK_TUPLE(block),
 			active_snapshot->i_generation,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(sbh->b_blocknr),
-			SNAPSHOT_BLOCK_GROUP(sbh->b_blocknr));
+			SNAPSHOT_BLOCK_TUPLE(sbh->b_blocknr));
 
 	trace_cow_inc(handle, copied);
 test_pending_cow:

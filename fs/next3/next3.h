@@ -163,6 +163,21 @@ struct next3_group_desc
 #define	NEXT3_DIND_BLOCK			(NEXT3_IND_BLOCK + 1)
 #define	NEXT3_TIND_BLOCK			(NEXT3_DIND_BLOCK + 1)
 #define	NEXT3_N_BLOCKS			(NEXT3_TIND_BLOCK + 1)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+/*
+ * Snapshot files have different indirection mapping that can map up to 2^32
+ * logical blocks, so they can cover the mapped filesystem block address space.
+ * Next3 must use either 4K or 8K blocks (depending on PAGE_SIZE).
+ * With 8K blocks, 1 triple indirect block maps 2^33 logical blocks.
+ * With 4K blocks (the system default), each triple indirect block maps 2^30
+ * logical blocks, so 4 triple indirect blocks map 2^32 logical blocks.
+ * Snapshot files in small filesystems (<= 4G), use only 1 double indirect
+ * block to map the entire filesystem.
+ */
+#define	NEXT3_SNAPSHOT_NTIND_BLOCKS	4
+#define	NEXT3_SNAPSHOT_N_BLOCKS		(NEXT3_TIND_BLOCK + \
+					 NEXT3_SNAPSHOT_NTIND_BLOCKS)
+#endif
 
 /*
  * Inode flags
@@ -762,7 +777,6 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-#define NEXT3_FEATURE_RO_COMPAT_HUGE_FILE	0x0008
 #define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Next3 has snapshots */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
@@ -786,7 +800,6 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
-					 NEXT3_FEATURE_RO_COMPAT_HUGE_FILE| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
 					 NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
@@ -796,7 +809,6 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 #else
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
-					 NEXT3_FEATURE_RO_COMPAT_HUGE_FILE| \
 					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
 #endif

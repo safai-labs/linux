@@ -309,6 +309,9 @@ static int next3_block_to_path(struct inode *inode,
 		double_blocks = (1 << (ptrs_bits * 2));
 	int n = 0;
 	int final = 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	int tind;
+#endif
 
 	if (i_block < 0) {
 		next3_warning (inode->i_sb, "next3_block_to_path", "block < 0");
@@ -330,6 +333,18 @@ static int next3_block_to_path(struct inode *inode,
 		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
 		offsets[n++] = i_block & (ptrs - 1);
 		final = ptrs;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	} else if (next3_snapshot_file(inode) &&
+			(tind = (i_block >> (ptrs_bits * 3))) <
+			NEXT3_SNAPSHOT_NTIND_BLOCKS) {
+		/* use up to 4 triple indirect blocks to map 2^32 blocks */
+		i_block -= (tind << (ptrs_bits * 3));
+		offsets[n++] = NEXT3_TIND_BLOCK + tind;
+		offsets[n++] = i_block >> (ptrs_bits * 2);
+		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
+		offsets[n++] = i_block & (ptrs - 1);
+		final = ptrs;
+#endif
 	} else {
 		next3_warning(inode->i_sb, "next3_block_to_path", "block > big");
 	}
@@ -582,6 +597,9 @@ static int next3_blks_to_skip(struct inode *inode, long i_block,
 	}
 	/* offset of block from start of splice point */
 	i_block &= ((1 << data_ptrs_bits) - 1);
+	/* up to 4 triple indirect blocks are used to map 2^32 blocks */
+	if (next3_snapshot_file(inode) && depth == 4 && k == 0)
+		final = NEXT3_SNAPSHOT_NTIND_BLOCKS;
 
 	count++;
 	while (count <= max_ptrs &&
@@ -1360,9 +1378,9 @@ retry:
 		err = start_buffer_tracked_read(bh_result);
 		if (err < 0) {
 			snapshot_debug(1, "snapshot (%u) failed to start "
-				       "tracked read on block (%lld) "
-				       "(err=%d)\n", inode->i_generation,
-				       bh_result->b_blocknr, err);
+					"tracked read on block (%lld) "
+					"(err=%d)\n", inode->i_generation,
+					(long long)bh_result->b_blocknr, err);
 			goto out;
 		}
 	}
@@ -2519,12 +2537,13 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 	BUG_ON(create != 0);
 	BUG_ON(buffer_tracked_read(bh_result));
 
-	err = next3_get_blocks_handle(NULL, inode, iblock,
+	err = next3_get_blocks_handle(NULL, inode, SNAPSHOT_IBLOCK(iblock),
 					1, bh_result, 0);
 
 	snapshot_debug(4, "next3_snapshot_get_block(%lld): block = (%lld), "
-		       "err = %d\n", iblock, buffer_mapped(bh_result) ?
-		       bh_result->b_blocknr : 0, err);
+			"err = %d\n",
+			(long long)iblock, buffer_mapped(bh_result) ?
+			(long long)bh_result->b_blocknr : 0, err);
 
 	if (err < 0)
 		return err;
@@ -2566,10 +2585,8 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 	}
 
 #ifdef CONFIG_NEXT3_FS_DEBUG
-	snapshot_debug(3, "started tracked read: block = [%lld/%lu]\n",
-			SNAPSHOT_BLOCK_GROUP_OFFSET(
-				bh_result->b_blocknr),
-			block_group);
+	snapshot_debug(3, "started tracked read: block = [%lu/%lu]\n",
+			SNAPSHOT_BLOCK_TUPLE(bh_result->b_blocknr));
 
 	if (snapshot_enable_test[SNAPTEST_READ]) {
 		err = next3_snapshot_get_read_access(inode->i_sb,
@@ -2628,19 +2645,6 @@ static int next3_releasepage(struct page *page, gfp_t wait)
 	return journal_try_to_free_buffers(journal, page, wait);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
-/*
- * snapshot support for direct I/O is not implemented,
- * so direct I/O operation is disabled in next3.
- */
-static ssize_t next3_no_direct_IO(int rw, struct kiocb *iocb,
-			const struct iovec *iov, loff_t offset,
-			unsigned long nr_segs)
-{
-	return -EOPNOTSUPP;
-}
-
-#endif
 /*
  * If the O_DIRECT write will extend the file then add this inode to the
  * orphan list.  So recovery will truncate it back to the original size
@@ -2743,6 +2747,25 @@ static int next3_journalled_set_page_dirty(struct page *page)
 	return __set_page_dirty_nobuffers(page);
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/*
+ * snapshot support for direct I/O is not implemented,
+ * so direct I/O is disabled when there are active snapshots.
+ */
+static ssize_t next3_no_direct_IO(int rw, struct kiocb *iocb,
+			const struct iovec *iov, loff_t offset,
+			unsigned long nr_segs)
+{
+	struct file *file = iocb->ki_filp;
+	struct inode *inode = file->f_mapping->host;
+
+	if (next3_snapshot_has_active(inode->i_sb))
+		return -EOPNOTSUPP;
+
+	return next3_direct_IO(rw, iocb, iov, offset, nr_segs);
+}
+
+#endif
 static const struct address_space_operations next3_ordered_aops = {
 	.readpage		= next3_readpage,
 	.readpages		= next3_readpages,
@@ -2753,7 +2776,11 @@ static const struct address_space_operations next3_ordered_aops = {
 	.bmap			= next3_bmap,
 	.invalidatepage		= next3_invalidatepage,
 	.releasepage		= next3_releasepage,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	.direct_IO		= next3_no_direct_IO,
+#else
+	.direct_IO		= next3_direct_IO,
+#endif
 	.migratepage		= buffer_migrate_page,
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };
@@ -2768,7 +2795,11 @@ static const struct address_space_operations next3_writeback_aops = {
 	.bmap			= next3_bmap,
 	.invalidatepage		= next3_invalidatepage,
 	.releasepage		= next3_releasepage,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	.direct_IO		= next3_no_direct_IO,
+#else
+	.direct_IO		= next3_direct_IO,
+#endif
 	.migratepage		= buffer_migrate_page,
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };
@@ -3507,6 +3538,15 @@ void next3_truncate(struct inode *inode)
 	unsigned blocksize = inode->i_sb->s_blocksize;
 	struct page *page;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	/* prevent partial truncate of snapshot files */
+	if (next3_snapshot_file(inode) && inode->i_size != 0) {
+		snapshot_debug(1, "snapshot file (%lu) cannot be partly "
+				"truncated!\n", inode->i_ino);
+		return;
+	}
+
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
 	/* prevent truncate of files on snapshot list */
 	if (next3_snapshot_list(inode)) {
@@ -3644,6 +3684,21 @@ do_indirects:
 		;
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	if (next3_snapshot_file(inode)) {
+		int i;
+
+		/* Kill the remaining snapshot file triple indirect trees */
+		for (i = 1; i < NEXT3_SNAPSHOT_NTIND_BLOCKS; i++) {
+			nr = i_data[NEXT3_TIND_BLOCK + i];
+			if (!nr)
+				continue;
+			next3_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
+			i_data[NEXT3_TIND_BLOCK + i] = 0;
+		}
+	}
+
+#endif
 	next3_discard_reservation(inode);
 
 	mutex_unlock(&ei->truncate_mutex);
@@ -3884,10 +3939,8 @@ static blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
 {
 	blkcnt_t i_blocks;
 	struct inode *inode = &(ei->vfs_inode);
-	struct super_block *sb = inode->i_sb;
 
-	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb,
-				NEXT3_FEATURE_RO_COMPAT_HUGE_FILE)) {
+	if (next3_snapshot_file(inode)) {
 		/* we never set i_blocks_high, but fsck may do it when it fixes
 		   i_blocks */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
@@ -4011,6 +4064,20 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 
 	if (next3_snapshot_file(inode)) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+		/*
+		 * ei->i_data[] has more blocks than raw_inode->i_block[].
+		 * Snapshot files don't use the first NEXT3_NDIR_BLOCKS of
+		 * ei->i_data[] and store the extra blocks at the
+		 * begining of raw_inode->i_block[].
+		 */
+		for (block = NEXT3_N_BLOCKS; block < NEXT3_SNAPSHOT_N_BLOCKS;
+				block++) {
+			ei->i_data[block] =
+				raw_inode->i_block[block-NEXT3_N_BLOCKS];
+			ei->i_data[block-NEXT3_N_BLOCKS] = 0;
+		}
+#endif
 		ei->i_next_snapshot_ino =
 			le32_to_cpu(raw_inode->i_next_snapshot);
 		/*
@@ -4129,21 +4196,19 @@ static int next3_inode_blocks_set(handle_t *handle,
 {
 	struct inode *inode = &(ei->vfs_inode);
 	u64 i_blocks = inode->i_blocks;
-	struct super_block *sb = inode->i_sb;
 
-	if (!next3_snapshot_file(inode) && i_blocks <= ~0U) {
+	if (i_blocks <= ~0U) {
 		/*
 		 * i_blocks can be represnted in a 32 bit variable
 		 * as multiple of 512 bytes
-		 * snapshot files are always represented as huge files
 		 */
 		raw_inode->i_blocks_lo   = cpu_to_le32(i_blocks);
 		raw_inode->i_blocks_high = 0;
 		ei->i_flags &= ~NEXT3_HUGE_FILE_FL;
 		return 0;
 	}
-	if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
-				NEXT3_FEATURE_RO_COMPAT_HUGE_FILE))
+	/* only snapshot files may be represented as huge files */
+	if (!next3_snapshot_file(inode))
 		return -EFBIG;
 
 	i_blocks = i_blocks >> (inode->i_blkbits - 9);
@@ -4222,7 +4287,7 @@ static int next3_do_update_inode(handle_t *handle,
 	if (next3_inode_blocks_set(handle, raw_inode, ei))
 		next3_warning(inode->i_sb, __func__,
 				"ino=%lu, i_blocks=%lld is too big",
-				inode->i_ino, inode->i_blocks);
+				inode->i_ino, (long long)inode->i_blocks);
 #else
 	raw_inode->i_blocks = cpu_to_le32(inode->i_blocks);
 #endif
@@ -4281,6 +4346,19 @@ static int next3_do_update_inode(handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
 	if (next3_snapshot_file(inode)) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+		/*
+		 * ei->i_data[] has more blocks than raw_inode->i_block[].
+		 * Snapshot files don't use the first NEXT3_NDIR_BLOCKS of
+		 * ei->i_data[] and store the extra blocks at the
+		 * begining of raw_inode->i_block[].
+		 */
+		for (block = NEXT3_N_BLOCKS; block < NEXT3_SNAPSHOT_N_BLOCKS;
+				block++) {
+			raw_inode->i_block[block-NEXT3_N_BLOCKS] =
+				ei->i_data[block];
+		}
+#endif
 		raw_inode->i_next_snapshot =
 			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */

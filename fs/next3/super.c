@@ -1,12 +1,6 @@
 /*
  *  linux/fs/next3/super.c
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- *  linux/fs/ext3/super.c
- *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
@@ -21,7 +15,8 @@
  *  Big-endian to little-endian byte-swapping/bitmaps by
  *        David S. Miller (davem@caip.rutgers.edu), 1995
  *
- *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/module.h>
@@ -1619,7 +1614,6 @@ static loff_t next3_max_size(int bits)
 	 * __u32 i_blocks representing the total number of
 	 * 512 bytes blocks of the file
 	 */
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
 	/*
 	 * We use 48 bit ext4_inode i_blocks
@@ -1630,6 +1624,7 @@ static loff_t next3_max_size(int bits)
 	upper_limit = (1LL << 48) - 1;
 #else
 	upper_limit = (1LL << 32) - 1;
+
 	/* total blocks in file system block size */
 	upper_limit >>= (bits - 9);
 #endif
@@ -1648,9 +1643,9 @@ static loff_t next3_max_size(int bits)
 	res += 1LL << (bits-2);
 	res += 1LL << (2*(bits-2));
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	res += 1LL << (3*(bits-2));
-#else
 	res += NEXT3_SNAPSHOT_NTIND_BLOCKS * (1LL << (3*(bits-2)));
+#else
+	res += 1LL << (3*(bits-2));
 #endif
 	res <<= bits;
 	if (res > upper_limit)
@@ -1808,8 +1803,8 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 				"supported.\n");
 		goto failed_mount;
 	}
-#endif
 
+#endif
 	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
 		((sbi->s_mount_opt & NEXT3_MOUNT_POSIX_ACL) ? MS_POSIXACL : 0);
 

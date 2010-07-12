@@ -1,18 +1,13 @@
 /*
  *  linux/fs/next3/resize.c
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- *  linux/fs/ext3/resize.c
- *
  * Support for resizing an next3 filesystem while it is mounted.
  *
  * Copyright (C) 2001, 2002 Andreas Dilger <adilger@clusterfs.com>
  *
  * This could probably be made into a module, because it is not often in use.
  *
+ * Copyright (C) 2008-2010 CTERA Networks
  * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 

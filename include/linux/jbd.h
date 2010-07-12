@@ -373,20 +373,6 @@ struct handle_s
 	 * (counts only buffers dirtied when !h_cowing) */
 	int			h_user_credits;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-#ifdef CONFIG_NEXT3_FS_DEBUG
-	/* Statistics counters: */
-	unsigned int h_cow_moved; /* blocks moved to snapshot */
-	unsigned int h_cow_copied; /* blocks copied to snapshot */
-	unsigned int h_cow_ok_jh; /* blocks already COWed during current
-				     transaction */
-	unsigned int h_cow_ok_bitmap; /* blocks not set in COW bitmap */
-	unsigned int h_cow_ok_mapped;/* blocks already mapped in snapshot */
-	unsigned int h_cow_bitmaps; /* COW bitmaps created */
-	unsigned int h_cow_excluded; /* blocks set in exclude bitmap */
-#endif
-
-#endif
 #endif
 	/* Reference count on this handle */
 	int			h_ref;
@@ -406,23 +392,22 @@ struct handle_s
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	h_lockdep_map;
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+
+#ifdef CONFIG_JBD_DEBUG
+	/* Statistics counters: */
+	unsigned int h_cow_moved; /* blocks moved to snapshot */
+	unsigned int h_cow_copied; /* blocks copied to snapshot */
+	unsigned int h_cow_ok_jh; /* blocks already COWed during current
+				     transaction */
+	unsigned int h_cow_ok_bitmap; /* blocks not set in COW bitmap */
+	unsigned int h_cow_ok_mapped;/* blocks already mapped in snapshot */
+	unsigned int h_cow_bitmaps; /* COW bitmaps created */
+	unsigned int h_cow_excluded; /* blocks set in exclude bitmap */
+#endif
+#endif
 };
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-/* macros for next3 to update transaction COW statistics */
-#ifdef CONFIG_NEXT3_FS_DEBUG
-#define trace_cow_add(handle, name, num)	\
-	(handle)->h_cow_##name += (num)
-#define trace_cow_inc(handle, name)		\
-	(handle)->h_cow_##name++
-#else
-#define trace_cow_add(handle, name, num)
-#define trace_cow_inc(handle, name)
-#endif
-#else
-#define trace_cow_add(handle, name, num)
-#define trace_cow_inc(handle, name)
-#endif
 
 /* The transaction_t type is the guts of the journaling mechanism.  It
  * tracks a compound transaction through its various states:

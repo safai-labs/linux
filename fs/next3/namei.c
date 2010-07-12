@@ -1,12 +1,6 @@
 /*
  *  linux/fs/next3/namei.c
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- *  linux/fs/ext3/namei.c
- *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
@@ -29,7 +23,8 @@
  *  Hash Tree Directory indexing cleanup
  *	Theodore Ts'o, 2002
  *
- *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/fs.h>

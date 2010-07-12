@@ -89,8 +89,7 @@ config NEXT3_FS_SECURITY
 
 config NEXT3_FS_DEBUG
 	bool "snapshot debugging support"
-	depends on NEXT3_FS
-	select DEBUG_FS
+	depends on NEXT3_FS && DEBUG_FS
 	default y
 	help
 	  Control snapshot debug level via debugfs entry /next3/snapshot-debug.
@@ -441,7 +440,6 @@ config NEXT3_FS_SNAPSHOT_RACE_COW
 config NEXT3_FS_SNAPSHOT_RACE_READ
 	bool "snapshot race conditions - tracked reads"
 	depends on NEXT3_FS_SNAPSHOT_RACE
-	select BLOCK_TRACKED_READ
 	default y
 	help
 	  Wait for pending read I/O requests to complete.

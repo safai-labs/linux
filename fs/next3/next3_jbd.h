@@ -1,12 +1,6 @@
 /*
  * linux/fs/next3/next3_jbd.h
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- * linux/include/linux/ext3_jbd.h
- *
  * Written by Stephen C. Tweedie <sct@redhat.com>, 1999
  *
  * Copyright 1998--1999 Red Hat corp --- All Rights Reserved
@@ -17,6 +11,7 @@
  *
  * Next3-specific journaling extensions.
  *
+ * Copyright (C) 2008-2010 CTERA Networks
  * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
@@ -379,7 +374,6 @@ static inline int next3_should_journal_data(struct inode *inode)
 	if (!S_ISREG(inode->i_mode))
 		return 1;
 #ifndef CONFIG_NEXT3_FS_SNAPSHOT
-	/* Data journaling with snapshots is not supported */
 	if (test_opt(inode->i_sb, DATA_FLAGS) == NEXT3_MOUNT_JOURNAL_DATA)
 		return 1;
 	if (NEXT3_I(inode)->i_flags & NEXT3_JOURNAL_DATA_FL)

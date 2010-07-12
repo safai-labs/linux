@@ -654,6 +654,7 @@ alloc_inode_blocks:
 				SNAPMAP_WRITE);
 next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
+#ifdef CONFIG_NEXT3_FS_DEBUG
 		next3_fsblk_t blk0 = iloc.block_group *
 			NEXT3_BLOCKS_PER_GROUP(sb);
 		snapshot_debug(1, "failed to allocate block/inode bitmap "
@@ -662,6 +663,7 @@ next_snapshot:
 				ino, bmap_blk - blk0,
 				imap_blk - blk0, inode_blk - blk0,
 				iloc.block_group, inode->i_generation);
+#endif
 		if (!err)
 			err = -EIO;
 		goto out_handle;
@@ -1454,7 +1456,6 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	/* blocks beyond the size of @start are not in-use by @start */
 	int snapshot_blocks = SNAPSHOT_BLOCKS(start);
 	unsigned long count = le32_to_cpu(sbi->s_es->s_blocks_count);
-	unsigned long block_groups = sbi->s_groups_count;
 	long block_group = -1;
 	next3_fsblk_t bg_boundary = 0;
 	int err, ret;
@@ -1473,7 +1474,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 		while (block >= bg_boundary) {
 			/* sleep 1/block_groups tunable delay unit */
 			snapshot_test_delay_per_ticks(SNAPTEST_DELETE,
-						      block_groups);
+					sbi->s_groups_count);
 			/* reset COW bitmap cache */
 			cow_bitmap.b_state = 0;
 			cow_bitmap.b_blocknr = 0;
@@ -1509,7 +1510,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				"block group = %ld/%lu, "
 				"COW bitmap = [%lu/%lu]\n",
 				start->i_generation, end->i_generation,
-				block_group, block_groups,
+				block_group, sbi->s_groups_count,
 				SNAPSHOT_BLOCK_TUPLE(cow_bitmap.b_blocknr));
 			clear_buffer_new(&cow_bitmap);
 		}

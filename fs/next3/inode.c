@@ -1,12 +1,6 @@
 /*
  *  linux/fs/next3/inode.c
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- *  linux/fs/ext3/inode.c
- *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
@@ -27,7 +21,8 @@
  *
  *  Assorted race fixes, rewrite of next3_get_block() by Al Viro, 2000
  *
- *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/module.h>
@@ -2666,6 +2661,15 @@ static ssize_t next3_direct_IO(int rw, struct kiocb *iocb,
 	int orphan = 0;
 	size_t count = iov_length(iov, nr_segs);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	/*
+	 * snapshot support for direct I/O is not implemented,
+	 * so direct I/O is disabled when there are active snapshots.
+	 */
+	if (next3_snapshot_has_active(inode->i_sb))
+		return -EOPNOTSUPP;
+
+#endif
 	if (rw == WRITE) {
 		loff_t final_size = offset + count;
 
@@ -2747,25 +2751,6 @@ static int next3_journalled_set_page_dirty(struct page *page)
 	return __set_page_dirty_nobuffers(page);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-/*
- * snapshot support for direct I/O is not implemented,
- * so direct I/O is disabled when there are active snapshots.
- */
-static ssize_t next3_no_direct_IO(int rw, struct kiocb *iocb,
-			const struct iovec *iov, loff_t offset,
-			unsigned long nr_segs)
-{
-	struct file *file = iocb->ki_filp;
-	struct inode *inode = file->f_mapping->host;
-
-	if (next3_snapshot_has_active(inode->i_sb))
-		return -EOPNOTSUPP;
-
-	return next3_direct_IO(rw, iocb, iov, offset, nr_segs);
-}
-
-#endif
 static const struct address_space_operations next3_ordered_aops = {
 	.readpage		= next3_readpage,
 	.readpages		= next3_readpages,
@@ -2776,11 +2761,7 @@ static const struct address_space_operations next3_ordered_aops = {
 	.bmap			= next3_bmap,
 	.invalidatepage		= next3_invalidatepage,
 	.releasepage		= next3_releasepage,
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	.direct_IO		= next3_no_direct_IO,
-#else
 	.direct_IO		= next3_direct_IO,
-#endif
 	.migratepage		= buffer_migrate_page,
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };
@@ -2795,11 +2776,7 @@ static const struct address_space_operations next3_writeback_aops = {
 	.bmap			= next3_bmap,
 	.invalidatepage		= next3_invalidatepage,
 	.releasepage		= next3_releasepage,
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	.direct_IO		= next3_no_direct_IO,
-#else
 	.direct_IO		= next3_direct_IO,
-#endif
 	.migratepage		= buffer_migrate_page,
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };

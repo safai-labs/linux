@@ -1,12 +1,6 @@
 /*
  *  linux/fs/next3/next3.h
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- *  linux/include/linux/ext3_fs.h
- *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
@@ -18,7 +12,8 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  *
- *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _LINUX_NEXT3_H
@@ -27,6 +22,12 @@
 #include <linux/types.h>
 #include <linux/magic.h>
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#ifndef NEXT3_SUPER_MAGIC
+#define NEXT3_SUPER_MAGIC EXT3_SUPER_MAGIC
+#endif
+
+#endif
 /*
  * The second extended filesystem constants/structures
  */

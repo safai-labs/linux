@@ -1,14 +1,7 @@
 /*
- * linux/fs/next3/next3_jbd.c
- *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- * linux/fs/ext3/ext3_jbd.c
- *
  * Interface between next3 and JBD
  *
+ * Copyright (C) 2008-2010 CTERA Networks
  * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
@@ -160,6 +153,22 @@ out:
 
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+#ifdef CONFIG_JBD_DEBUG
+static void next3_journal_cow_stats(int n, handle_t *handle)
+{
+	if (!journal_enable_debug)
+		return;
+	snapshot_debug(n, "COW stats: moved/copied=%d/%d, "
+			 "mapped/bitmap/cached=%d/%d/%d, "
+			 "bitmaps/cleared=%d/%d\n", handle->h_cow_moved,
+			 handle->h_cow_copied, handle->h_cow_ok_mapped,
+			 handle->h_cow_ok_bitmap, handle->h_cow_ok_jh,
+			 handle->h_cow_bitmaps, handle->h_cow_excluded);
+}
+#else
+#define next3_journal_cow_stats(n, handle)
+#endif
+
 #ifdef CONFIG_NEXT3_FS_DEBUG
 void __next3_journal_trace(int n, const char *fn, const char *caller,
 		handle_t *handle, int nblocks)
@@ -206,12 +215,8 @@ void __next3_journal_trace(int n, const char *fn, const char *caller,
 			 handle->h_ref, caller);
 	if (!final)
 		return;
-	snapshot_debug_l(n, handle->h_cowing, "COW stats: moved/copied=%d/%d, "
-			 "mapped/bitmap/cached=%d/%d/%d, "
-			 "bitmaps/cleared=%d/%d\n", handle->h_cow_moved,
-			 handle->h_cow_copied, handle->h_cow_ok_mapped,
-			 handle->h_cow_ok_bitmap, handle->h_cow_ok_jh,
-			 handle->h_cow_bitmaps, handle->h_cow_excluded);
+
+	next3_journal_cow_stats(n, handle);
 }
 #endif
 #endif

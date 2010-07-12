@@ -1,12 +1,6 @@
 /*
  *  linux/fs/next3/balloc.c
  *
- * Copyright (C) 2008-2010 CTERA Networks
- *
- * from
- *
- *  linux/fs/ext3/balloc.c
- *
  * Copyright (C) 1992, 1993, 1994, 1995
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
@@ -16,7 +10,8 @@
  *  Big-endian to little-endian byte-swapping/bitmaps by
  *        David S. Miller (davem@caip.rutgers.edu), 1995
  *
- *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/time.h>

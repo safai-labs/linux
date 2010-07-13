@@ -300,7 +300,8 @@ static int __extend_or_restart_transaction(const char *where,
 	if (nblocks < NEXT3_MAX_TRANS_DATA)
 		nblocks = NEXT3_MAX_TRANS_DATA;
 
-	err = __next3_journal_extend(where, handle, nblocks);
+	err = __next3_journal_extend(where,
+			(next3_handle_t *)handle, nblocks);
 	if (err < 0)
 		return err;
 	if (err) {
@@ -310,7 +311,8 @@ static int __extend_or_restart_transaction(const char *where,
 			if (err)
 				return err;
 		}
-		err = __next3_journal_restart(where, handle, nblocks);
+		err = __next3_journal_restart(where,
+				(next3_handle_t *)handle, nblocks);
 		if (err)
 			return err;
 		if (inode)

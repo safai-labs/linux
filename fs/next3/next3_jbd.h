@@ -113,7 +113,7 @@
  */
 #define NEXT3_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n)			\
 	((handle)->h_buffer_credits >= NEXT3_SNAPSHOT_TRANS_BLOCKS(n) && \
-	 (handle)->h_user_credits >= (n))
+	 ((next3_handle_t *)(handle))->h_user_credits >= (n))
 
 #define NEXT3_RESERVE_COW_CREDITS	(NEXT3_COW_CREDITS +		\
 					 NEXT3_SNAPSHOT_CREDITS)
@@ -149,6 +149,108 @@
 #define NEXT3_QUOTA_DEL_BLOCKS(sb) 0
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
+/*
+ * This struct is binary compatible to struct handle_s in include/linux/jbd.h
+ * for building a standalone next3 module.
+ * XXX: be aware of changes to the original struct!!!
+ */
+struct next3_handle_s
+{
+	/* Which compound transaction is this update a part of? */
+	transaction_t		*h_transaction;
+
+	/* Number of remaining buffers we are allowed to dirty: */
+	int			h_buffer_credits;
+
+	/* Reference count on this handle */
+	int			h_ref;
+
+	/* Field for caller's use to track errors through large fs */
+	/* operations */
+	int			h_err;
+
+	/* Flags [no locking] */
+	unsigned int	h_sync:		1;	/* sync-on-close */
+	unsigned int	h_jdata:	1;	/* force data journaling */
+	unsigned int	h_aborted:	1;	/* fatal error on handle */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
+	unsigned int	h_cowing:	1;	/* COWing block to snapshot */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	/* Number of buffers requested by user:
+	 * (before adding the COW credits factor) */
+	unsigned int	h_base_credits:	14;
+
+	/* Number of buffers the user is allowed to dirty:
+	 * (counts only buffers dirtied when !h_cowing) */
+	unsigned int	h_user_credits:	14;
+#endif
+
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	struct lockdep_map	h_lockdep_map;
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+
+#ifdef CONFIG_JBD_DEBUG
+	/* Statistics counters: */
+	unsigned int h_cow_moved; /* blocks moved to snapshot */
+	unsigned int h_cow_copied; /* blocks copied to snapshot */
+	unsigned int h_cow_ok_jh; /* blocks already COWed during current
+				     transaction */
+	unsigned int h_cow_ok_bitmap; /* blocks not set in COW bitmap */
+	unsigned int h_cow_ok_mapped;/* blocks already mapped in snapshot */
+	unsigned int h_cow_bitmaps; /* COW bitmaps created */
+	unsigned int h_cow_excluded; /* blocks set in exclude bitmap */
+#endif
+#endif
+};
+
+#ifndef _NEXT3_HANDLE_T
+#define _NEXT3_HANDLE_T
+typedef struct next3_handle_s		next3_handle_t;	/* Next3 COW handle */
+#endif
+
+#define IS_COWING(handle) \
+	((next3_handle_t *)(handle))->h_cowing
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+/*
+ * macros for next3 to update transaction COW statistics.
+ * when next3 is compiled as a module with CONFIG_JBD_DEBUG, if the symbol
+ * journal_handle_size doesn't exist or doesn't match the sizeof(handle_t),
+ * then the kernel was compiled wthout CONFIG_JBD_DEBUG or without the next3
+ * patch and the h_cow_* fields are not allocated in handle objects.
+ */
+#ifdef CONFIG_JBD_DEBUG
+extern const u8 journal_handle_size;
+
+#define trace_cow_enabled()	\
+	(journal_handle_size == sizeof(handle_t))
+
+#define trace_cow_add(handle, name, num)			\
+	do {							\
+		if (trace_cow_enabled())			\
+			((next3_handle_t *)(handle))->h_cow_##name += (num);	\
+	} while (0)
+
+#define trace_cow_inc(handle, name)				\
+	do {							\
+		if (trace_cow_enabled())			\
+			((next3_handle_t *)(handle))->h_cow_##name++;	\
+	} while (0)
+
+#else
+#define trace_cow_enabled()	0
+#define trace_cow_add(handle, name, num)
+#define trace_cow_inc(handle, name)
+#endif
+#else
+#define trace_cow_add(handle, name, num)
+#define trace_cow_inc(handle, name)
+#endif
+
+#endif
 int
 next3_mark_iloc_dirty(handle_t *handle,
 		     struct inode *inode,
@@ -239,13 +341,13 @@ int next3_journal_dirty_data(handle_t *handle, struct buffer_head *bh);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
 #ifdef CONFIG_NEXT3_FS_DEBUG
 void __next3_journal_trace(int debug, const char *fn, const char *caller,
-		handle_t *handle, int nblocks);
+		next3_handle_t *handle, int nblocks);
 
 #define next3_journal_trace(n, caller, handle, nblocks)			\
 	do {								\
 		if ((n) <= snapshot_enable_debug)			\
 			__next3_journal_trace((n), __func__, (caller),	\
-					      (handle), (nblocks));	\
+				(next3_handle_t *)(handle), (nblocks));	\
 	} while (0)
 
 #else
@@ -296,7 +398,7 @@ static inline handle_t *next3_journal_current_handle(void)
  * are missing and then tries to extend the transaction.
  */
 static inline int __next3_journal_extend(const char *where,
-		handle_t *handle, int nblocks)
+		next3_handle_t *handle, int nblocks)
 {
 	int lower = NEXT3_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits+nblocks);
 	int err = 0;
@@ -304,7 +406,7 @@ static inline int __next3_journal_extend(const char *where,
 	if (missing > 0)
 		/* extend transaction to keep buffer credits above lower
 		 * limit */
-		err = journal_extend(handle, missing);
+		err = journal_extend((handle_t *)handle, missing);
 	if (!err) {
 		handle->h_base_credits += nblocks;
 		handle->h_user_credits += nblocks;
@@ -321,9 +423,9 @@ static inline int __next3_journal_extend(const char *where,
  * extra credits for COW operations.
  */
 static inline int __next3_journal_restart(const char *where,
-		handle_t *handle, int nblocks)
+		next3_handle_t *handle, int nblocks)
 {
-	int err = journal_restart(handle,
+	int err = journal_restart((handle_t *)handle,
 				  NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
 	if (!err) {
 		handle->h_base_credits = nblocks;
@@ -333,6 +435,13 @@ static inline int __next3_journal_restart(const char *where,
 	return err;
 }
 
+#define next3_journal_extend(handle, nblocks) \
+	__next3_journal_extend(__func__, 	\
+			(next3_handle_t *)(handle), (nblocks))
+
+#define next3_journal_restart(handle, nblocks) \
+	__next3_journal_restart(__func__, 	\
+			(next3_handle_t *)(handle), (nblocks))
 #else
 static inline int __next3_journal_extend(const char *where,
 		handle_t *handle, int nblocks)
@@ -345,7 +454,6 @@ static inline int __next3_journal_restart(const char *where,
 {
 	return journal_restart(handle, nblocks);
 }
-#endif
 
 #define next3_journal_extend(handle, nblocks) \
 	__next3_journal_extend(__func__, 	\
@@ -354,6 +462,7 @@ static inline int __next3_journal_restart(const char *where,
 #define next3_journal_restart(handle, nblocks) \
 	__next3_journal_restart(__func__, 	\
 			(handle), (nblocks))
+#endif
 
 
 static inline int next3_journal_blocks_per_page(struct inode *inode)

@@ -19,7 +19,7 @@
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
 #define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
-						 handle->h_cowing : 0, f, ## a)
+						 IS_COWING(handle) : 0, f, ## a)
 
 /*
  * next3_snapshot_map_blocks() - helper function for
@@ -136,12 +136,12 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		/*
 		 * COWing or moving blocks to active snapshot
 		 */
-		BUG_ON(!handle || !handle->h_cowing);
+		BUG_ON(!handle || !IS_COWING(handle));
 		BUG_ON(!(flags & NEXT3_SNAPFILE_ACTIVE_FL));
 		BUG_ON(iblock < SNAPSHOT_BLOCK_OFFSET);
 		return 0;
 	} else if (cmd)
-		BUG_ON(handle && handle->h_cowing);
+		BUG_ON(handle && IS_COWING(handle));
 #endif
 
 	if (!(flags & NEXT3_SNAPFILE_LIST_FL)) {
@@ -803,6 +803,17 @@ __next3_snapshot_trace_cow(const char *where, handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 /*
+ * The last transaction ID during which the buffer has been COWed.
+ * If buffer was COWed during the current running transaction,
+ * we don't need to COW it again. Override jbd2 triggers field.
+ * [jbd_lock_bh_state()]
+ */
+#define test_cow_tid(jh, handle)	\
+	(*(tid_t *)(&(jh)->b_triggers) == handle->h_transaction->t_tid)
+#define set_cow_tid(jh, handle)		\
+	*(tid_t *)(&(jh)->b_triggers) = (handle)->h_transaction->t_tid
+
+/*
  * Journal COW cache functions.
  * a block can only be COWed once per snapshot,
  * so a block can only be COWed once per transaction,
@@ -822,7 +833,7 @@ next3_snapshot_test_cowed(handle_t *handle, struct buffer_head *bh)
 	if (bh && buffer_jbd(bh)) {
 		jbd_lock_bh_state(bh);
 		jh = bh2jh(bh);
-		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid)
+		if (jh && !test_cow_tid(jh, handle))
 			jh = NULL;
 		jbd_unlock_bh_state(bh);
 		if (jh)
@@ -843,15 +854,14 @@ next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 	if (bh && buffer_jbd(bh)) {
 		jbd_lock_bh_state(bh);
 		jh = bh2jh(bh);
-		if (jh && jh->b_cow_tid != handle->h_transaction->t_tid) {
+		if (jh && !test_cow_tid(jh, handle))
 			/*
 			 * this is the first time this block was COWed
 			 * in the running transaction.
 			 * update the COW tid in the journal head
 			 * to mark that this block doesn't need to be COWed.
 			 */
-			jh->b_cow_tid = handle->h_transaction->t_tid;
-		}
+			set_cow_tid(jh, handle);
 		jbd_unlock_bh_state(bh);
 	}
 }
@@ -874,11 +884,11 @@ static inline void next3_snapshot_cow_begin(handle_t *handle)
 		snapshot_debug_hl(1, "warning: insufficient buffer/user "
 				  "credits (%d/%d) for COW operation?\n",
 				  handle->h_buffer_credits,
-				  handle->h_user_credits);
+				  ((next3_handle_t *)handle)->h_user_credits);
 	}
 #endif
 	snapshot_debug_hl(4, "{\n");
-	handle->h_cowing = 1;
+	IS_COWING(handle) = 1;
 }
 
 /*
@@ -888,7 +898,7 @@ static inline void next3_snapshot_cow_begin(handle_t *handle)
 static inline void next3_snapshot_cow_end(const char *where,
 		handle_t *handle, next3_fsblk_t block, int err)
 {
-	handle->h_cowing = 0;
+	IS_COWING(handle) = 0;
 	snapshot_debug_hl(4, "} = %d\n", err);
 	snapshot_debug_hl(4, ".\n");
 	if (err < 0)
@@ -933,7 +943,7 @@ int next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 		return 0;
 	}
 #endif
-	if (handle->h_cowing) {
+	if (IS_COWING(handle)) {
 		/* avoid recursion on active snapshot updates */
 		WARN_ON(inode && inode != active_snapshot);
 		snapshot_debug_hl(4, "active snapshot update - "
@@ -1127,7 +1137,7 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 
 	next3_snapshot_trace_cow(where, handle, sb, inode, NULL, block, move);
 
-	BUG_ON(handle->h_cowing || inode == active_snapshot);
+	BUG_ON(IS_COWING(handle) || inode == active_snapshot);
 
 	/* BEGIN moving */
 	next3_snapshot_cow_begin(handle);

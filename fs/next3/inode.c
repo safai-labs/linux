@@ -1488,9 +1488,9 @@ retry:
 	 * operation, because snapshot file has read-only aops and because
 	 * truncate/unlink of snapshot file is not permitted.
 	 */
-	BUG_ON(next3_snapshot_is_active(inode) && !handle->h_cowing);
-	BUG_ON(!next3_snapshot_is_active(inode) && handle->h_cowing);
-	mutex_lock_nested(&ei->truncate_mutex, handle->h_cowing);
+	BUG_ON(next3_snapshot_is_active(inode) && !IS_COWING(handle));
+	BUG_ON(!next3_snapshot_is_active(inode) && IS_COWING(handle));
+	mutex_lock_nested(&ei->truncate_mutex, IS_COWING(handle));
 #else
 	mutex_lock(&ei->truncate_mutex);
 #endif
@@ -2601,7 +2601,7 @@ static int next3_snapshot_get_block(struct inode *inode, sector_t iblock,
 static int next3_snapshot_readpage(struct file *file, struct page *page)
 {
 	/* do read I/O with buffer heads to enable tracked reads */
-	return block_read_full_page(page, next3_snapshot_get_block);
+	return next3_read_full_page(page, next3_snapshot_get_block);
 }
 
 #endif

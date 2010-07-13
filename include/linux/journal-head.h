@@ -38,30 +38,8 @@ struct journal_head {
 	 * the currently running transaction
 	 * [jbd_lock_bh_state()]
 	 */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	unsigned b_modified:1;
-	/*
-	 * This flag signals the buffer has been modified by
-	 * the currently running transaction not during
-	 * a COW operation (!handle->h_cowing).
-	 * It is used for counting handle->h_user_credits.
-	 * [jbd_lock_bh_state()]
-	 */
-	unsigned b_user_modified:1;
-#else
 	unsigned b_modified;
-#endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
-	/*
-	 * The last transaction ID during which the buffer has been COWed.
-	 * if buffer was COWed during the currently running transaction,
-	 * there is no need to COW it again.
-	 * [jbd_lock_bh_state()]
-	 */
-	tid_t b_cow_tid;
-
-#endif
 	/*
 	 * Copy of the buffer data frozen for writing to the log.
 	 * [jbd_lock_bh_state()]

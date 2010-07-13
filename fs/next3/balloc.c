@@ -1703,7 +1703,7 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 		 * snapshot reserved blocks for COWing to active snapshot
 		 */
 		if (free_blocks < snapshot_r_blocks + 1 &&
-		    !handle->h_cowing) {
+		    !IS_COWING(handle)) {
 			return 0;
 		}
 		/*

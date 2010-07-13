@@ -86,7 +86,7 @@ static int next3_freeze(struct super_block *sb);
 handle_t *__next3_journal_start(const char *where,
 		struct super_block *sb, int nblocks)
 {
-	handle_t *handle;
+	next3_handle_t *handle;
 #else
 handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 {
@@ -108,7 +108,11 @@ handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
-	handle = journal_start(journal,
+	/* sanity test for standalone module */
+	if (sizeof(next3_handle_t) != sizeof(handle_t))
+		return ERR_PTR(-EINVAL);
+
+	handle = (next3_handle_t *)journal_start(journal,
 			       NEXT3_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
 	if (!IS_ERR(handle)) {
 		if (handle->h_ref == 1) {
@@ -117,7 +121,7 @@ handle_t *next3_journal_start_sb(struct super_block *sb, int nblocks)
 		}
 		next3_journal_trace(SNAP_WARN, where, handle, nblocks);
 	}
-	return handle;
+	return (handle_t *)handle;
 #else
 	return journal_start(journal, nblocks);
 #endif

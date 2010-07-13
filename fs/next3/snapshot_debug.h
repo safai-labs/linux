@@ -101,33 +101,6 @@ extern void next3_snapshot_dump(int n, struct inode *inode);
 #endif
 #endif
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
-/*
- * macros for next3 to update transaction COW statistics.
- * when next3 is compiled as a module with CONFIG_JBD_DEBUG, if the symbol
- * journal_enable_debug doesn't exist, then the kernel was compiled without
- * CONFIG_JBD_DEBUG and the h_cow_* fields are not allocated in handle struct.
- */
-#ifdef CONFIG_JBD_DEBUG
-#define trace_cow_add(handle, name, num)	\
-	do {									\
-		if (journal_enable_debug)			\
-			(handle)->h_cow_##name += (num);\
-	} while (0)
-#define trace_cow_inc(handle, name)			\
-	do {									\
-		if (journal_enable_debug)			\
-			(handle)->h_cow_##name++;		\
-	} while (0)
-#else
-#define trace_cow_add(handle, name, num)
-#define trace_cow_inc(handle, name)
-#endif
-#else
-#define trace_cow_add(handle, name, num)
-#define trace_cow_inc(handle, name)
-#endif
-
 /* debug levels */
 #define SNAP_ERR	1 /* errors and summary */
 #define SNAP_WARN	2 /* warnings */

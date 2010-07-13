@@ -1,6 +1,6 @@
 config NEXT3_FS
 	tristate "Next3 journalling file system support"
-	select JBD
+	depends on JBD
 	help
 	  This is the journalling version of the Second extended file system
 	  (often called next3), the de facto standard Linux file system
@@ -65,7 +65,7 @@ config NEXT3_FS_XATTR
 config NEXT3_FS_POSIX_ACL
 	bool "Next3 POSIX Access Control Lists"
 	depends on NEXT3_FS_XATTR
-	select FS_POSIX_ACL
+	depends on FS_POSIX_ACL
 	help
 	  Posix Access Control Lists (ACLs) support permissions for users and
 	  groups beyond the owner/group/world scheme.

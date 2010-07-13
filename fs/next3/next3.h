@@ -25,6 +25,19 @@
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 #ifndef NEXT3_SUPER_MAGIC
 #define NEXT3_SUPER_MAGIC EXT3_SUPER_MAGIC
+/* if the kernel was not patched, next3 is compiled as standalone module */
+#define CONFIG_NEXT3_FS_STANDALONE
+#endif
+
+#ifdef CONFIG_NEXT3_FS_STANDALONE
+/* configuration options for standalone module */
+#define CONFIG_NEXT3_DEFAULTS_TO_ORDERED
+#define CONFIG_NEXT3_FS_XATTR
+#define CONFIG_NEXT3_FS_SECURITY
+#define CONFIG_NEXT3_FS_DEBUG
+#endif
+#if defined(CONFIG_NEXT3_FS_STANDALONE) && defined(CONFIG_FS_POSIX_ACL)
+#define CONFIG_NEXT3_FS_POSIX_ACL
 #endif
 
 #endif

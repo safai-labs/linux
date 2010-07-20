@@ -2316,14 +2316,6 @@ static journal_t *next3_get_journal(struct super_block *sb,
 	}
 	journal->j_private = sb;
 	next3_init_journal_params(sb, journal);
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
-	/*
-	 * Save the journal's reference to journal inode for snapshot_take().
-	 * no need to igrab because journal's reference is valid while the
-	 * file system is mounted (not possible to delete the journal).
-	 */
-	NEXT3_SB(sb)->s_journal_inode = journal_inode;
-#endif
 	return journal;
 }
 

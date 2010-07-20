@@ -597,8 +597,8 @@ static int next3_snapshot_create(struct inode *inode)
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
-	/* start with journal inode and continue with snapshot list */
-	ino = NEXT3_JOURNAL_INO;
+	/* start with root inode and continue with snapshot list */
+	ino = NEXT3_ROOT_INO;
 alloc_inode_blocks:
 #else
 	ino = inode->i_ino;
@@ -679,7 +679,7 @@ next_snapshot:
 		goto alloc_inode_blocks;
 	}
 #else
-	if (ino == NEXT3_JOURNAL_INO) {
+	if (ino == NEXT3_ROOT_INO) {
 		ino = inode->i_ino;
 		goto alloc_inode_blocks;
 	}
@@ -798,7 +798,7 @@ int next3_snapshot_take(struct inode *inode)
 	struct next3_group_desc *desc;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	next3_fsblk_t prev_inode_blk = 0;
-	struct next3_inode *raw_inode, temp_inode;
+	struct next3_inode *raw_inode;
 #endif
 	int i;
 #endif
@@ -888,13 +888,10 @@ int next3_snapshot_take(struct inode *inode)
 	memcpy(sbh->b_data, sbi->s_sbh->b_data, sb->s_blocksize);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
 	/*
-	 * Convert from Next3 to Ext2 super block:
-	 * Remove the HAS_JOURNAL flag and journal inode number.
+	 * Convert from Next3 to Ext3 super block:
 	 * Remove the HAS_SNAPSHOT flag and snapshot inode number.
 	 * Set the IS_SNAPSHOT flag to signal fsck this is a snapshot image.
 	 */
-	es->s_feature_compat &= ~cpu_to_le32(NEXT3_FEATURE_COMPAT_HAS_JOURNAL);
-	es->s_journal_inum = 0;
 	es->s_feature_ro_compat &=
 		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	es->s_snapshot_inum = 0;
@@ -919,8 +916,8 @@ int next3_snapshot_take(struct inode *inode)
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
-	/* start with journal inode and continue with snapshot list */
-	curr_inode = sbi->s_journal_inode;
+	/* start with root inode and continue with snapshot list */
+	curr_inode = sb->s_root->d_inode;
 copy_inode_blocks:
 #else
 	curr_inode = inode;
@@ -972,16 +969,7 @@ fix_inode_copy:
 	/* get snapshot copy of raw inode */
 	iloc.bh = sbh;
 	raw_inode = next3_raw_inode(&iloc);
-	if (curr_inode->i_ino == NEXT3_JOURNAL_INO) {
-		/*
-		 * If we want the snapshot image to pass fsck with no
-		 * errors, we need to clear the copy of journal inode,
-		 * but we cannot detach these blocks, so we move them
-		 * to the copy of the last snapshot inode.
-		 */
-		memcpy(&temp_inode, raw_inode, sizeof(temp_inode));
-		memset(raw_inode, 0, sizeof(*raw_inode));
-	} else {
+	if (curr_inode->i_ino != NEXT3_ROOT_INO) {
 		/*
 		 * Snapshot inode blocks are excluded from COW bitmap,
 		 * so they appear to be not allocated in the snapshot's
@@ -990,14 +978,12 @@ fix_inode_copy:
 		 * from the copy of the snapshot inode, so we fix the
 		 * snapshot inodes to appear as empty regular files.
 		 */
-		raw_inode->i_size = temp_inode.i_size;
-		raw_inode->i_size_high = temp_inode.i_size_high;
-		raw_inode->i_blocks_lo = temp_inode.i_blocks_lo;
-		raw_inode->i_blocks_high = temp_inode.i_blocks_high;
+		raw_inode->i_size = 0;
+		raw_inode->i_size_high = 0;
+		raw_inode->i_blocks_lo = 0;
+		raw_inode->i_blocks_high = 0;
 		raw_inode->i_flags &= ~NEXT3_FL_SNAPSHOT_MASK;
-		memcpy(raw_inode->i_block, temp_inode.i_block,
-				sizeof(raw_inode->i_block));
-		memset(&temp_inode, 0, sizeof(temp_inode));
+		memset(raw_inode->i_block, 0, sizeof(raw_inode->i_block));
 	}
 	mark_buffer_dirty(sbh);
 	sync_dirty_buffer(sbh);
@@ -1010,7 +996,7 @@ fix_inode_copy:
 		goto copy_inode_blocks;
 	}
 #else
-	if (curr_inode->i_ino == NEXT3_JOURNAL_INO) {
+	if (curr_inode->i_ino == NEXT3_ROOT_INO) {
 		curr_inode = inode;
 		goto copy_inode_blocks;
 	}

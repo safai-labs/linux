@@ -218,19 +218,19 @@ struct next3_group_desc
 #define NEXT3_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 #define NEXT3_HUGE_FILE_FL		0x00040000 /* Set to each huge file */
-/* snapshot non-persistent flags */
-#define NEXT3_SNAPFILE_LIST_FL		0x00100000 /* snapshot is on list (S) */
-#define NEXT3_SNAPFILE_ACTIVE_FL	0x00200000 /* snapshot is active (a) */
-#define NEXT3_SNAPFILE_OPEN_FL		0x00400000 /* snapshot is mounted (o) */
-#define NEXT3_SNAPFILE_INUSE_FL		0x00800000 /* snapshot is in-use (p) */
-/* end of snapshot non-persistent flags */
+/* snapshot non-persistent flags overriding unused compression flags */
+#define NEXT3_SNAPFILE_LIST_FL		0x00000100 /* snapshot is on list (S) */
+#define NEXT3_SNAPFILE_ENABLED_FL	0x00000200 /* snapshot is enabled (n) */
+#define NEXT3_SNAPFILE_ACTIVE_FL	0x00000400 /* snapshot is active  (a) */
+#define NEXT3_SNAPFILE_INUSE_FL		0x00000800 /* snapshot is in-use  (p) */
 /* snapshot persistent flags */
 #define NEXT3_SNAPFILE_FL		0x01000000 /* snapshot file (x) */
-#define NEXT3_SNAPFILE_ENABLED_FL	0x02000000 /* snapshot is enabled (n) */
 #define NEXT3_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted (s) */
 #define NEXT3_SNAPFILE_SHRUNK_FL	0x08000000 /* snapshot was shrunk (h) */
-#define NEXT3_SNAPFILE_TAGGED_FL	0x10000000 /* snapshot is tagged (t) */
-/* end of snapshot persistent flags */
+/* more snapshot non-persistent flags */
+#define NEXT3_SNAPFILE_OPEN_FL		0x10000000 /* snapshot is mounted (o) */
+#define NEXT3_SNAPFILE_TAGGED_FL	0x20000000 /* snapshot is tagged  (t) */
+/* end of snapshot flags */
 #endif
 #define NEXT3_RESERVED_FL		0x80000000 /* reserved for next3 lib */
 
@@ -249,16 +249,20 @@ struct next3_group_desc
 	(NEXT3_FL_SNAPSHOT_USER_MASK|NEXT3_SNAPFILE_FL| \
 	 NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
 
+/* snapshot persistent read-only flags */
+#define NEXT3_FL_SNAPSHOT_RO_MASK		\
+	 (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
+
 /* non-persistent snapshot status flags */
 #define NEXT3_FL_SNAPSHOT_DYN_MASK		\
 	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL| \
-	 NEXT3_SNAPFILE_ACTIVE_FL| \
-	 NEXT3_SNAPFILE_OPEN_FL|NEXT3_SNAPFILE_INUSE_FL)
+	 NEXT3_SNAPFILE_ACTIVE_FL|NEXT3_SNAPFILE_INUSE_FL| \
+	 NEXT3_SNAPFILE_OPEN_FL|NEXT3_SNAPFILE_TAGGED_FL)
 
 /* snapshot flags visible to lsattr */
 #define NEXT3_FL_SNAPSHOT_MASK			\
-	(NEXT3_FL_SNAPSHOT_RW_MASK|NEXT3_FL_SNAPSHOT_DYN_MASK| \
-	 NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
+	(NEXT3_FL_SNAPSHOT_DYN_MASK|NEXT3_SNAPFILE_FL| \
+	 NEXT3_FL_SNAPSHOT_RO_MASK)
 
 /* User visible flags */
 #define NEXT3_FL_USER_VISIBLE		(NEXT3_FL_SNAPSHOT_MASK|0x0007DFFF)

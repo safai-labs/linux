@@ -33,6 +33,7 @@
 extern const char *snapshot_indent;
 extern u8 snapshot_enable_debug;
 extern u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM];
+extern u8 cow_cache_offset;
 
 #define snapshot_test_delay(i)		     \
 	do {							       \

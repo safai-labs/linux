@@ -803,15 +803,58 @@ __next3_snapshot_trace_cow(const char *where, handle_t *handle,
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 /*
- * The last transaction ID during which the buffer has been COWed.
- * If buffer was COWed during the current running transaction,
- * we don't need to COW it again. Override jbd2 triggers field.
+ * The last transaction ID during which the buffer has been COWed is stored in
+ * the b_cow_tid field of the journal_head struct.  If we know that the buffer
+ * was COWed during the current transaction, we don't need to COW it again.
+ * Find the offset of the b_cow_tid field by checking for free space in the
+ * journal_head struct. If there is no free space, don't use cow tid cache.
+ * This method is used so the next3 module could be loaded without rebuilding
+ * the kernel with modified journal_head struct.
  * [jbd_lock_bh_state()]
  */
+
+static int cow_tid_offset;
+
+void init_next3_snapshot_cow_cache()
+{
+	const struct journal_head *jh = NULL;
+	char *pos, *end;
+
+	if (cow_tid_offset)
+		return;
+
+#ifdef CONFIG_64BIT
+	/* check for 32bit padding to 64bit alignment after b_modified */
+	pos = (char *)&jh->b_modified + sizeof(jh->b_modified);
+	end = (char *)&jh->b_frozen_data;
+	if (pos + sizeof(tid_t) <= end)
+		goto found;
+
+#endif
+	/* check for extra jbd2 fields after last jbd field */
+	pos = (char *)&jh->b_cpprev + sizeof(jh->b_cpprev);
+	end = (char *)jh + sizeof(*jh);
+	if (pos + sizeof(tid_t) <= end)
+		goto found;
+
+	/* no free space found - disable cow cache */
+	cow_tid_offset = -1;
+	return;
+found:
+	cow_tid_offset = pos - (char *)NULL;
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	cow_cache_offset = cow_tid_offset;
+#endif
+}
+
+#define cow_cache_enabled()	(cow_tid_offset > 0)
+#define jh_cow_tid(jh)		\
+	*(tid_t *)(((char *)(jh))+cow_tid_offset)
+
 #define test_cow_tid(jh, handle)	\
-	(*(tid_t *)(&(jh)->b_triggers) == handle->h_transaction->t_tid)
+	(jh_cow_tid(jh) == (handle)->h_transaction->t_tid)
 #define set_cow_tid(jh, handle)		\
-	*(tid_t *)(&(jh)->b_triggers) = (handle)->h_transaction->t_tid
+	jh_cow_tid(jh) = (handle)->h_transaction->t_tid
 
 /*
  * Journal COW cache functions.
@@ -828,6 +871,9 @@ static int
 next3_snapshot_test_cowed(handle_t *handle, struct buffer_head *bh)
 {
 	struct journal_head *jh;
+
+	if (!cow_cache_enabled())
+		return 0;
 
 	/* check the COW tid in the journal head */
 	if (bh && buffer_jbd(bh)) {
@@ -850,6 +896,9 @@ static void
 next3_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 {
 	struct journal_head *jh;
+
+	if (!cow_cache_enabled())
+		return;
 
 	if (bh && buffer_jbd(bh)) {
 		jbd_lock_bh_state(bh);

@@ -46,11 +46,17 @@ static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
 
 u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM] __read_mostly = {0};
 u8 snapshot_enable_debug __read_mostly = 1;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+u8 cow_cache_offset __read_mostly = 0;
+#endif
 
 static struct dentry *next3_debugfs_dir;
 static struct dentry *snapshot_debug;
 static struct dentry *snapshot_version;
 static struct dentry *snapshot_test[SNAPSHOT_TESTS_NUM];
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+static struct dentry *cow_cache;
+#endif
 
 static char snapshot_version_str[] = NEXT3_SNAPSHOT_VERSION;
 struct debugfs_blob_wrapper snapshot_version_blob = {
@@ -80,6 +86,11 @@ void next3_create_debugfs_entry(void)
 					      S_IRUGO|S_IWUSR,
 					      next3_debugfs_dir,
 					      &snapshot_enable_test[i]);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+	cow_cache = debugfs_create_u8("cow-cache", S_IRUGO,
+					   next3_debugfs_dir,
+					   &cow_cache_offset);
+#endif
 }
 
 /*
@@ -92,6 +103,10 @@ void next3_remove_debugfs_entry(void)
 
 	if (!next3_debugfs_dir)
 		return;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+	if (cow_cache)
+		debugfs_remove(cow_cache);
+#endif
 	for (i = 0; i < SNAPSHOT_TESTS_NUM && i < SNAPSHOT_TEST_NAMES; i++)
 		if (snapshot_test[i])
 			debugfs_remove(snapshot_test[i]);

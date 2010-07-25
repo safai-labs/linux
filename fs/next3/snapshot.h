@@ -20,7 +20,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.12-WIP (20-Jul-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.12-WIP (25-Jul-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -346,6 +346,9 @@ extern int next3_snapshot_get_inode_access(handle_t *handle,
 					   int count, int cmd,
 					   struct inode **prev_snapshot);
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+extern void init_next3_snapshot_cow_cache(void);
+#endif
 
 /*
  * Snapshot constructor/destructor
@@ -359,6 +362,9 @@ extern void next3_snapshot_destroy(struct super_block *sb);
 static inline int init_next3_snapshot(void)
 {
 	init_next3_snapshot_debug();
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+	init_next3_snapshot_cow_cache();
+#endif
 	return 0;
 }
 

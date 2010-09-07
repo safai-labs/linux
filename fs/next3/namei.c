@@ -1957,7 +1957,7 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 }
 
 int next3_inode_list_add(handle_t *handle, struct inode *inode,
-		__le32 *i_next, __le32 *s_last,
+		__u32 *i_next, __le32 *s_last,
 		struct list_head *s_list, const char *name)
 #else
 int next3_orphan_add(handle_t *handle, struct inode *inode)
@@ -2061,7 +2061,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 #define NEXT_INODE(i_prev) (*(__le32 *)(((char *)i_prev)-NEXT_INODE_OFFSET))
 
 int next3_inode_list_del(handle_t *handle, struct inode *inode,
-		__le32 *i_next, __le32 *s_last,
+		__u32 *i_next, __le32 *s_last,
 		struct list_head *s_list, const char *name)
 #else
 int next3_orphan_del(handle_t *handle, struct inode *inode)

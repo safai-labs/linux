@@ -510,7 +510,7 @@ static int next3_snapshot_create(struct inode *inode)
 #else
 	lock_super(sb);
 	err = next3_journal_get_write_access(handle, sbi->s_sbh);
-	sbi->s_es->s_snapshot_list = inode->i_ino;
+	sbi->s_es->s_snapshot_list = cpu_to_le32(inode->i_ino);
 	if (!err)
 		err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
 	unlock_super(sb);
@@ -1022,7 +1022,7 @@ fix_inode_copy:
 	if (sbi->s_es->s_snapshot_id == 0)
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
-	sbi->s_es->s_snapshot_inum = inode->i_ino;
+	sbi->s_es->s_snapshot_inum = cpu_to_le32(inode->i_ino);
 
 	err = 0;
 out_unlockfs:
@@ -1963,8 +1963,10 @@ out:
 int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		int read_only)
 {
-	__le32 *ino_next = &es->s_snapshot_list;
-	__le32 active_ino = es->s_snapshot_inum;
+	__u32 active_ino = le32_to_cpu(es->s_snapshot_inum);
+	__u32 load_ino = le32_to_cpu(es->s_snapshot_list);
+	/* pointer to list prev->next for terminating list on failed load */
+	__u32 *i_next = &es->s_snapshot_list;
 	int err, num = 0, snapshot_id = 0;
 	int has_snapshot = 1, has_active = 0;
 
@@ -1982,7 +1984,8 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 			!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
 		/* Copy snapshot fields to new positions */
-		active_ino = es->s_snapshot_inum = es->s_snapshot_inum_old;
+		es->s_snapshot_inum = es->s_snapshot_inum_old;
+		active_ino = le32_to_cpu(es->s_snapshot_inum);
 		es->s_snapshot_id = es->s_snapshot_id_old;
 		es->s_snapshot_r_blocks_count = es->s_snapshot_r_blocks_old;
 		es->s_snapshot_list = es->s_snapshot_list_old;
@@ -2018,16 +2021,17 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	}
 
 #endif
-	if (!*ino_next && active_ino) {
+	if (!load_ino && active_ino) {
 		/* snapshots list is empty and active snapshot exists */
 		if (!read_only)
 			/* reset list head to active snapshot */
-			*ino_next = active_ino;
+			es->s_snapshot_list = es->s_snapshot_inum;
 		/* try to load active snapshot */
-		ino_next = &es->s_snapshot_inum;
+		load_ino = le32_to_cpu(es->s_snapshot_inum);
+		i_next = &es->s_snapshot_inum;
 	}
 
-	if (*ino_next && !NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+	if (load_ino && !NEXT3_HAS_RO_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
 		/*
 		 * When mounting an ext3 formatted volume as next3, the
@@ -2042,7 +2046,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		 */
 		snapshot_debug(1, "warning: has_snapshot feature is not set and"
 			       " last snapshot found (%u). trying to load it\n",
-			       le32_to_cpu(*ino_next));
+			       load_ino);
 		has_snapshot = 0;
 	}
 
@@ -2051,10 +2055,10 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 	if (err)
 		return err;
 
-	while (*ino_next) {
+	while (load_ino) {
 		struct inode *inode;
 
-		inode = next3_orphan_get(sb, le32_to_cpu(*ino_next));
+		inode = next3_orphan_get(sb, load_ino);
 		if (IS_ERR(inode) || !next3_snapshot_file(inode)) {
 			if (has_active || !has_snapshot) {
 				/* active snapshot was loaded or not found */
@@ -2062,17 +2066,18 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 					"warning: failed to load snapshot "
 					"(ino=%u) after snapshot (%d) - "
 					"terminating snapshots list!\n",
-					le32_to_cpu(*ino_next), snapshot_id);
-				/* reset list head and allow read-write mount */
-				*ino_next = 0;
+					load_ino, snapshot_id);
+				/* terminate list and allow read-write mount */
+				*i_next = 0; /* may be *__le32 or *__u32 */
 				break;
-			} else if (num == 0 && *ino_next != active_ino) {
+			} else if (num == 0 && load_ino != active_ino) {
 				/* failed to load last non-active snapshot */
 				if (!read_only)
 					/* reset list head to active snapshot */
-					*ino_next = active_ino;
+					es->s_snapshot_list = es->s_snapshot_inum;
 				/* try to load active snapshot */
-				ino_next = &es->s_snapshot_inum;
+				load_ino = le32_to_cpu(es->s_snapshot_inum);
+				i_next = &es->s_snapshot_inum;
 				continue;
 			}
 			err = -EIO;
@@ -2095,7 +2100,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 			has_snapshot = 1;
 		}
 
-		if (!has_active && *ino_next == active_ino) {
+		if (!has_active && load_ino == active_ino) {
 			/* active snapshot was loaded */
 			err = next3_snapshot_set_active(sb, inode);
 			if (err)
@@ -2106,7 +2111,8 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 		list_add_tail(&NEXT3_I(inode)->i_snaplist,
 			      &NEXT3_SB(sb)->s_snapshot_list);
-		ino_next = &NEXT_SNAPSHOT(inode);
+		load_ino = NEXT_SNAPSHOT(inode);
+		i_next = &NEXT_SNAPSHOT(inode);
 		/* keep snapshot list reference */
 #else
 		iput(inode);
@@ -2119,7 +2125,7 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 		snapshot_debug(1, "warning: failed to load "
 				"active snapshot (ino=%u) - "
 				"forcing read-only mount!\n",
-				le32_to_cpu(active_ino));
+				active_ino);
 		/* force read-only mount */
 		return read_only ? 0 : err;
 	}

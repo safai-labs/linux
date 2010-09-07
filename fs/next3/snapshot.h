@@ -385,10 +385,10 @@ extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 /* namei.c */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 extern int next3_inode_list_add(handle_t *handle, struct inode *inode,
-				__le32 *i_next, __le32 *s_last,
+				__u32 *i_next, __le32 *s_last,
 				struct list_head *s_list, const char *name);
 extern int next3_inode_list_del(handle_t *handle, struct inode *inode,
-				__le32 *i_next, __le32 *s_last,
+				__u32 *i_next, __le32 *s_last,
 				struct list_head *s_list, const char *name);
 #endif
 

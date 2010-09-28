@@ -685,19 +685,20 @@ struct next3_super_block {
 	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
 	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
 	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+	__u32	s_reserved[151];	/* Padding to the end of the block */
+	/* old snapshot field positions */
+/*3F0*/	__le32	s_snapshot_list_old;	/* Old snapshot list head */
+	__le32	s_snapshot_r_blocks_old;/* Old reserved for snapshot */
+	__le32	s_snapshot_id_old;	/* Old active snapshot ID */
+	__le32	s_snapshot_inum_old;	/* Old active snapshot inode */
+#else
 	__u32	s_reserved[155];	/* Padding to the end of the block */
+#endif
 #else
 	__u32   s_reserved[160];        /* Padding to the end of the block */
 #endif
 };
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
-
-/* old snapshot field positions */
-#define s_snapshot_list_old	s_reserved[151] /* Old snapshot list head */
-#define s_snapshot_r_blocks_old	s_reserved[152] /* Old reserved for snapshot */
-#define s_snapshot_id_old	s_reserved[153] /* Old active snapshot ID */
-#define s_snapshot_inum_old	s_reserved[154] /* Old active snapshot inode */
-#endif
 
 #ifdef __KERNEL__
 #include "next3_i.h"

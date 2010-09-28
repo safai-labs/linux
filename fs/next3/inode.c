@@ -900,8 +900,8 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 			       dst->i_generation, SNAPSHOT_BLOCK(iblock),
 			       count, kd, depth, moved);
 		/* update src and dst inodes blocks usage */
-		vfs_dq_free_block(src, moved);
-		vfs_dq_alloc_block(dst, moved);
+		dquot_free_block(src, moved);
+		dquot_alloc_block(dst, moved);
 		err = next3_journal_dirty_metadata(handle, pD->bh);
 		if (err)
 			goto out;
@@ -1052,7 +1052,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 				return err;
 		}
 		/* charge snapshot file owner for moved blocks */
-		if (vfs_dq_alloc_block(inode, *blks)) {
+		if (dquot_alloc_block(inode, *blks)) {
 			err = -EDQUOT;
 			goto failed;
 		}
@@ -1152,7 +1152,7 @@ failed:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	if (SNAPMAP_ISMOVE(cmd) && num > 0)
 		/* don't charge snapshot file owner if move failed */
-		vfs_dq_free_block(inode, num);
+		dquot_free_block(inode, num);
 	else if (num > 0)
 		next3_free_blocks(handle, inode, new_blocks[i], num);
 #else
@@ -1280,7 +1280,7 @@ err_out:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_MOVE
 	if (SNAPMAP_ISMOVE(cmd))
 		/* don't charge snapshot file owner if move failed */
-		vfs_dq_free_block(inode, blks);
+		dquot_free_block(inode, blks);
 	else
 		next3_free_blocks(handle, inode, le32_to_cpu(where[num].key),
 				  blks);

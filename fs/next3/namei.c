@@ -2058,7 +2058,7 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 }
 
 #define NEXT_INODE_OFFSET (((char *)inode)-((char *)i_next))
-#define NEXT_INODE(i_prev) (*(__le32 *)(((char *)i_prev)-NEXT_INODE_OFFSET))
+#define NEXT_INODE(i_prev) (*(__u32 *)(((char *)i_prev)-NEXT_INODE_OFFSET))
 
 int next3_inode_list_del(handle_t *handle, struct inode *inode,
 		__u32 *i_next, __le32 *s_last,
@@ -2075,14 +2075,8 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	int err = 0;
 
 	lock_super(inode->i_sb);
-	if (list_empty(&ei->i_orphan)) {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
-		snapshot_debug(4, "next3_orphan_del() called with inode %lu "
-			       "not in %s list\n", inode->i_ino, name);
-#endif
-		unlock_super(inode->i_sb);
-		return 0;
-	}
+	if (list_empty(&ei->i_orphan))
+		goto out;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	ino_next = *i_next;

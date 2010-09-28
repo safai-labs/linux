@@ -59,7 +59,7 @@ static struct dentry *cow_cache;
 #endif
 
 static char snapshot_version_str[] = NEXT3_SNAPSHOT_VERSION;
-struct debugfs_blob_wrapper snapshot_version_blob = {
+static struct debugfs_blob_wrapper snapshot_version_blob = {
 	.data = snapshot_version_str,
 	.size = sizeof(snapshot_version_str)
 };

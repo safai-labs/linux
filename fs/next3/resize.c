@@ -27,6 +27,9 @@
 static int verify_group_input(struct super_block *sb,
 			      struct next3_new_group_data *input)
 {
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	struct inode *active_snapshot = next3_snapshot_has_active(sb);
+#endif
 	struct next3_sb_info *sbi = NEXT3_SB(sb);
 	struct next3_super_block *es = sbi->s_es;
 	next3_fsblk_t start = le32_to_cpu(es->s_blocks_count);
@@ -52,6 +55,16 @@ static int verify_group_input(struct super_block *sb,
 		free_blocks_count--;
 		input->free_blocks_count = free_blocks_count;
 	}
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	if (active_snapshot &&
+			NEXT3_I(active_snapshot)->i_flags & NEXT3_UNRM_FL) {
+		/* assign all new blocks to active snapshot */
+		input->blocks_count -= free_blocks_count;
+		end -= free_blocks_count;
+		input->free_blocks_count = free_blocks_count = 0;
+		input->reserved_blocks = 0;
+	}
+#endif
 
 #endif
 	if (test_opt(sb, DEBUG))
@@ -807,10 +820,17 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 	struct buffer_head *primary = NULL;
 	struct next3_group_desc *gdp;
 	struct inode *inode = NULL;
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	struct inode *active_snapshot = next3_snapshot_has_active(sb);
+	next3_fsblk_t o_blocks_count = le32_to_cpu(es->s_blocks_count);
+	next3_fsblk_t n_blocks_count = o_blocks_count + input->blocks_count;
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	struct next3_group_info *gi = NEXT3_SB(sb)->s_group_info + input->group;
 	struct inode *exclude_inode = NULL;
 	struct buffer_head *exclude_bh = NULL;
+	int dind_offset = input->group / SNAPSHOT_ADDR_PER_BLOCK;
+	int ind_offset = input->group % SNAPSHOT_ADDR_PER_BLOCK;
 	__le32 exclude_bitmap = 0;
 	int credits;
 #endif
@@ -859,9 +879,6 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
 	if (NEXT3_HAS_COMPAT_FEATURE(sb,
 		NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
-		int dind_offset = input->group / SNAPSHOT_ADDR_PER_BLOCK;
-		int ind_offset = input->group % SNAPSHOT_ADDR_PER_BLOCK;
-
 		exclude_inode = next3_iget(sb, NEXT3_EXCLUDE_INO);
 		if (IS_ERR(exclude_inode)) {
 			next3_warning(sb, __func__,
@@ -997,6 +1014,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 			goto exit_journal;
 
 		exclude_bitmap = cpu_to_le32(first_free);
+		((__le32 *)exclude_bh->b_data)[ind_offset] = exclude_bitmap; 
 		snapshot_debug(2, "allocated new exclude bitmap #%d block "
 			       "("E3FSBLK")\n", input->group, first_free);
 		next3_journal_dirty_metadata(handle, exclude_bh);
@@ -1015,7 +1033,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		next3_mark_iloc_dirty(handle, exclude_inode, &iloc);
 	}
 	/* update exclude bitmap cache */
-	gi->bg_exclude_bitmap = exclude_bitmap;
+	gi->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
 no_exclude_inode:
 #endif
 	/*
@@ -1088,6 +1106,24 @@ exit_put:
 	iput(exclude_inode);
 #endif
 	iput(inode);
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	if (!err && active_snapshot &&
+			NEXT3_I(active_snapshot)->i_flags & NEXT3_UNRM_FL &&
+			n_blocks_count > o_blocks_count + input->blocks_count) {
+		/*
+		 * This is a hack for testing huge snapshot files.
+		 * All new filesystem blocks go into the snapshot and
+		 * returned to the filesystem only when this snapshot
+		 * is deleted.
+		 */
+		SNAPSHOT_SET_BLOCKS(active_snapshot, n_blocks_count);
+		SNAPSHOT_SET_ENABLED(active_snapshot);
+		snapshot_debug(1, "resized snapshot (%d) to %lu blocks.\n",
+				active_snapshot->i_generation,
+				n_blocks_count);
+		return next3_group_extend(sb, es, n_blocks_count);
+	}
+#endif
 	return err;
 } /* next3_group_add */
 

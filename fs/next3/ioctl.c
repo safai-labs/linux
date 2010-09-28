@@ -163,22 +163,23 @@ flags_err:
 		if (err)
 			goto flags_out;
 
-		if ((flags | oldflags) & NEXT3_SNAPFILE_LIST_FL) {
-			/* clearing list flag - shrink/merge/remove snapshot */
+		if (!(oldflags & NEXT3_SNAPFILE_LIST_FL) &&
+				(flags & NEXT3_SNAPFILE_LIST_FL))
+			/* setting list flag - take snapshot */
+			err = next3_snapshot_take(inode);
+#endif
+flags_out:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		if (snapflags & NEXT3_SNAPFILE_LIST_FL) {
+			/* if clearing list flag, cleanup snapshot list */
 			int ret, cleanup = !(flags & NEXT3_SNAPFILE_LIST_FL);
-
-			if (!(oldflags & NEXT3_SNAPFILE_LIST_FL))
-				/* setting list flag - take snapshot */
-				err = next3_snapshot_take(inode);
 
 			/* update/cleanup snapshots list even if take failed */
 			ret = next3_snapshot_update(inode->i_sb, cleanup, 0);
 			if (!err)
 				err = ret;
 		}
-#endif
-flags_out:
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+
 		if (snapflags)
 			mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
 #endif

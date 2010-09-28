@@ -96,6 +96,8 @@ struct next3_sb_info {
 	struct inode * s_journal_inode;
 	struct journal_s * s_journal;
 	struct list_head s_orphan;
+	unsigned long s_commit_interval;
+	struct block_device *journal_bdev;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	struct next3_group_info *s_group_info;	/* [ sb_bgl_lock ] */
 	struct mutex s_snapshot_mutex;		/* protects 2 fields below: */
@@ -104,8 +106,6 @@ struct next3_sb_info {
 	struct list_head s_snapshot_list;	/* [ s_snapshot_mutex ] */
 #endif
 #endif
-	unsigned long s_commit_interval;
-	struct block_device *journal_bdev;
 #ifdef CONFIG_JBD_DEBUG
 	struct timer_list turn_ro_timer;	/* For turning read-only (crash simulation) */
 	wait_queue_head_t ro_wait_queue;	/* For people waiting for the fs to go read-only */

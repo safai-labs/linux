@@ -227,6 +227,18 @@ void next3_journal_abort_handle(const char *caller, const char *err_fn,
 	journal_abort_handle(handle);
 }
 
+void next3_msg(struct super_block *sb, const char *prefix,
+		const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	printk("%sNEXT3-fs (%s): ", prefix, sb->s_id);
+	vprintk(fmt, args);
+	printk("\n");
+	va_end(args);
+}
+
 /* Deal with the reporting of failure conditions on a filesystem such as
  * inconsistencies detected or read IO failures.
  *
@@ -1859,9 +1871,9 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	if (blocksize < NEXT3_MIN_BLOCK_SIZE ||
 	    blocksize > NEXT3_MAX_BLOCK_SIZE) {
 #endif
-		printk(KERN_ERR
-		       "NEXT3-fs: Unsupported filesystem blocksize %d on %s.\n",
-		       blocksize, sb->s_id);
+		next3_msg(sb, KERN_ERR,
+			"error: couldn't mount because of unsupported "
+			"filesystem blocksize %d", blocksize);
 		goto failed_mount;
 	}
 
@@ -2036,21 +2048,6 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	get_random_bytes(&sbi->s_next_generation, sizeof(u32));
 	spin_lock_init(&sbi->s_next_gen_lock);
 
-	err = percpu_counter_init(&sbi->s_freeblocks_counter,
-			next3_count_free_blocks(sb));
-	if (!err) {
-		err = percpu_counter_init(&sbi->s_freeinodes_counter,
-				next3_count_free_inodes(sb));
-	}
-	if (!err) {
-		err = percpu_counter_init(&sbi->s_dirs_counter,
-				next3_count_dirs(sb));
-	}
-	if (err) {
-		printk(KERN_ERR "NEXT3-fs: insufficient memory\n");
-		goto failed_mount3;
-	}
-
 	/* per fileystem reservation list head & lock */
 	spin_lock_init(&sbi->s_rsv_window_lock);
 	sbi->s_rsv_window_root = RB_ROOT;
@@ -2075,16 +2072,17 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	sb->dq_op = &next3_quota_operations;
 #endif
 	INIT_LIST_HEAD(&sbi->s_orphan); /* unlinked but open files */
+
+	sb->s_root = NULL;
+
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	mutex_init(&sbi->s_snapshot_mutex);
 	sbi->s_active_snapshot = NULL;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 	INIT_LIST_HEAD(&sbi->s_snapshot_list); /* snapshot files */
 #endif
+
 #endif
-
-	sb->s_root = NULL;
-
 	needs_recovery = (es->s_last_orphan != 0 ||
 			  NEXT3_HAS_INCOMPAT_FEATURE(sb,
 				    NEXT3_FEATURE_INCOMPAT_RECOVER));
@@ -2096,15 +2094,29 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	if (!test_opt(sb, NOLOAD) &&
 	    NEXT3_HAS_COMPAT_FEATURE(sb, NEXT3_FEATURE_COMPAT_HAS_JOURNAL)) {
 		if (next3_load_journal(sb, es, journal_devnum))
-			goto failed_mount3;
+			goto failed_mount2;
 	} else if (journal_inum) {
 		if (next3_create_journal(sb, es, journal_inum))
-			goto failed_mount3;
+			goto failed_mount2;
 	} else {
 		if (!silent)
 			printk (KERN_ERR
 				"next3: No journal on filesystem on %s\n",
 				sb->s_id);
+		goto failed_mount2;
+	}
+	err = percpu_counter_init(&sbi->s_freeblocks_counter,
+			next3_count_free_blocks(sb));
+	if (!err) {
+		err = percpu_counter_init(&sbi->s_freeinodes_counter,
+				next3_count_free_inodes(sb));
+	}
+	if (!err) {
+		err = percpu_counter_init(&sbi->s_dirs_counter,
+				next3_count_dirs(sb));
+	}
+	if (err) {
+		printk(KERN_ERR "NEXT3-fs: insufficient memory\n");
 		goto failed_mount3;
 	}
 
@@ -2128,7 +2140,7 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		    (sbi->s_journal, 0, 0, JFS_FEATURE_INCOMPAT_REVOKE)) {
 			printk(KERN_ERR "NEXT3-fs: Journal does not support "
 			       "requested data journaling mode\n");
-			goto failed_mount4;
+			goto failed_mount3;
 		}
 	default:
 		break;
@@ -2150,19 +2162,19 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	if (IS_ERR(root)) {
 		printk(KERN_ERR "NEXT3-fs: get root inode failed\n");
 		ret = PTR_ERR(root);
-		goto failed_mount4;
+		goto failed_mount3;
 	}
 	if (!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
 		iput(root);
 		printk(KERN_ERR "NEXT3-fs: corrupt root inode, run e2fsck\n");
-		goto failed_mount4;
+		goto failed_mount3;
 	}
 	sb->s_root = d_alloc_root(root);
 	if (!sb->s_root) {
 		printk(KERN_ERR "NEXT3-fs: get root dentry failed\n");
 		iput(root);
 		ret = -ENOMEM;
-		goto failed_mount4;
+		goto failed_mount3;
 	}
 
 	next3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
@@ -2171,14 +2183,7 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		/* XXX: how to fail mount/force read-only at this point? */
 		next3_error(sb, __func__, "load snapshot failed\n");
 #endif
-	/*
-	 * akpm: core read_super() calls in here with the superblock locked.
-	 * That deadlocks, because orphan cleanup needs to lock the superblock
-	 * in numerous places.  Here we just pop the lock - it's relatively
-	 * harmless, because we are now ready to accept write_super() requests,
-	 * and aviro says that's the only reason for hanging onto the
-	 * superblock lock.
-	 */
+
 	NEXT3_SB(sb)->s_mount_state |= NEXT3_ORPHAN_FS;
 	next3_orphan_cleanup(sb, es);
 	NEXT3_SB(sb)->s_mount_state &= ~NEXT3_ORPHAN_FS;
@@ -2199,12 +2204,12 @@ cantfind_next3:
 		       sb->s_id);
 	goto failed_mount;
 
-failed_mount4:
-	journal_destroy(sbi->s_journal);
 failed_mount3:
 	percpu_counter_destroy(&sbi->s_freeblocks_counter);
 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
 	percpu_counter_destroy(&sbi->s_dirs_counter);
+	journal_destroy(sbi->s_journal);
+failed_mount2:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (sbi->s_group_info) {
 		if (is_vmalloc_addr(sbi->s_group_info))
@@ -2213,7 +2218,6 @@ failed_mount3:
 			kfree(sbi->s_group_info);
 	}
 #endif
-failed_mount2:
 	for (i = 0; i < db_count; i++)
 		brelse(sbi->s_group_desc[i]);
 	kfree(sbi->s_group_desc);
@@ -2943,11 +2947,11 @@ static int next3_statfs (struct dentry * dentry, struct kstatfs * buf)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	if (sbi->s_active_snapshot) {
 		if (buf->f_bfree < le32_to_cpu(es->s_r_blocks_count) +
-				le32_to_cpu(es->s_snapshot_r_blocks_count))
+				le64_to_cpu(es->s_snapshot_r_blocks_count))
 			buf->f_bavail = 0;
 		else
 			buf->f_bavail -=
-				le32_to_cpu(es->s_snapshot_r_blocks_count);
+				le64_to_cpu(es->s_snapshot_r_blocks_count);
 	}
 	buf->f_spare[0] = percpu_counter_sum_positive(&sbi->s_dirs_counter);
 	buf->f_spare[1] = sbi->s_overhead_last;

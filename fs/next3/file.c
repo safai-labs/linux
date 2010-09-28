@@ -23,6 +23,7 @@
 #include <linux/time.h>
 #include <linux/fs.h>
 #include <linux/jbd.h>
+#include <linux/quotaops.h>
 #include "next3.h"
 #include "next3_jbd.h"
 #include "xattr.h"
@@ -39,7 +40,7 @@ static int next3_file_open(struct inode *inode, struct file *filp)
 		 */
 		return -EPERM;
 
-	return generic_file_open(inode, filp);
+	return dquot_file_open(inode, filp);
 }
 
 #endif
@@ -141,7 +142,7 @@ const struct file_operations next3_file_operations = {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
 	.open		= next3_file_open,
 #else
-	.open		= generic_file_open,
+	.open		= dquot_file_open,
 #endif
 	.release	= next3_release_file,
 	.fsync		= next3_sync_file,

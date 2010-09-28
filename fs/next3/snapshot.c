@@ -632,7 +632,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	struct buffer_head *cow_bh;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	next3_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
-	int snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
+	next3_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
 	int inuse;
 
 	if (block >= snapshot_blocks)
@@ -815,7 +815,7 @@ __next3_snapshot_trace_cow(const char *where, handle_t *handle,
 
 static int cow_tid_offset;
 
-void init_next3_snapshot_cow_cache()
+void init_next3_snapshot_cow_cache(void)
 {
 	const struct journal_head *jh = NULL;
 	char *pos, *end;
@@ -1217,16 +1217,20 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 		goto out;
 	}
 
-	if (inode == NULL) {
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	if (inode == NULL &&
+		!(NEXT3_I(active_snapshot)->i_flags & NEXT3_UNRM_FL)) {
 		/*
 		 * This is next3_group_extend() "freeing" the blocks that
 		 * were added to the block group.  These block should not be
-		 * moved to snapshot.
+		 * moved to snapshot, unless the snapshot is marked with the
+		 * UNRM flag for large snapshot creation test.
 		 */
 		trace_cow_inc(handle, ok_bitmap);
 		err = 0;
 		goto out;
 	}
+#endif
 
 	/* count blocks are in use by snapshot - check if @block is mapped */
 	err = next3_snapshot_map_blocks(handle, active_snapshot, block, 1, &blk,
@@ -1257,7 +1261,8 @@ int next3_snapshot_test_and_move(const char *where, handle_t *handle,
 	 * Snapshot file owner was charged for these blocks
 	 * when they were mapped to snapshot file.
 	 */
-	vfs_dq_free_block(inode, count);
+	if (inode)
+		dquot_free_block(inode, count);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	/* mark moved blocks in exclude bitmap */
 	excluded = next3_snapshot_exclude_blocks(handle, sb, block, count);

@@ -15,18 +15,26 @@
 #ifndef _LINUX_NEXT3_SNAPSHOT_H
 #define _LINUX_NEXT3_SNAPSHOT_H
 
+#include <linux/version.h>
 #include <linux/delay.h>
 #include "next3_jbd.h"
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.12 (25-Jul-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-WIP (27-Sep-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
  * negative addresses are used to reference snapshot meta blocks
  */
 #define next3_snapblk_t long long
+
+#if ( LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35) )
+/* one snapshot patch fits all kernel versions */
+#define dquot_file_open generic_file_open
+#define dquot_alloc_block vfs_dq_alloc_block
+#define dquot_free_block vfs_dq_free_block
+#endif
 
 /*
  * We assert that snapshot must use a file system with block size == page
@@ -79,8 +87,11 @@
 	(NEXT3_I(inode)->i_disksize = SNAPSHOT_ISIZE(size))
 #define SNAPSHOT_SIZE(inode)					\
 	(NEXT3_I(inode)->i_disksize - SNAPSHOT_BYTES_OFFSET)
-#define SNAPSHOT_BLOCKS(inode)						\
-	(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
+#define SNAPSHOT_SET_BLOCKS(inode, blocks)			\
+	SNAPSHOT_SET_SIZE((inode), 				\
+			(loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS)
+#define SNAPSHOT_BLOCKS(inode)					\
+	(next3_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_SET_ENABLED(inode)				\
 	i_size_write((inode), NEXT3_I(inode)->i_disksize)
 #define SNAPSHOT_SET_DISABLED(inode)		\

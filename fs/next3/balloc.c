@@ -1698,7 +1698,7 @@ static int next3_has_free_blocks(struct next3_sb_info *sbi)
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_RESERVE
 	if (handle && sbi->s_active_snapshot) {
 		snapshot_r_blocks =
-			le32_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
+			le64_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
 		/*
 		 * snapshot reserved blocks for COWing to active snapshot
 		 */

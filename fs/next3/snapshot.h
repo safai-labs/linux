@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-WIP (27-Sep-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-WIP (21-Oct-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -29,7 +29,7 @@
  */
 #define next3_snapblk_t long long
 
-#if ( LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35) )
+#if ( LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34) )
 /* one snapshot patch fits all kernel versions */
 #define dquot_file_open generic_file_open
 #define dquot_alloc_block vfs_dq_alloc_block
@@ -93,7 +93,7 @@
 #define SNAPSHOT_BLOCKS(inode)					\
 	(next3_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_SET_ENABLED(inode)				\
-	i_size_write((inode), NEXT3_I(inode)->i_disksize)
+	i_size_write((inode), SNAPSHOT_SIZE(inode))
 #define SNAPSHOT_SET_DISABLED(inode)		\
 	i_size_write((inode), 0)
 

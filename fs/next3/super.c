@@ -1809,9 +1809,9 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 	/* Next3 unsupported features */
-	if (sbi->s_mount_opt & NEXT3_MOUNT_JOURNAL_DATA) {
-		printk(KERN_ERR "NEXT3-fs: journaled data option is not "
-				"supported\n");
+	if ((sbi->s_mount_opt & NEXT3_MOUNT_DATA_FLAGS) ==
+			NEXT3_MOUNT_JOURNAL_DATA) {
+		printk(KERN_ERR "NEXT3-fs: journaled data mode is not supported\n");
 		goto failed_mount;
 	}
 	if (sbi->s_jquota_fmt) {

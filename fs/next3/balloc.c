@@ -552,6 +552,7 @@ void next3_free_blocks_sb(handle_t *handle, struct super_block *sb,
 	int err = 0, ret;
 	next3_grpblk_t group_freed;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	int state_locked;
 	next3_grpblk_t group_skipped = 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
@@ -650,10 +651,25 @@ do_more:
 	}
 
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	/* if we skip all blocks we won't need to aquire the state lock */
+	state_locked = 0;
+#else
 	jbd_lock_bh_state(bitmap_bh);
+#endif
 
 	for (i = 0, group_freed = 0; i < count; i++) {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+		if (state_locked) {
+			/*
+			 * Moving blocks to snapshot may sleep and may need to take this
+			 * state lock if allocating snapshot block from this block group.
+			 * TODO: get the COW bitmap and test it inside this loop before
+			 *       calling next3_snapshot_get_delete_access().
+			 */
+			jbd_unlock_bh_state(bitmap_bh);
+			state_locked = 0;
+		}
 		ret = next3_snapshot_get_delete_access(handle, inode,
 						       block + i, count - i);
 		if (ret < 0) {
@@ -666,8 +682,11 @@ do_more:
 			/* 'ret' blocks were moved to snapshot - skip them */
 			group_skipped += ret;
 			i += ret - 1;
+			cond_resched();
 			continue;
 		}
+		jbd_lock_bh_state(bitmap_bh);
+		state_locked = 1;
 #endif
 		/*
 		 * An HJ special.  This is expensive...
@@ -768,7 +787,12 @@ do_more:
 			exclude_bitmap_dirty = 1;
 #endif
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	if (state_locked)
+		jbd_unlock_bh_state(bitmap_bh);
+#else
 	jbd_unlock_bh_state(bitmap_bh);
+#endif
 
 	spin_lock(sb_bgl_lock(sbi, block_group));
 	le16_add_cpu(&desc->bg_free_blocks_count, group_freed);

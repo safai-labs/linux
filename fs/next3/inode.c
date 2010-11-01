@@ -2006,8 +2006,14 @@ retry:
 			set_buffer_partial_write(bh);
 		else
 			clear_buffer_partial_write(bh);
-		/* make sure that get_block() is called */
-		clear_buffer_mapped(bh);
+		/*
+		 * make sure that get_block() is called even if the buffer is mapped,
+		 * but not if it is already a part of any transaction. in data=ordered,
+		 * the only mode supported by next3, all dirty data buffers are flushed
+		 * on snapshot take via freeze_fs() API.
+		 */
+		if (buffer_mapped(bh) && !buffer_jbd(bh))
+			clear_buffer_mapped(bh);
 	}
 
 #endif

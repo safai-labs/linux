@@ -31,6 +31,7 @@ config NEXT3_FS
 config NEXT3_DEFAULTS_TO_ORDERED
 	bool "Default to 'data=ordered' in next3"
 	depends on NEXT3_FS
+	default y
 	help
 	  The journal mode options for next3 have different tradeoffs
 	  between when data is guaranteed to be on disk and

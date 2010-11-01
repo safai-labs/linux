@@ -1807,20 +1807,6 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 			    NULL, 0))
 		goto failed_mount;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	/* Next3 unsupported features */
-	if ((sbi->s_mount_opt & NEXT3_MOUNT_DATA_FLAGS) ==
-			NEXT3_MOUNT_JOURNAL_DATA) {
-		printk(KERN_ERR "NEXT3-fs: journaled data mode is not supported\n");
-		goto failed_mount;
-	}
-	if (sbi->s_jquota_fmt) {
-		printk(KERN_ERR "NEXT3-fs: journaled quota options are not "
-				"supported.\n");
-		goto failed_mount;
-	}
-
-#endif
 	sb->s_flags = (sb->s_flags & ~MS_POSIXACL) |
 		((sbi->s_mount_opt & NEXT3_MOUNT_POSIX_ACL) ? MS_POSIXACL : 0);
 
@@ -2153,6 +2139,21 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 			clear_opt(sbi->s_mount_opt, NOBH);
 		}
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+
+	/* Next3 unsupported features */
+	if (test_opt(sb,DATA_FLAGS) != NEXT3_MOUNT_ORDERED_DATA) {
+		printk(KERN_ERR "NEXT3-fs: data=%s mode is not supported\n",
+				data_mode_string(test_opt(sb,DATA_FLAGS)));
+		goto failed_mount3;
+	}
+	if (sbi->s_jquota_fmt) {
+		printk(KERN_ERR "NEXT3-fs: journaled quota options are not "
+				"supported.\n");
+		goto failed_mount3;
+	}
+
+#endif
 	/*
 	 * The journal_load will have done any necessary log recovery,
 	 * so we can safely mount the rest of the filesystem now.

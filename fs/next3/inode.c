@@ -181,10 +181,26 @@ static int try_to_extend_transaction(handle_t *handle, struct inode *inode)
  * so before we call here everything must be consistently dirtied against
  * this transaction.
  */
-static int next3_journal_test_restart(handle_t *handle, struct inode *inode)
+static int truncate_restart_transaction(handle_t *handle, struct inode *inode)
 {
+	int ret;
+
 	jbd_debug(2, "restarting handle %p\n", handle);
-	return next3_journal_restart(handle, blocks_for_truncate(inode));
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
+	/* Snapshot shrink/merge/clean do not take truncate_mutex */
+	if (!mutex_is_locked(&NEXT3_I(inode)->truncate_mutex))
+		return next3_journal_restart(handle, blocks_for_truncate(inode));
+#endif
+	/*
+	 * Drop truncate_mutex to avoid deadlock with next3_get_blocks_handle
+	 * At this moment, get_block can be called only for blocks inside
+	 * i_size since page cache has been already dropped and writes are
+	 * blocked by i_mutex. So we can safely drop the truncate_mutex.
+	 */
+	mutex_unlock(&NEXT3_I(inode)->truncate_mutex);
+	ret = next3_journal_restart(handle, blocks_for_truncate(inode));
+	mutex_lock(&NEXT3_I(inode)->truncate_mutex);
+	return ret;
 }
 
 /*
@@ -3104,7 +3120,7 @@ static void next3_clear_blocks(handle_t *handle, struct inode *inode,
 			next3_journal_dirty_metadata(handle, bh);
 		}
 		next3_mark_inode_dirty(handle, inode);
-		next3_journal_test_restart(handle, inode);
+		truncate_restart_transaction(handle, inode);
 		if (bh) {
 			BUFFER_TRACE(bh, "retaking write access");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
@@ -3425,7 +3441,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 				return;
 			if (try_to_extend_transaction(handle, inode)) {
 				next3_mark_inode_dirty(handle, inode);
-				next3_journal_test_restart(handle, inode);
+				truncate_restart_transaction(handle, inode);
 			}
 
 			next3_forget(handle, 1, inode, bh, bh->b_blocknr);

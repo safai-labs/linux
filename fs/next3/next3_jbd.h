@@ -483,12 +483,16 @@ static inline int next3_should_journal_data(struct inode *inode)
 {
 	if (!S_ISREG(inode->i_mode))
 		return 1;
-#ifndef CONFIG_NEXT3_FS_SNAPSHOT
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
+		/* snapshots require ordered data mode */
+		return 0;
+#endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == NEXT3_MOUNT_JOURNAL_DATA)
 		return 1;
 	if (NEXT3_I(inode)->i_flags & NEXT3_JOURNAL_DATA_FL)
 		return 1;
-#endif
 	return 0;
 }
 
@@ -496,10 +500,14 @@ static inline int next3_should_order_data(struct inode *inode)
 {
 	if (!S_ISREG(inode->i_mode))
 		return 0;
-#ifndef CONFIG_NEXT3_FS_SNAPSHOT
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
+		/* snapshots require ordered data mode */
+		return 1;
+#endif
 	if (NEXT3_I(inode)->i_flags & NEXT3_JOURNAL_DATA_FL)
 		return 0;
-#endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == NEXT3_MOUNT_ORDERED_DATA)
 		return 1;
 	return 0;
@@ -509,10 +517,14 @@ static inline int next3_should_writeback_data(struct inode *inode)
 {
 	if (!S_ISREG(inode->i_mode))
 		return 0;
-#ifndef CONFIG_NEXT3_FS_SNAPSHOT
-	if (NEXT3_I(inode)->i_flags & NEXT3_JOURNAL_DATA_FL)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
+		/* snapshots require ordered data mode */
 		return 0;
 #endif
+	if (NEXT3_I(inode)->i_flags & NEXT3_JOURNAL_DATA_FL)
+		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == NEXT3_MOUNT_WRITEBACK_DATA)
 		return 1;
 	return 0;

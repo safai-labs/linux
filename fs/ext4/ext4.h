@@ -1539,6 +1539,12 @@ EXT4_INODE_BIT_FNS(state, state_flags)
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
+#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
+#define EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
+#define EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
+#define EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
+#endif
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
@@ -2224,12 +2230,6 @@ do {								\
 #else
 #define EXT4_FREEBLOCKS_WATERMARK 0
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
-#define EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
-#endif
 
 static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
 {
@@ -2440,6 +2440,17 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
 }
 
 #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
+
+/* Is ext4 configured for snapshots support? */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+static inline int ext4_snapshot_feature(struct super_block *sb)
+{
+	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+}
+#else
+#define ext4_snapshot_feature(sb) (0)
+#endif
 
 #endif	/* __KERNEL__ */
 

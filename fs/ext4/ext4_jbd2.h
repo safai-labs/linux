@@ -568,12 +568,15 @@ static inline int ext4_should_journal_data(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 1;
-#ifndef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 0;
+#endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
 		return 1;
 	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
 		return 1;
-#endif
 	return 0;
 }
 
@@ -583,9 +586,10 @@ static inline int ext4_should_order_data(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
-#ifndef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
-		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 1;
 #endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
 		return 1;
@@ -598,10 +602,13 @@ static inline int ext4_should_writeback_data(struct inode *inode)
 		return 0;
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 1;
-#ifndef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* snapshots enforce ordered data */
 		return 0;
 #endif
+	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
+		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
 		return 1;
 	return 0;
@@ -622,6 +629,11 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* XXX: should snapshots support dioread_nolock? */
+		return 0;
+#endif
 	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
 		return 0;
 	if (ext4_should_journal_data(inode))

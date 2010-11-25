@@ -20,6 +20,7 @@
 #include "ext4_jbd2.h"
 #include "snapshot_debug.h"
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
 #define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc4 (27-Feb-2010)"
 
 /*
@@ -429,6 +430,8 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
  */
 static inline int ext4_snapshot_should_move_data(struct inode *inode)
 {
+	if (!ext4_snapshot_feature(inode->i_sb))
+		return 0;
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
@@ -573,4 +576,14 @@ extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 extern int ext4_snapshot_take(struct inode *inode);
 
 #endif
+#else /* CONFIG_EXT4_FS_SNAPSHOT */
+/* Snapshot NOP macros */
+#define ext4_snapshot_load(sb, es, ro) (0)
+#define ext4_snapshot_destroy(sb)
+#define init_ext4_snapshot()
+#define exit_ext4_snapshot()
+
+#define ext4_snapshot_should_move_data(inode) (0)
+
+#endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

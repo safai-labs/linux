@@ -1766,6 +1766,25 @@ out:
 	return err;
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+/* Simple get block for everything except direct I/O write */
+static int next3_get_block(struct inode *inode, sector_t iblock,
+			struct buffer_head *bh_result, int create)
+{
+	handle_t *handle = next3_journal_current_handle();
+	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
+	int ret;
+
+	ret = next3_get_blocks_handle(handle, inode, iblock,
+					max_blocks, bh_result, create);
+	if (ret > 0) {
+		bh_result->b_size = (ret << inode->i_blkbits);
+		ret = 0;
+	}
+	return ret;
+}
+
+#endif
 /* Maximum number of blocks we map for direct IO at once. */
 #define DIO_MAX_BLOCKS 4096
 /*
@@ -1777,13 +1796,38 @@ out:
  */
 #define DIO_CREDITS 25
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+static int next3_get_block_dio(struct inode *inode, sector_t iblock,
+			struct buffer_head *bh_result, int create)
+#else
 static int next3_get_block(struct inode *inode, sector_t iblock,
 			struct buffer_head *bh_result, int create)
+#endif
 {
 	handle_t *handle = next3_journal_current_handle();
 	int ret = 0, started = 0;
 	unsigned max_blocks = bh_result->b_size >> inode->i_blkbits;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	BUG_ON(handle != NULL);
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		/*
+		 * DIO_SKIP_HOLES may ask to map direct I/O writes with create=0.
+		 * We need to change it to create=1, so that we can fall back to
+		 * buffered I/O when data blocks need to be moved to snapshot.
+		 */
+		create = 1;
+		/*
+		 * signal next3_get_blocks_handle() to return unmapped block if block
+		 * is not allocated or if it needs to be moved to snapshot.
+		 */
+		set_buffer_direct_io(bh_result);
+		if (next3_snapshot_should_move_data(inode))
+			set_buffer_move_data(bh_result);
+	}
+
+#endif
 	if (create && !handle) {	/* Direct IO write... */
 		if (max_blocks > DIO_MAX_BLOCKS)
 			max_blocks = DIO_MAX_BLOCKS;
@@ -1794,15 +1838,6 @@ static int next3_get_block(struct inode *inode, sector_t iblock,
 			goto out;
 		}
 		started = 1;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-		/*
-		 * signal next3_get_blocks_handle() to return unmapped block if block
-		 * is not allocated or if it needs to be moved to snapshot.
-		 */
-		set_buffer_direct_io(bh_result);
-		if (next3_snapshot_should_move_data(inode))
-			set_buffer_move_data(bh_result);
-#endif
 	}
 
 	ret = next3_get_blocks_handle(handle, inode, iblock,
@@ -2767,21 +2802,6 @@ static ssize_t next3_direct_IO(int rw, struct kiocb *iocb,
 	int orphan = 0;
 	size_t count = iov_length(iov, nr_segs);
 	int retries = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	int flags;
-
-	/*
-	 * suppress DIO_SKIP_HOLES to make sure that direct I/O writes always call
-	 * next3_get_block() with create=1, so that we can fall back to buffered
-	 * I/O when data blocks need to be moved to snapshot.
-	 */
-	if (NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
-				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
-		flags = DIO_LOCKING;
-	else
-		flags = DIO_LOCKING | DIO_SKIP_HOLES;
-
-#endif
 	if (rw == WRITE) {
 		loff_t final_size = offset + count;
 
@@ -2805,8 +2825,10 @@ static ssize_t next3_direct_IO(int rw, struct kiocb *iocb,
 
 retry:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-    ret = __blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
-			offset, nr_segs, next3_get_block, NULL, NULL, flags);
+	ret = blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
+				 offset, nr_segs,
+				 (rw == WRITE) ? next3_get_block_dio : next3_get_block,
+				 NULL);
 #else
 	ret = blockdev_direct_IO(rw, iocb, inode, inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,

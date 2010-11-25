@@ -33,6 +33,7 @@ file_store
 file_perm
 file_read
 file
+hooks_dio
 hooks_data
 hooks_delete
 hooks_jbd

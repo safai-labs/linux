@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-rc4 (15-Nov-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-rc5 (25-Nov-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -100,18 +100,22 @@
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 enum next3_bh_state_bits {
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
-	BH_Tracked_Read = 30,	/* Buffer read I/O is being tracked,
+	BH_Tracked_Read = 28,	/* Buffer read I/O is being tracked,
 							 * to serialize write I/O to block device.
 							 * that is, don't write over this block
 							 * until I finished reading it. */
 #endif
-	BH_Partial_Write = 31,	/* Buffer should be read before write */
+	BH_Partial_Write = 29,	/* Buffer should be uptodate before write */
+	BH_Direct_IO = 30,		/* Buffer is under direct I/O */
+	BH_Move_Data = 31,		/* Data block may need to be moved-on-write */
 };
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_READ
 BUFFER_FNS(Tracked_Read, tracked_read)
 #endif
 BUFFER_FNS(Partial_Write, partial_write)
+BUFFER_FNS(Direct_IO, direct_io)
+BUFFER_FNS(Move_Data, move_data)
 #endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
@@ -138,7 +142,7 @@ extern int next3_snapshot_take(struct inode *inode);
 /* original meaning - allocate missing blocks and indirect blocks */
 #define SNAPMAP_WRITE	0x1
 /* creating COWed block - handle COW race conditions */
-#define SNAPMAP_COW	0x2
+#define SNAPMAP_COW		0x2
 /* moving blocks to snapshot - allocate only indirect blocks */
 #define SNAPMAP_MOVE	0x4
 /* bypass journal and sync allocated indirect blocks directly to disk */
@@ -498,10 +502,13 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 /*
- * check if @inode data blocks should be moved-on-write
+ * check if the data blocks of @inode should be moved-on-write
  */
 static inline int next3_snapshot_should_move_data(struct inode *inode)
 {
+	if (!NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
+		return 0;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_excluded(inode))
 		return 0;

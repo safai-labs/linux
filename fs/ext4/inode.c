@@ -1146,21 +1146,20 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		/* should move 1 data block to snapshot? */
 		err = ext4_snapshot_get_move_access(handle, inode,
 				first_block, 0);
-		if (err) {
-			/* do not map found block. */
-			
+		if (err)
+			/* do not map found block */
 			partial = chain + depth - 1;
-			if (!(flags & EXT4_GET_BLOCKS_CREATE))
-				/*
-				 * This is a lookup. Return EXT4_MAP_MOW via 
-				 * map->m_flags to tell ext4_map_blocks() that 
-				 * the found block should be moved to snapshot. 
-				 */
-				map->m_flags |= EXT4_MAP_MOW;
-		}
 		if (err < 0)
 			/* cleanup the whole chain and exit */
 			goto cleanup;
+		if (err > 0 && !(flags & EXT4_GET_BLOCKS_CREATE)) {
+			/*
+			 * This is a lookup. Return EXT4_MAP_MOW via 
+			 * map->m_flags to tell ext4_map_blocks() that 
+			 * the found block should be moved to snapshot. 
+			 */
+			map->m_flags |= EXT4_MAP_MOW;
+		}
 	}
 
 #endif
@@ -1564,15 +1563,26 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/*
-	 * If mow is needed on the requested block and 
-	 * request comes from delayed-allocation-write path,
-	 * we do mow here. This will avoid an extra lookup 
- 	 * in delayed-allocation-write path.
- 	 */
-	if (retval >0 && (map->m_flags & EXT4_MAP_MOW) 
-		&& (flags & EXT4_GET_BLOCKS_DELAY_CREATE)) {
-		flags |= EXT4_GET_BLOCKS_CREATE;
+	if (retval > 0 && (map->m_flags & EXT4_MAP_MOW)) {
+		/*
+		 * If mow is needed on the requested block and 
+		 * request comes from delayed-allocation-write path,
+		 * we do mow here. This will avoid an extra lookup 
+		 * in delayed-allocation-write path.
+		 */
+		if (flags & EXT4_GET_BLOCKS_DELAY_CREATE)
+			flags |= EXT4_GET_BLOCKS_CREATE;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DIO
+		/*
+		 * If mow is needed on the requested block and 
+		 * request comes from async-direct-io-write path,
+		 * we return an unmapped buffer to fall back to buffered I/O.
+		 */
+		if (flags & EXT4_GET_BLOCKS_PRE_IO) {
+			map->m_flags &= ~EXT4_MAP_MAPPED; 
+			retval = 0;
+		}
+#endif
 	}
 	/* Clear EXT4_MAP_MOW, it is not needed any more. */
 	map->m_flags &= ~EXT4_MAP_MOW; 
@@ -3957,6 +3967,31 @@ static int ext4_releasepage(struct page *page, gfp_t wait)
 		return try_to_free_buffers(page);
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DIO
+/*
+ * ext4_get_block_dio used when preparing for a DIO write
+ * to indirect mapped files with snapshots.
+ */
+int ext4_get_block_dio(struct inode *inode, sector_t iblock,
+		   struct buffer_head *bh, int create)
+{
+	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
+
+	/*
+	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
+	 * but we know this is a write, so we need to check if block
+	 * needs to be moved to snapshot and fall back to buffered I/O.
+	 * ext4_map_blocks() will return an unmapped buffer if block
+	 * is not allocated or if it needs to be moved to snapshot.
+	 */
+	if (ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE|
+			EXT4_GET_BLOCKS_PRE_IO;
+
+	return _ext4_get_block(inode, iblock, bh, flags);
+}
+
+#endif
 /*
  * O_DIRECT for ext3 (or indirect map) based files
  *
@@ -3981,15 +4016,6 @@ static ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
 	size_t count = iov_length(iov, nr_segs);
 	int retries = 0;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	/*
-	 * snapshot support for direct I/O is not implemented,
-	 * so direct I/O is disabled when there are active snapshots.
-	 */
-	if (ext4_snapshot_has_active(inode->i_sb))
-		return -EOPNOTSUPP;
-
-#endif
 	if (rw == WRITE) {
 		loff_t final_size = offset + count;
 
@@ -4021,6 +4047,9 @@ retry:
 		ret = blockdev_direct_IO(rw, iocb, inode,
 				 inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DIO
+				 (rw == WRITE) ? ext4_get_block_dio :
+#endif
 				 ext4_get_block, NULL);
 
 		if (unlikely((rw & WRITE) && ret < 0)) {

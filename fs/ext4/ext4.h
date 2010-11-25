@@ -52,6 +52,7 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+#define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
@@ -2415,8 +2416,8 @@ enum ext4_state_bits {
 BUFFER_FNS(Uninit, uninit)
 TAS_BUFFER_FNS(Uninit, uninit)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-BUFFER_FNS(Partial_Write, partial_write)
 BUFFER_FNS(Move_On_Write, move_on_write)
+BUFFER_FNS(Partial_Write, partial_write)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 BUFFER_FNS(Tracked_Read, tracked_read)
 #endif

@@ -1836,6 +1836,21 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		       sb->s_id, le32_to_cpu(features));
 		goto failed_mount;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+	/* Next3 mandatory features */
+	if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		printk(KERN_ERR "NEXT3-fs: %s: couldn't mount because of "
+		       "missing has_snapshot feature.\n", sb->s_id);
+		goto failed_mount;
+	}
+	if (!NEXT3_HAS_COMPAT_FEATURE(sb,
+				NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
+		printk(KERN_ERR "NEXT3-fs: %s: couldn't mount because of "
+		       "missing exclude_inode feature.\n", sb->s_id);
+		goto failed_mount;
+	}
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
 	/*
 	 * Large file size enabled file system can only be mounted
@@ -2141,7 +2156,7 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
 
-	/* Next3 unsupported features */
+	/* Next3 unsupported mount options */
 	if (test_opt(sb,DATA_FLAGS) != NEXT3_MOUNT_ORDERED_DATA) {
 		printk(KERN_ERR "NEXT3-fs: data=%s mode is not supported\n",
 				data_mode_string(test_opt(sb,DATA_FLAGS)));

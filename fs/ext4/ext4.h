@@ -11,6 +11,9 @@
  *  linux/include/linux/minix_fs.h
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _EXT4_H
@@ -33,6 +36,25 @@
 #include <linux/compat.h>
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifndef EXT4_SUPER_MAGIC
+#define EXT4_SUPER_MAGIC EXT3_SUPER_MAGIC
+/* if the kernel was not patched, ext4 is compiled as standalone module */
+#define CONFIG_EXT4_FS_STANDALONE
+#endif
+
+#ifdef CONFIG_EXT4_FS_STANDALONE
+/* configuration options for standalone module */
+#define CONFIG_EXT4_DEFAULTS_TO_ORDERED
+#define CONFIG_EXT4_FS_XATTR
+#define CONFIG_EXT4_FS_SECURITY
+#define CONFIG_EXT4_FS_DEBUG
+#endif
+#if defined(CONFIG_EXT4_FS_STANDALONE) && defined(CONFIG_FS_POSIX_ACL)
+#define CONFIG_EXT4_FS_POSIX_ACL
+#endif
+
+#endif
 /*
  * The fourth extended filesystem constants/structures
  */

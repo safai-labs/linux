@@ -21,6 +21,7 @@
 #include <linux/fs.h>
 #include <linux/jbd2.h>
 #include "ext4.h"
+#include "snapshot_debug.h"
 
 #define EXT4_JOURNAL(inode)	(EXT4_SB((inode)->i_sb)->s_journal)
 

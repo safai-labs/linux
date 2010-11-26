@@ -18,6 +18,7 @@
 #include <linux/version.h>
 #include <linux/delay.h>
 #include "ext4_jbd2.h"
+#include "snapshot_debug.h"
 
 
 #define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (1-Nov-2010)"
@@ -118,11 +119,13 @@ extern void ext4_snapshot_destroy(struct super_block *sb);
 
 static inline int init_ext4_snapshot(void)
 {
+	init_ext4_snapshot_debug();
 	return 0;
 }
 
 static inline void exit_ext4_snapshot(void)
 {
+	exit_ext4_snapshot_debug();
 }
 
 

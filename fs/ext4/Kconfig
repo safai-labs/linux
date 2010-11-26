@@ -75,6 +75,14 @@ config EXT4_FS_SECURITY
 	  If you are not using a security module that requires using
 	  extended attributes for file security labels, say N.
 
+config EXT4_FS_DEBUG
+	bool "snapshot debugging support"
+	depends on EXT4_FS && DEBUG_FS
+	default y
+	help
+	  Control snapshot debug level via debugfs entry /ext4/snapshot-debug.
+	  Control snapshot unit tests via debugfs entries /ext4/test-XXX.
+
 config EXT4_FS_SNAPSHOT
 	bool "snapshot support"
 	depends on EXT4_FS

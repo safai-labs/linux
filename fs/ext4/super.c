@@ -2279,7 +2279,11 @@ static loff_t ext4_max_bitmap_size(int bits, int has_huge_files)
 
 	res += 1LL << (bits-2);
 	res += 1LL << (2*(bits-2));
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	res += EXT4_SNAPSHOT_NTIND_BLOCKS * (1LL << (3*(bits-2)));
+#else
 	res += 1LL << (3*(bits-2));
+#endif
 	res <<= bits;
 	if (res > upper_limit)
 		res = upper_limit;
@@ -3177,6 +3181,18 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount;
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	/*
+	 * Large file size enabled file system can only be mounted
+	 * read-write on 32-bit systems if kernel is built with CONFIG_LBDAF
+	 */
+	if (!(sb->s_flags & MS_RDONLY) && sizeof(blkcnt_t) < sizeof(u64)) {
+		printk(KERN_ERR "EXT4-fs: Filesystem with snapshots support "
+				"cannot be mounted RDWR without "
+				"CONFIG_LBDAF");
+		goto failed_mount;
+	}
+#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Block size must be equal to page size */

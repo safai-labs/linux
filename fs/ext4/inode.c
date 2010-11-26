@@ -326,6 +326,9 @@ static int ext4_block_to_path(struct inode *inode,
 		double_blocks = (1 << (ptrs_bits * 2));
 	int n = 0;
 	int final = 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	int tind;
+#endif
 
 	if (i_block < direct_blocks) {
 		offsets[n++] = i_block;
@@ -345,6 +348,18 @@ static int ext4_block_to_path(struct inode *inode,
 		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
 		offsets[n++] = i_block & (ptrs - 1);
 		final = ptrs;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	} else if (ext4_snapshot_file(inode) &&
+			(tind = (i_block >> (ptrs_bits * 3))) <
+			EXT4_SNAPSHOT_NTIND_BLOCKS) {
+		/* use up to 4 triple indirect blocks to map 2^32 blocks */
+		i_block -= (tind << (ptrs_bits * 3));
+		offsets[n++] = EXT4_TIND_BLOCK + tind;
+		offsets[n++] = i_block >> (ptrs_bits * 2);
+		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
+		offsets[n++] = i_block & (ptrs - 1);
+		final = ptrs;
+#endif
 	} else {
 		ext4_warning(inode->i_sb, "block %lu > max in inode %lu",
 			     i_block + direct_blocks +
@@ -4683,6 +4698,15 @@ void ext4_truncate(struct inode *inode)
 	ext4_lblk_t last_block;
 	unsigned blocksize = inode->i_sb->s_blocksize;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	/* prevent partial truncate of snapshot files */
+	if (ext4_snapshot_file(inode) && inode->i_size != 0) {
+		snapshot_debug(1, "snapshot file (%lu) cannot be partly "
+				"truncated!\n", inode->i_ino);
+		return;
+	}
+
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
 	/* prevent truncate of files on snapshot list */
 	if (ext4_snapshot_list(inode)) {
@@ -4808,6 +4832,22 @@ do_indirects:
 	case EXT4_TIND_BLOCK:
 		;
 	}
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	if (ext4_snapshot_file(inode)) {
+		int i;
+
+		/* Kill the remaining snapshot file triple indirect trees */
+		for (i = 1; i < EXT4_SNAPSHOT_NTIND_BLOCKS; i++) {
+			nr = i_data[EXT4_TIND_BLOCK + i];
+			if (!nr)
+				continue;
+			ext4_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
+			i_data[EXT4_TIND_BLOCK + i] = 0;
+		}
+	}
+
+#endif
 
 	up_write(&ei->i_data_sem);
 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
@@ -5034,7 +5074,21 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 	struct inode *inode = &(ei->vfs_inode);
 	struct super_block *sb = inode->i_sb;
 
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	if (ext4_snapshot_file(inode)) {
+		/* we never set i_blocks_high, but fsck may do it when it fixes
+		   i_blocks */
+		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
+					le32_to_cpu(raw_inode->i_blocks_lo);
+		if (ei->i_flags & EXT4_HUGE_FILE_FL) {
+			/* i_blocks represent file system block size */
+			return i_blocks  << (inode->i_blkbits - 9);
+		} else {
+			return i_blocks;
+		}
+	} else
+#endif
+ 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
 		/* we are using combined 48 bit field */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
@@ -5102,9 +5156,15 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		 * recovery code: that's fine, we're about to complete
 		 * the process of deleting those. */
 	}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	ei->i_flags = le32_to_cpu(raw_inode->i_flags);
+	inode->i_blocks = ext4_inode_blocks(raw_inode, ei);
+#else
+
 	ei->i_flags = le32_to_cpu(raw_inode->i_flags);
 	inode->i_blocks = ext4_inode_blocks(raw_inode, ei);
 	ei->i_file_acl = le32_to_cpu(raw_inode->i_file_acl_lo);
+#endif
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_64BIT))
 		ei->i_file_acl |=
 			((__u64)le16_to_cpu(raw_inode->i_file_acl_high)) << 32;
@@ -5125,6 +5185,20 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 
 	if (ext4_snapshot_file(inode)) {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+		/*
+		 * ei->i_data[] has more blocks than raw_inode->i_block[].
+		 * Snapshot files don't use the first EXT4_NDIR_BLOCKS of
+		 * ei->i_data[] and store the extra blocks at the
+		 * begining of raw_inode->i_block[].
+		 */
+		for (block = EXT4_N_BLOCKS; block < EXT4_SNAPSHOT_N_BLOCKS;
+				block++) {
+			ei->i_data[block] =
+				raw_inode->i_block[block-EXT4_N_BLOCKS];
+			ei->i_data[block-EXT4_N_BLOCKS] = 0;
+		}
+#endif
 		ei->i_next_snapshot_ino =
 			le32_to_cpu(raw_inode->i_next_snapshot);
 		/*
@@ -5290,7 +5364,11 @@ static int ext4_inode_blocks_set(handle_t *handle,
 	}
 	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE))
 		return -EFBIG;
-
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	/* snapshot files may be represented as huge files */
+	if (!ext4_snapshot_file(inode))
+		return -EFBIG;
+#endif
 	if (i_blocks <= 0xffffffffffffULL) {
 		/*
 		 * i_blocks can be represented in a 48 bit variable
@@ -5376,7 +5454,7 @@ static int ext4_do_update_inode(handle_t *handle,
 	if (ei->i_disksize > 0x7fffffffULL) {
 		struct super_block *sb = inode->i_sb;
 		if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_LARGE_FILE) ||
+                                        EXT4_FEATURE_RO_COMPAT_LARGE_FILE) ||
 				EXT4_SB(sb)->s_es->s_rev_level ==
 				cpu_to_le32(EXT4_GOOD_OLD_REV)) {
 			/* If this is the first large file
@@ -5420,6 +5498,19 @@ static int ext4_do_update_inode(handle_t *handle,
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 	if (ext4_snapshot_file(inode)) {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+		/*
+		 * ei->i_data[] has more blocks than raw_inode->i_block[].
+		 * Snapshot files don't use the first EXT4_NDIR_BLOCKS of
+		 * ei->i_data[] and store the extra blocks at the
+		 * begining of raw_inode->i_block[].
+		 */
+		for (block = EXT4_N_BLOCKS; block < EXT4_SNAPSHOT_N_BLOCKS;
+				block++) {
+			raw_inode->i_block[block-EXT4_N_BLOCKS] =
+				ei->i_data[block];
+		}
+#endif
 		raw_inode->i_next_snapshot =
 			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */
@@ -5436,6 +5527,12 @@ static int ext4_do_update_inode(handle_t *handle,
 
 	ext4_update_inode_fsync_trans(handle, inode, 0);
 out_brelse:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+		ext4_warning(inode->i_sb,
+				"ino=%lu, i_blocks=%lld is too big",
+				inode->i_ino, (long long)inode->i_blocks);
+#endif
+
 	brelse(bh);
 	ext4_std_error(inode->i_sb, err);
 	return err;

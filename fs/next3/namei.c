@@ -22,6 +22,9 @@
  *	Christopher Li, 2002
  *  Hash Tree Directory indexing cleanup
  *	Theodore Ts'o, 2002
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/fs.h>
@@ -40,6 +43,7 @@
 #include "namei.h"
 #include "xattr.h"
 #include "acl.h"
+#include "snapshot.h"
 
 /*
  * define how far ahead to read directories while searching them.
@@ -1645,8 +1649,17 @@ static int next3_delete_entry (handle_t *handle,
 		if (!next3_check_dir_entry("next3_delete_entry", dir, de, bh, i))
 			return -EIO;
 		if (de == de_del)  {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+			int err;
+
+			BUFFER_TRACE(bh, "get_write_access");
+			err = next3_journal_get_write_access(handle, bh);
+			if (err)
+				return err;
+#else
 			BUFFER_TRACE(bh, "get_write_access");
 			next3_journal_get_write_access(handle, bh);
+#endif
 			if (pde)
 				pde->rec_len = next3_rec_len_to_disk(
 					next3_rec_len_from_disk(pde->rec_len) +
@@ -1799,7 +1812,20 @@ retry:
 		goto out_stop;
 	}
 	BUFFER_TRACE(dir_block, "get_write_access");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	err = next3_journal_get_write_access(handle, dir_block);
+	if (err) {
+		drop_nlink(inode); /* is this nlink == 0? */
+		unlock_new_inode(inode);
+		/* no need to check for errors - we failed anyway */
+		(void) next3_mark_inode_dirty(handle, inode);
+		iput(inode);
+		brelse(dir_block);
+		goto out_stop;
+	}
+#else
 	next3_journal_get_write_access(handle, dir_block);
+#endif
 	de = (struct next3_dir_entry_2 *) dir_block->b_data;
 	de->inode = cpu_to_le32(inode->i_ino);
 	de->name_len = 1;
@@ -1920,7 +1946,28 @@ static int empty_dir (struct inode * inode)
  * At filesystem recovery time, we walk this list deleting unlinked
  * inodes and truncating linked inodes in next3_orphan_cleanup().
  */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+/*
+ * On errors, next3_std_error() is called and transaction is aborted.
+ */
 int next3_orphan_add(handle_t *handle, struct inode *inode)
+{
+	struct super_block *sb = inode->i_sb;
+	/*
+	 * only get the field address from the super block structs
+	 * the content of the field will only be changed under lock_super()
+	 */
+	return next3_inode_list_add(handle, inode, &NEXT_ORPHAN(inode),
+			&NEXT3_SB(sb)->s_es->s_last_orphan,
+			&NEXT3_SB(sb)->s_orphan, "orphan");
+}
+
+int next3_inode_list_add(handle_t *handle, struct inode *inode,
+		__u32 *i_next, __le32 *s_last,
+		struct list_head *s_list, const char *name)
+#else
+int next3_orphan_add(handle_t *handle, struct inode *inode)
+#endif
 {
 	struct super_block *sb = inode->i_sb;
 	struct next3_iloc iloc;
@@ -1955,9 +2002,18 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	if (err)
 		goto out_unlock;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	snapshot_debug(4, "add inode %lu to %s list\n",
+			inode->i_ino, name);
+
+	/* Insert this inode at the head of the on-disk inode list... */
+	*i_next = le32_to_cpu(*s_last);
+	*s_last = cpu_to_le32(inode->i_ino);
+#else
 	/* Insert this inode at the head of the on-disk orphan list... */
 	NEXT_ORPHAN(inode) = le32_to_cpu(NEXT3_SB(sb)->s_es->s_last_orphan);
 	NEXT3_SB(sb)->s_es->s_last_orphan = cpu_to_le32(inode->i_ino);
+#endif
 	err = next3_journal_dirty_metadata(handle, NEXT3_SB(sb)->s_sbh);
 	rc = next3_mark_iloc_dirty(handle, inode, &iloc);
 	if (!err)
@@ -1972,11 +2028,22 @@ int next3_orphan_add(handle_t *handle, struct inode *inode)
 	 * This is safe: on error we're going to ignore the orphan list
 	 * anyway on the next recovery. */
 	if (!err)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+		list_add(&NEXT3_I(inode)->i_orphan, s_list);
+#else
 		list_add(&NEXT3_I(inode)->i_orphan, &NEXT3_SB(sb)->s_orphan);
+#endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	snapshot_debug(4, "last_%s will point to inode %lu\n",
+			name, inode->i_ino);
+	snapshot_debug(4, "%s inode %lu will point to inode %d\n",
+			name, inode->i_ino, *i_next);
+#else
 	jbd_debug(4, "superblock will point to %lu\n", inode->i_ino);
 	jbd_debug(4, "orphan inode %lu will point to %d\n",
 			inode->i_ino, NEXT_ORPHAN(inode));
+#endif
 out_unlock:
 	mutex_unlock(&NEXT3_SB(sb)->s_orphan_lock);
 	next3_std_error(inode->i_sb, err);
@@ -1987,7 +2054,28 @@ out_unlock:
  * next3_orphan_del() removes an unlinked or truncated inode from the list
  * of such inodes stored on disk, because it is finally being cleaned up.
  */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
 int next3_orphan_del(handle_t *handle, struct inode *inode)
+{
+	struct super_block *sb = inode->i_sb;
+	/*
+	 * only get the field address from the super block structs
+	 * the content of the field will only be changed under lock_super()
+	 */
+	return next3_inode_list_del(handle, inode, &NEXT_ORPHAN(inode),
+			&NEXT3_SB(sb)->s_es->s_last_orphan,
+			&NEXT3_SB(sb)->s_orphan, "orphan");
+}
+
+#define NEXT_INODE_OFFSET (((char *)inode)-((char *)i_next))
+#define NEXT_INODE(i_prev) (*(__u32 *)(((char *)i_prev)-NEXT_INODE_OFFSET))
+
+int next3_inode_list_del(handle_t *handle, struct inode *inode,
+		__u32 *i_next, __le32 *s_last,
+		struct list_head *s_list, const char *name)
+#else
+int next3_orphan_del(handle_t *handle, struct inode *inode)
+#endif
 {
 	struct list_head *prev;
 	struct next3_inode_info *ei = NEXT3_I(inode);
@@ -2000,11 +2088,20 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	if (list_empty(&ei->i_orphan))
 		goto out;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	ino_next = *i_next;
+#else
 	ino_next = NEXT_ORPHAN(inode);
+#endif
 	prev = ei->i_orphan.prev;
 	sbi = NEXT3_SB(inode->i_sb);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	snapshot_debug(4, "remove inode %lu from %s list\n", inode->i_ino,
+		       name);
+#else
 	jbd_debug(4, "remove inode %lu from orphan list\n", inode->i_ino);
+#endif
 
 	list_del_init(&ei->i_orphan);
 
@@ -2019,30 +2116,53 @@ int next3_orphan_del(handle_t *handle, struct inode *inode)
 	if (err)
 		goto out_err;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	if (prev == s_list) {
+		snapshot_debug(4, "last_%s will point to inode %lu\n", name,
+				ino_next);
+#else
 	if (prev == &sbi->s_orphan) {
 		jbd_debug(4, "superblock will point to %lu\n", ino_next);
+#endif
 		BUFFER_TRACE(sbi->s_sbh, "get_write_access");
 		err = next3_journal_get_write_access(handle, sbi->s_sbh);
 		if (err)
 			goto out_brelse;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+		*s_last = cpu_to_le32(ino_next);
+#else
 		sbi->s_es->s_last_orphan = cpu_to_le32(ino_next);
+#endif
 		err = next3_journal_dirty_metadata(handle, sbi->s_sbh);
 	} else {
 		struct next3_iloc iloc2;
 		struct inode *i_prev =
 			&list_entry(prev, struct next3_inode_info, i_orphan)->vfs_inode;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+		snapshot_debug(4, "%s inode %lu will point to inode %lu\n",
+			  name, i_prev->i_ino, ino_next);
+#else
 		jbd_debug(4, "orphan inode %lu will point to %lu\n",
 			  i_prev->i_ino, ino_next);
+#endif
 		err = next3_reserve_inode_write(handle, i_prev, &iloc2);
 		if (err)
 			goto out_brelse;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+		NEXT_INODE(i_prev) = ino_next;
+#else
 		NEXT_ORPHAN(i_prev) = ino_next;
+#endif
 		err = next3_mark_iloc_dirty(handle, i_prev, &iloc2);
 	}
 	if (err)
 		goto out_brelse;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	*i_next = 0;
+#else
 	NEXT_ORPHAN(inode) = 0;
+#endif
 	err = next3_mark_iloc_dirty(handle, inode, &iloc);
 
 out_err:
@@ -2154,6 +2274,16 @@ static int next3_unlink(struct inode * dir, struct dentry *dentry)
 			      inode->i_ino, inode->i_nlink);
 		inode->i_nlink = 1;
 	}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
+	/* prevent unlink of files on snapshot list */
+	if (inode->i_nlink == 1 &&
+		next3_snapshot_list(inode)) {
+		snapshot_debug(1, "snapshot (%u) cannot be unlinked!\n",
+				inode->i_generation);
+		retval = -EPERM;
+		goto end_unlink;
+	}
+#endif
 	retval = next3_delete_entry(handle, dir, de, bh);
 	if (retval)
 		goto end_unlink;
@@ -2347,6 +2477,12 @@ static int next3_rename (struct inode * old_dir, struct dentry *old_dentry,
 		if (!new_inode && new_dir!=old_dir &&
 				new_dir->i_nlink >= NEXT3_LINK_MAX)
 			goto end_rename;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+		BUFFER_TRACE(dir_bh, "get_write_access");
+		retval = next3_journal_get_write_access(handle, dir_bh);
+		if (retval)
+			goto end_rename;
+#endif
 	}
 	if (!new_bh) {
 		retval = next3_add_entry (handle, new_dentry, old_inode);
@@ -2354,7 +2490,13 @@ static int next3_rename (struct inode * old_dir, struct dentry *old_dentry,
 			goto end_rename;
 	} else {
 		BUFFER_TRACE(new_bh, "get write access");
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+		retval = next3_journal_get_write_access(handle, new_bh);
+		if (retval)
+			goto end_rename;
+#else
 		next3_journal_get_write_access(handle, new_bh);
+#endif
 		new_de->inode = cpu_to_le32(old_inode->i_ino);
 		if (NEXT3_HAS_INCOMPAT_FEATURE(new_dir->i_sb,
 					      NEXT3_FEATURE_INCOMPAT_FILETYPE))
@@ -2411,8 +2553,10 @@ static int next3_rename (struct inode * old_dir, struct dentry *old_dentry,
 	old_dir->i_ctime = old_dir->i_mtime = CURRENT_TIME_SEC;
 	next3_update_dx_flag(old_dir);
 	if (dir_bh) {
+#ifndef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
 		BUFFER_TRACE(dir_bh, "get_write_access");
 		next3_journal_get_write_access(handle, dir_bh);
+#endif
 		PARENT_INO(dir_bh->b_data) = cpu_to_le32(new_dir->i_ino);
 		BUFFER_TRACE(dir_bh, "call next3_journal_dirty_metadata");
 		next3_journal_dirty_metadata(handle, dir_bh);

@@ -681,6 +681,7 @@ struct ext4_inode {
 		struct {
 			__le32  l_i_version;
 		} linux1;
+
 		struct {
 			__u32  h_i_translator;
 		} hurd1;
@@ -806,7 +807,11 @@ do {									       \
 #define i_disk_version osd1.linux1.l_i_version
 
 #if defined(__KERNEL__) || defined(__linux__)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
+#define i_next_snapshot	osd1.linux1.l_i_version
+#else
 #define i_reserved1	osd1.linux1.l_i_reserved1
+#endif
 #define i_file_acl_high	osd2.linux2.l_i_file_acl_high
 #define i_blocks_high	osd2.linux2.l_i_blocks_high
 #define i_uid_low	i_uid

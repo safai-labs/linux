@@ -104,6 +104,52 @@
 #define EXT4_QUOTA_INIT_BLOCKS(sb) 0
 #define EXT4_QUOTA_DEL_BLOCKS(sb) 0
 #endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
+/*
+ * This struct is binary compatible to struct handle_s in include/linux/jbd.h
+ * for building a standalone ext4 module.
+ * XXX: be aware of changes to the original struct!!!
+ */
+struct ext4_handle_s
+{
+	/* Which compound transaction is this update a part of? */
+	transaction_t		*h_transaction;
+
+	/* Number of remaining buffers we are allowed to dirty: */
+	int			h_buffer_credits;
+
+	/* Reference count on this handle */
+	int			h_ref;
+
+	/* Field for caller's use to track errors through large fs */
+	/* operations */
+	int			h_err;
+
+	/* Flags [no locking] */
+	unsigned int	h_sync:		1;	/* sync-on-close */
+	unsigned int	h_jdata:	1;	/* force data journaling */
+	unsigned int	h_aborted:	1;	/* fatal error on handle */
+	unsigned int	h_cowing:	1;	/* COWing block to snapshot */
+
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	struct lockdep_map	h_lockdep_map;
+#endif
+};
+
+#ifndef _EXT4_HANDLE_T
+#define _EXT4_HANDLE_T
+typedef struct ext4_handle_s		ext4_handle_t;	/* Ext4 COW handle */
+#endif
+
+#define IS_COWING(handle) \
+	((ext4_handle_t *)(handle))->h_cowing
+
+#define trace_cow_add(handle, name, num)
+#define trace_cow_inc(handle, name)
+
+#endif
+
 #define EXT4_MAXQUOTAS_TRANS_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_TRANS_BLOCKS(sb))
 #define EXT4_MAXQUOTAS_INIT_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_INIT_BLOCKS(sb))
 #define EXT4_MAXQUOTAS_DEL_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_DEL_BLOCKS(sb))
@@ -133,8 +179,15 @@ void ext4_journal_abort_handle(const char *caller, unsigned int line,
 int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 				   handle_t *handle, struct buffer_head *bh);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,handle_t *handle,
+				struct inode *inode, struct buffer_head *bh);
+#else
+
 int __ext4_journal_get_write_access(const char *where, unsigned int line,
 				    handle_t *handle, struct buffer_head *bh);
+
+#endif
 
 int __ext4_forget(const char *where, unsigned int line, handle_t *handle,
 		  int is_metadata, struct inode *inode,
@@ -152,8 +205,17 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 
 #define ext4_journal_get_undo_access(handle, bh) \
 	__ext4_journal_get_undo_access(__func__, __LINE__, (handle), (bh))
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+#define ext4_journal_get_write_access(handle, bh) \
+  __ext4_journal_get_write_access_inode(__func__,__LINE__, (handle), NULL, (bh))
+#define ext4_journal_get_write_access_inode(handle, inode, bh) \
+  __ext4_journal_get_write_access_inode(__func__,__LINE__, (handle), (inode), \
+					       (bh))
+#else
 #define ext4_journal_get_write_access(handle, bh) \
 	__ext4_journal_get_write_access(__func__, __LINE__, (handle), (bh))
+#endif
 #define ext4_forget(handle, is_metadata, inode, bh, block_nr) \
 	__ext4_forget(__func__, __LINE__, (handle), (is_metadata), (inode), \
 		      (bh), (block_nr))

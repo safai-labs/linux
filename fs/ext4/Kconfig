@@ -98,3 +98,13 @@ config EXT4_DEBUG
 
 	  If you select Y here, then you will be able to turn on debugging
 	  with a command such as "echo 1 > /sys/kernel/debug/ext4/mballoc-debug"
+
+config EXT4_FS_SNAPSHOT_HOOKS_JBD
+	bool "snapshot hooks - inside JBD hooks"
+	depends on EXT4_FS_SNAPSHOT
+	default y
+	help
+	  Before every meta data buffer write, the journal API is called,
+	  namely, one of the ext4_journal_get_XXX_access() functions.
+	  We use these journal hooks to call the snapshot API,
+	  before every meta data buffer write.

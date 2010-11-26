@@ -107,6 +107,58 @@
  * Block access functions
  */
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+/*
+ * get_write_access() is called before writing to a metadata block
+ * if @inode is not NULL, then this is an inode's indirect block
+ * otherwise, this is a file system global metadata block
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_write_access(handle_t *handle,
+		struct inode *inode, struct buffer_head *bh)
+{
+	return ext4_snapshot_cow(handle, inode, bh, 1);
+}
+
+/*
+ * called from ext4_journal_get_undo_access(),
+ * which is called for group bitmap block from:
+ * 1. ext4_free_blocks_sb_inode() before deleting blocks
+ * 2. ext4_new_blocks() before allocating blocks
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_undo_access(handle_t *handle,
+		struct buffer_head *bh)
+{
+	return ext4_snapshot_cow(handle, NULL, bh, 1);
+}
+
+/*
+ * get_create_access() is called after allocating a new metadata block
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_create_access(handle_t *handle,
+		struct buffer_head *bh)
+{
+	/*
+	 * This block shouldn't need to be COWed if get_delete_access() was
+	 * called for all deleted blocks.  However, it may need to be COWed
+	 * if fsck was run and if it had freed some blocks without moving them
+	 * to snapshot.  In the latter case, -EIO will be returned.
+	 */
+	return ext4_snapshot_cow(handle, NULL, bh, 0);
+}
+
+#endif
 
 /*
  * Snapshot constructor/destructor

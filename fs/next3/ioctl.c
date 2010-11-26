@@ -5,6 +5,9 @@
  * Remy Card (card@masi.ibp.fr)
  * Laboratoire MASI - Institut Blaise Pascal
  * Universite Pierre et Marie Curie (Paris VI)
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/fs.h>
@@ -16,6 +19,7 @@
 #include <linux/time.h>
 #include <linux/compat.h>
 #include <asm/uaccess.h>
+#include "snapshot.h"
 
 long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -29,6 +33,9 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case NEXT3_IOC_GETFLAGS:
 		next3_get_inode_flags(ei);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		next3_snapshot_get_flags(ei, filp);
+#endif
 		flags = ei->i_flags & NEXT3_FL_USER_VISIBLE;
 		return put_user(flags, (int __user *) arg);
 	case NEXT3_IOC_SETFLAGS: {
@@ -37,6 +44,9 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		struct next3_iloc iloc;
 		unsigned int oldflags;
 		unsigned int jflag;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		unsigned int snapflags = 0;
+#endif
 
 		if (!is_owner_or_cap(inode))
 			return -EACCES;
@@ -57,6 +67,10 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (IS_NOQUOTA(inode))
 			goto flags_out;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* update snapshot 'open' flag under i_mutex */
+		next3_snapshot_get_flags(ei, filp);
+#endif
 		oldflags = ei->i_flags;
 
 		/* The JOURNAL_DATA flag is modifiable only by root */
@@ -82,6 +96,37 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				goto flags_out;
 		}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/*
+		 * Snapshot file flags can only be changed by
+		 * the relevant capability and under snapshot_mutex lock.
+		 */
+		snapflags = ((flags | oldflags) & NEXT3_FL_SNAPSHOT_MASK);
+		if (snapflags) {
+			if (!capable(CAP_SYS_RESOURCE)) {
+				/* indicate snapshot_mutex not taken */
+				snapflags = 0;
+				goto flags_out;
+			}
+
+			/*
+			 * snapshot_mutex should be held throughout the trio
+			 * snapshot_{set_flags,take,update}().  It must be taken
+			 * before starting the transaction, otherwise
+			 * journal_lock_updates() inside snapshot_take()
+			 * can deadlock:
+			 * A: journal_start()
+			 * A: snapshot_mutex_lock()
+			 * B: journal_start()
+			 * B: snapshot_mutex_lock() (waiting for A)
+			 * A: journal_stop()
+			 * A: snapshot_take() ->
+			 * A: 	journal_lock_updates() (waiting for B)
+			 */
+			mutex_lock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+		}
+
+#endif
 		handle = next3_journal_start(inode, 1);
 		if (IS_ERR(handle)) {
 			err = PTR_ERR(handle);
@@ -95,7 +140,13 @@ long next3_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 		flags = flags & NEXT3_FL_USER_MODIFIABLE;
 		flags |= oldflags & ~NEXT3_FL_USER_MODIFIABLE;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		err = next3_snapshot_set_flags(handle, inode, flags);
+		if (err)
+			goto flags_err;
+#else
 		ei->i_flags = flags;
+#endif
 
 		next3_set_inode_flags(inode);
 		inode->i_ctime = CURRENT_TIME_SEC;
@@ -108,7 +159,30 @@ flags_err:
 
 		if ((jflag ^ oldflags) & (NEXT3_JOURNAL_DATA_FL))
 			err = next3_change_inode_journal_flag(inode, jflag);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		if (err)
+			goto flags_out;
+
+		if (!(oldflags & NEXT3_SNAPFILE_LIST_FL) &&
+				(flags & NEXT3_SNAPFILE_LIST_FL))
+			/* setting list flag - take snapshot */
+			err = next3_snapshot_take(inode);
+#endif
 flags_out:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		if (snapflags & NEXT3_SNAPFILE_LIST_FL) {
+			/* if clearing list flag, cleanup snapshot list */
+			int ret, cleanup = !(flags & NEXT3_SNAPFILE_LIST_FL);
+
+			/* update/cleanup snapshots list even if take failed */
+			ret = next3_snapshot_update(inode->i_sb, cleanup, 0);
+			if (!err)
+				err = ret;
+		}
+
+		if (snapflags)
+			mutex_unlock(&NEXT3_SB(inode->i_sb)->s_snapshot_mutex);
+#endif
 		mutex_unlock(&inode->i_mutex);
 		mnt_drop_write(filp->f_path.mnt);
 		return err;
@@ -238,12 +312,19 @@ setrsvsz_out:
 			err = -EFAULT;
 			goto group_extend_out;
 		}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* avoid snapshot_take() in the middle of group_extend() */
+		mutex_lock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 		err = next3_group_extend(sb, NEXT3_SB(sb)->s_es, n_blocks_count);
 		journal_lock_updates(NEXT3_SB(sb)->s_journal);
 		err2 = journal_flush(NEXT3_SB(sb)->s_journal);
 		journal_unlock_updates(NEXT3_SB(sb)->s_journal);
 		if (err == 0)
 			err = err2;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		mutex_unlock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 group_extend_out:
 		mnt_drop_write(filp->f_path.mnt);
 		return err;
@@ -266,12 +347,19 @@ group_extend_out:
 			goto group_add_out;
 		}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		/* avoid snapshot_take() in the middle of group_add() */
+		mutex_lock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 		err = next3_group_add(sb, &input);
 		journal_lock_updates(NEXT3_SB(sb)->s_journal);
 		err2 = journal_flush(NEXT3_SB(sb)->s_journal);
 		journal_unlock_updates(NEXT3_SB(sb)->s_journal);
 		if (err == 0)
 			err = err2;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL
+		mutex_unlock(&NEXT3_SB(sb)->s_snapshot_mutex);
+#endif
 group_add_out:
 		mnt_drop_write(filp->f_path.mnt);
 		return err;

@@ -1968,6 +1968,11 @@ void journal_put_journal_head(struct journal_head *jh)
 u8 journal_enable_debug __read_mostly;
 EXPORT_SYMBOL(journal_enable_debug);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+const u8 journal_handle_size = sizeof(handle_t);
+EXPORT_SYMBOL(journal_handle_size);
+
+#endif
 static struct dentry *jbd_debugfs_dir;
 static struct dentry *jbd_debug;
 

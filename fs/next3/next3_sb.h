@@ -11,6 +11,8 @@
  *  linux/include/linux/minix_fs_sb.h
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
+ *
+ *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _LINUX_NEXT3_SB
@@ -21,9 +23,31 @@
 #include <linux/wait.h>
 #include <linux/blockgroup_lock.h>
 #include <linux/percpu_counter.h>
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#include <linux/mutex.h>
+#endif
 #endif
 #include <linux/rbtree.h>
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/*
+ * third extended-fs per-block-group data in memory
+ */
+struct next3_group_info {
+	/*
+	 * Fast cache for location of exclude/COW bitmap blocks.
+	 * Exclude bitmap blocks are allocated offline by mke2fs/tune2fs.
+	 * Location of exclude bitmap blocks is read from exclude inode to
+	 * initialize bg_exclude_bitmap on mount time.
+	 * bg_cow_bitmap is reset to zero on mount time and on every snapshot
+	 * take and initialized lazily on first block group write access.
+	 * bg_cow_bitmap is protected by sb_bgl_lock().
+	 */
+	unsigned long bg_exclude_bitmap;/* Exclude bitmap cache */
+	unsigned long bg_cow_bitmap;	/* COW bitmap cache */
+};
+
+#endif
 /*
  * third extended-fs super-block data in memory
  */
@@ -40,6 +64,9 @@ struct next3_sb_info {
 	unsigned long s_groups_count;	/* Number of groups in the fs */
 	unsigned long s_overhead_last;  /* Last calculated overhead */
 	unsigned long s_blocks_last;    /* Last seen block count */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	loff_t s_bitmap_maxbytes;	/* max bytes for bitmap files */
+#endif
 	struct buffer_head * s_sbh;	/* Buffer containing the super block */
 	struct next3_super_block * s_es;	/* Pointer to the super block in the buffer */
 	struct buffer_head ** s_group_desc;
@@ -76,6 +103,14 @@ struct next3_sb_info {
 	struct mutex s_resize_lock;
 	unsigned long s_commit_interval;
 	struct block_device *journal_bdev;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	struct next3_group_info *s_group_info;	/* [ sb_bgl_lock ] */
+	struct mutex s_snapshot_mutex;		/* protects 2 fields below: */
+	struct inode *s_active_snapshot;	/* [ s_snapshot_mutex ] */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST
+	struct list_head s_snapshot_list;	/* [ s_snapshot_mutex ] */
+#endif
+#endif
 #ifdef CONFIG_JBD_DEBUG
 	struct timer_list turn_ro_timer;	/* For turning read-only (crash simulation) */
 	wait_queue_head_t ro_wait_queue;	/* For people waiting for the fs to go read-only */

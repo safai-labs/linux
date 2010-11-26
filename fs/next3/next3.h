@@ -11,6 +11,9 @@
  *  linux/include/linux/minix_fs.h
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
+ *
+ * Copyright (C) 2008-2010 CTERA Networks
+ * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _LINUX_NEXT3_H
@@ -19,6 +22,25 @@
 #include <linux/types.h>
 #include <linux/magic.h>
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#ifndef NEXT3_SUPER_MAGIC
+#define NEXT3_SUPER_MAGIC EXT3_SUPER_MAGIC
+/* if the kernel was not patched, next3 is compiled as standalone module */
+#define CONFIG_NEXT3_FS_STANDALONE
+#endif
+
+#ifdef CONFIG_NEXT3_FS_STANDALONE
+/* configuration options for standalone module */
+#define CONFIG_NEXT3_DEFAULTS_TO_ORDERED
+#define CONFIG_NEXT3_FS_XATTR
+#define CONFIG_NEXT3_FS_SECURITY
+#define CONFIG_NEXT3_FS_DEBUG
+#endif
+#if defined(CONFIG_NEXT3_FS_STANDALONE) && defined(CONFIG_FS_POSIX_ACL)
+#define CONFIG_NEXT3_FS_POSIX_ACL
+#endif
+
+#endif
 /*
  * The second extended filesystem constants/structures
  */
@@ -59,6 +81,12 @@
 #define NEXT3_UNDEL_DIR_INO	 6	/* Undelete directory inode */
 #define NEXT3_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define NEXT3_JOURNAL_INO	 8	/* Journal inode */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+#define NEXT3_EXCLUDE_INO		 9	/* Snapshot exclude inode */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+#define NEXT3_EXCLUDE_INO_OLD		10	/* Old exclude inode */
+#endif
 
 /* First non-reserved inode for old next3 filesystems */
 #define NEXT3_GOOD_OLD_FIRST_INO	11
@@ -97,6 +125,7 @@
 				 NEXT3_GOOD_OLD_FIRST_INO : \
 				 (s)->s_first_ino)
 #endif
+#define NEXT3_BLOCK_ALIGN(size, blkbits)	ALIGN((size), (1 << (blkbits)))
 
 /*
  * Macro-instructions used to manage fragments
@@ -149,6 +178,21 @@ struct next3_group_desc
 #define	NEXT3_DIND_BLOCK			(NEXT3_IND_BLOCK + 1)
 #define	NEXT3_TIND_BLOCK			(NEXT3_DIND_BLOCK + 1)
 #define	NEXT3_N_BLOCKS			(NEXT3_TIND_BLOCK + 1)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+/*
+ * Snapshot files have different indirection mapping that can map up to 2^32
+ * logical blocks, so they can cover the mapped filesystem block address space.
+ * Next3 must use either 4K or 8K blocks (depending on PAGE_SIZE).
+ * With 8K blocks, 1 triple indirect block maps 2^33 logical blocks.
+ * With 4K blocks (the system default), each triple indirect block maps 2^30
+ * logical blocks, so 4 triple indirect blocks map 2^32 logical blocks.
+ * Snapshot files in small filesystems (<= 4G), use only 1 double indirect
+ * block to map the entire filesystem.
+ */
+#define	NEXT3_SNAPSHOT_NTIND_BLOCKS	4
+#define	NEXT3_SNAPSHOT_N_BLOCKS		(NEXT3_TIND_BLOCK + \
+					 NEXT3_SNAPSHOT_NTIND_BLOCKS)
+#endif
 
 /*
  * Inode flags
@@ -173,8 +217,81 @@ struct next3_group_desc
 #define NEXT3_NOTAIL_FL			0x00008000 /* file tail should not be merged */
 #define NEXT3_DIRSYNC_FL			0x00010000 /* dirsync behaviour (directories only) */
 #define NEXT3_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT3_HUGE_FILE_FL		0x00040000 /* Set to each huge file */
+/* snapshot non-persistent flags overriding unused compression flags */
+#define NEXT3_SNAPFILE_LIST_FL		0x00000100 /* snapshot is on list (S) */
+#define NEXT3_SNAPFILE_ENABLED_FL	0x00000200 /* snapshot is enabled (n) */
+#define NEXT3_SNAPFILE_ACTIVE_FL	0x00000400 /* snapshot is active  (a) */
+#define NEXT3_SNAPFILE_INUSE_FL		0x00000800 /* snapshot is in-use  (p) */
+/* snapshot persistent flags */
+#define NEXT3_SNAPFILE_FL		0x01000000 /* snapshot file (x) */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+#define NEXT3_NOCOW_FL			0x02000000 /* do not COW (z) */
+#endif
+#define NEXT3_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted (s) */
+#define NEXT3_SNAPFILE_SHRUNK_FL	0x08000000 /* snapshot was shrunk (h) */
+/* more snapshot non-persistent flags */
+#define NEXT3_SNAPFILE_OPEN_FL		0x10000000 /* snapshot is mounted (o) */
+/* end of snapshot flags */
+#endif
 #define NEXT3_RESERVED_FL		0x80000000 /* reserved for next3 lib */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/* snapshot inherited-only flags (modifiable only for directories) */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+#define NEXT3_FL_SNAPSHOT_INHERITED		\
+	(NEXT3_SNAPFILE_FL|NEXT3_NOCOW_FL)
+#else
+#define NEXT3_FL_SNAPSHOT_INHERITED		\
+	NEXT3_SNAPFILE_FL
+#endif
+
+/* snapshot file persistent read-write flags */
+#define NEXT3_FL_SNAPSHOT_RW_MASK		\
+	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
+
+/* snapshot file persistent read-only flags */
+#define NEXT3_FL_SNAPSHOT_RO_MASK		\
+	 (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
+
+/* snapshot file non-persistent status flags */
+#define NEXT3_FL_SNAPSHOT_DYN_MASK		\
+	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL| \
+	 NEXT3_SNAPFILE_ACTIVE_FL|NEXT3_SNAPFILE_INUSE_FL| \
+	 NEXT3_SNAPFILE_OPEN_FL)
+
+/* snapshot flags restricted to snapshot files (all but NOCOW) */
+#define NEXT3_FL_SNAPSHOT_MASK			\
+	(NEXT3_FL_SNAPSHOT_RW_MASK|NEXT3_FL_SNAPSHOT_RO_MASK| \
+	 NEXT3_FL_SNAPSHOT_DYN_MASK|NEXT3_SNAPFILE_FL)
+
+/* snapshot flags modifiable by chattr */
+#define NEXT3_FL_SNAPSHOT_MODIFIABLE		\
+	(NEXT3_FL_SNAPSHOT_INHERITED|NEXT3_FL_SNAPSHOT_RW_MASK)
+
+/* snapshot flags visible to lsattr */
+#define NEXT3_FL_SNAPSHOT_VISIBLE			\
+	(NEXT3_FL_SNAPSHOT_MODIFIABLE|NEXT3_FL_SNAPSHOT_RO_MASK| \
+	 NEXT3_FL_SNAPSHOT_DYN_MASK)
+
+/* User visible flags */
+#define NEXT3_FL_USER_VISIBLE		\
+	(NEXT3_FL_SNAPSHOT_VISIBLE|0x0007DFFF)
+
+/* User modifiable flags */
+#define NEXT3_FL_USER_MODIFIABLE	\
+	(NEXT3_FL_SNAPSHOT_MODIFIABLE|0x000380FF)
+
+/* Flags that should be inherited by new inodes from their parent. */
+#define NEXT3_FL_INHERITED (NEXT3_SECRM_FL | NEXT3_UNRM_FL | NEXT3_COMPR_FL |\
+		NEXT3_SYNC_FL | NEXT3_IMMUTABLE_FL | NEXT3_APPEND_FL |\
+		NEXT3_NODUMP_FL | NEXT3_NOATIME_FL | NEXT3_COMPRBLK_FL|\
+		NEXT3_NOCOMPR_FL | NEXT3_JOURNAL_DATA_FL |\
+		NEXT3_NOTAIL_FL | NEXT3_DIRSYNC_FL |\
+		NEXT3_FL_SNAPSHOT_INHERITED)
+
+#else
 #define NEXT3_FL_USER_VISIBLE		0x0003DFFF /* User visible flags */
 #define NEXT3_FL_USER_MODIFIABLE		0x000380FF /* User modifiable flags */
 
@@ -184,6 +301,7 @@ struct next3_group_desc
 			   NEXT3_NODUMP_FL | NEXT3_NOATIME_FL | NEXT3_COMPRBLK_FL|\
 			   NEXT3_NOCOMPR_FL | NEXT3_JOURNAL_DATA_FL |\
 			   NEXT3_NOTAIL_FL | NEXT3_DIRSYNC_FL)
+#endif
 
 /* Flags that are appropriate for regular files (all but dir-specific ones). */
 #define NEXT3_REG_FLMASK (~(NEXT3_DIRSYNC_FL | NEXT3_TOPDIR_FL))
@@ -287,11 +405,19 @@ struct next3_inode {
 	__le32	i_dtime;	/* Deletion Time */
 	__le16	i_gid;		/* Low 16 bits of Group Id */
 	__le16	i_links_count;	/* Links count */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	__le32	i_blocks_lo;	/* Blocks count */
+#else
 	__le32	i_blocks;	/* Blocks count */
+#endif
 	__le32	i_flags;	/* File flags */
 	union {
 		struct {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
+			__le32	l_i_next_snapshot; /* On-disk snapshot list */
+#else
 			__u32  l_i_reserved1;
+#endif
 		} linux1;
 		struct {
 			__u32  h_i_translator;
@@ -307,8 +433,12 @@ struct next3_inode {
 	__le32	i_faddr;	/* Fragment address */
 	union {
 		struct {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+			__le16	l_i_blocks_high;/* Blocks count */
+#else
 			__u8	l_i_frag;	/* Fragment number */
 			__u8	l_i_fsize;	/* Fragment size */
+#endif
 			__u16	i_pad1;
 			__le16	l_i_uid_high;	/* these 2 fields    */
 			__le16	l_i_gid_high;	/* were reserved2[0] */
@@ -336,9 +466,17 @@ struct next3_inode {
 #define i_size_high	i_dir_acl
 
 #if defined(__KERNEL__) || defined(__linux__)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_STORE
+#define i_next_snapshot	osd1.linux1.l_i_next_snapshot
+#else
 #define i_reserved1	osd1.linux1.l_i_reserved1
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+#define i_blocks_high	osd2.linux2.l_i_blocks_high
+#else
 #define i_frag		osd2.linux2.l_i_frag
 #define i_fsize		osd2.linux2.l_i_fsize
+#endif
 #define i_uid_low	i_uid
 #define i_gid_low	i_gid
 #define i_uid_high	osd2.linux2.l_i_uid_high
@@ -376,6 +514,27 @@ struct next3_inode {
 #define EXT2_FLAGS_SIGNED_HASH		0x0001  /* Signed dirhash in use */
 #define EXT2_FLAGS_UNSIGNED_HASH	0x0002  /* Unsigned dirhash in use */
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FLAGS_IS_SNAPSHOT_OLD	0x0010 /* Old is snapshot */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#define NEXT3_FLAGS_FIX_SNAPSHOT	0x0020 /* Corrupted snapshot */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+#define NEXT3_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FLAGS_BIG_JOURNAL_OLD	0x1000  /* Old big journal */
+#endif
+
+#define NEXT3_SET_FLAGS(sb,mask) \
+	NEXT3_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
+#define NEXT3_CLEAR_FLAGS(sb,mask) \
+	NEXT3_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#define NEXT3_TEST_FLAG(sb,flag) \
+	(NEXT3_SB(sb)->s_es->s_flags & cpu_to_le32(NEXT3_FLAGS_##flag))
+#endif
 
 /*
  * Mount flags
@@ -528,7 +687,29 @@ struct next3_super_block {
 	__u8	s_log_groups_per_flex;  /* FLEX_BG group size */
 	__u8	s_reserved_char_pad2;
 	__le16  s_reserved_pad;
-	__u32   s_reserved[162];        /* Padding to the end of the block */
+	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+	/*
+	 * Snapshots support valid if NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT
+	 * is set.
+	 */
+/*180*/	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
+	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
+	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
+	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+	__u32	s_reserved[151];	/* Padding to the end of the block */
+	/* old snapshot field positions */
+/*3F0*/	__le32	s_snapshot_list_old;	/* Old snapshot list head */
+	__le32	s_snapshot_r_blocks_old;/* Old reserved for snapshot */
+	__le32	s_snapshot_id_old;	/* Old active snapshot ID */
+	__le32	s_snapshot_inum_old;	/* Old active snapshot inode */
+#else
+	__u32	s_reserved[155];	/* Padding to the end of the block */
+#endif
+#else
+	__u32   s_reserved[160];        /* Padding to the end of the block */
+#endif
 };
 
 #ifdef __KERNEL__
@@ -548,6 +729,9 @@ static inline int next3_valid_inum(struct super_block *sb, unsigned long ino)
 	return ino == NEXT3_ROOT_INO ||
 		ino == NEXT3_JOURNAL_INO ||
 		ino == NEXT3_RESIZE_INO ||
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+		ino == NEXT3_EXCLUDE_INO ||
+#endif
 		(ino >= NEXT3_FIRST_INO(sb) &&
 		 ino <= le32_to_cpu(NEXT3_SB(sb)->s_es->s_inodes_count));
 }
@@ -584,6 +768,9 @@ static inline void next3_clear_inode_state(struct inode *inode, int bit)
 #endif
 
 #define NEXT_ORPHAN(inode) NEXT3_I(inode)->i_dtime
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define NEXT_SNAPSHOT(inode) (NEXT3_I(inode)->i_next_snapshot_ino)
+#endif
 
 /*
  * Codes for operating systems
@@ -634,24 +821,68 @@ static inline void next3_clear_inode_state(struct inode *inode, int bit)
 #define NEXT3_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x0080 /* Has exclude inode */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FEATURE_COMPAT_BIG_JOURNAL_OLD	0x1000 /* Old big journal */
+#define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE_OLD	0x2000 /* Old exclude inode */
+#endif
 
 #define NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Next3 has snapshots */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
+#define NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
+#define NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
+#define NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
+#endif
 
 #define NEXT3_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define NEXT3_FEATURE_INCOMPAT_FILETYPE		0x0002
 #define NEXT3_FEATURE_INCOMPAT_RECOVER		0x0004 /* Needs recovery */
 #define NEXT3_FEATURE_INCOMPAT_JOURNAL_DEV	0x0008 /* Journal device */
 #define NEXT3_FEATURE_INCOMPAT_META_BG		0x0010
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+#define NEXT3_FEATURE_INCOMPAT_IS_SNAPSHOT	0x2000 /* A snapshot image */
+#endif
 
 #define NEXT3_FEATURE_COMPAT_SUPP	EXT2_FEATURE_COMPAT_EXT_ATTR
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+#define NEXT3_FEATURE_INCOMPAT_SUPP	(NEXT3_FEATURE_INCOMPAT_FILETYPE| \
+					 NEXT3_FEATURE_INCOMPAT_RECOVER| \
+					 NEXT3_FEATURE_INCOMPAT_IS_SNAPSHOT| \
+					 NEXT3_FEATURE_INCOMPAT_META_BG)
+#else
 #define NEXT3_FEATURE_INCOMPAT_SUPP	(NEXT3_FEATURE_INCOMPAT_FILETYPE| \
 					 NEXT3_FEATURE_INCOMPAT_RECOVER| \
 					 NEXT3_FEATURE_INCOMPAT_META_BG)
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
+					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
+					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
+					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD| \
+					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
+#else
+#define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
+					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
+					 NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
+					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
+#endif
+#else
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \
 					 NEXT3_FEATURE_RO_COMPAT_BTREE_DIR)
+#endif
 
 /*
  * Default values for user and/or group using reserved blocks
@@ -854,9 +1085,26 @@ extern next3_fsblk_t next3_new_blocks (handle_t *handle, struct inode *inode,
 			next3_fsblk_t goal, unsigned long *count, int *errp);
 extern void next3_free_blocks (handle_t *handle, struct inode *inode,
 			next3_fsblk_t block, unsigned long count);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+extern void __next3_free_blocks_sb_inode(const char *where, handle_t *handle,
+					 struct super_block *sb,
+					 struct inode *inode,
+					 next3_fsblk_t block,
+					 unsigned long count,
+					 unsigned long *pdquot_freed_blocks);
+
+#define next3_free_blocks_sb(handle, sb, block, count, freed) \
+	__next3_free_blocks_sb_inode(__func__, handle, sb, NULL, block, \
+								count, freed)
+#define next3_free_blocks_sb_inode(handle, sb, inode, block, count, freed) \
+	__next3_free_blocks_sb_inode(__func__, handle, sb, inode, block, \
+								count, freed)
+
+#else
 extern void next3_free_blocks_sb (handle_t *handle, struct super_block *sb,
 				 next3_fsblk_t block, unsigned long count,
 				unsigned long *pdquot_freed_blocks);
+#endif
 extern next3_fsblk_t next3_count_free_blocks (struct super_block *);
 extern void next3_check_blocks_bitmap (struct super_block *);
 extern struct next3_group_desc * next3_get_group_desc(struct super_block * sb,
@@ -902,6 +1150,10 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 	sector_t iblock, unsigned long maxblocks, struct buffer_head *bh_result,
 	int create);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+extern blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
+		struct next3_inode_info *ei);
+#endif
 extern struct inode *next3_iget(struct super_block *, unsigned long);
 extern int  next3_write_inode (struct inode *, struct writeback_control *);
 extern int  next3_setattr (struct dentry *, struct iattr *);
@@ -918,6 +1170,10 @@ extern void next3_get_inode_flags(struct next3_inode_info *);
 extern void next3_set_aops(struct inode *inode);
 extern int next3_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		       u64 start, u64 len);
+#ifdef CONFIG_NEXT3_FS_DEBUG
+extern long next3_fallocate(struct file *file, int mode,
+			loff_t offset, loff_t len);
+#endif
 
 /* ioctl.c */
 extern long next3_ioctl(struct file *, unsigned int, unsigned long);

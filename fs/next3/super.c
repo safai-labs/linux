@@ -2213,11 +2213,13 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 				data_mode_string(test_opt(sb,DATA_FLAGS)));
 		goto failed_mount3;
 	}
+#ifdef CONFIG_QUOTA
 	if (sbi->s_jquota_fmt) {
 		printk(KERN_ERR "NEXT3-fs: journaled quota options are not "
 				"supported.\n");
 		goto failed_mount3;
 	}
+#endif
 
 #endif
 	/*

@@ -1092,29 +1092,27 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (*(partial->p)) {
       int ret;
+#ifdef WARNING_NOT_IMPLEMENTED
       /* old block is being replaced with a new block */
-      // if (buffer_partial_write(bh_result) &&
-      //  !buffer_uptodate(bh_result)) {
-        /* read old block data before moving it to snapshot */
-
-
-        //map_bh(bh_result, inode->i_sb,
-      //     le32_to_cpu(*(partial->p)));
-
-
-      //ll_rw_block(READ, 1, &bh_result);
-      //wait_on_buffer(bh_result);
+       if (buffer_partial_write(bh_result) &&
+        !buffer_uptodate(bh_result)) {
+       /* read old block data before moving it to snapshot */
+      map_bh(bh_result, inode->i_sb,
+           le32_to_cpu(*(partial->p)));
+      ll_rw_block(READ, 1, &bh_result);
+      wait_on_buffer(bh_result);
         /* clear old block mapping */
-        //clear_buffer_mapped(bh_result); //JAMNARE
-      // if (!buffer_uptodate(bh_result)) { //JAMNARE
-      //  err = -EIO;
-      //  goto out_mutex;
-      // }
-      //}
-      // if (buffer_partial_write(bh_result))
+        clear_buffer_mapped(bh_result); //JAMNARE
+      if (!buffer_uptodate(bh_result)) { //JAMNARE
+        err = -EIO;
+        goto out_mutex;
+       }
+      }
+       if (buffer_partial_write(bh_result))
         /* prevent zero out of page in block_write_begin() */
-        //SetPageUptodate(bh_result->b_page);
+       /SetPageUptodate(bh_result->b_page);
 		/* move old block to snapshot */
+#endif
       ret = ext4_snapshot_get_move_access(handle, inode,
                                           le32_to_cpu(*(partial->p)), 1);
       if (ret < 1) {
@@ -1138,7 +1136,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	if (!err)
 		err = ext4_splice_branch(handle, inode, map->m_lblk,
 					 partial, indirect_blks, count);
- out_mutex:
 	if (err)
 		goto cleanup;
 
@@ -1732,6 +1729,7 @@ retry:
 		ret = PTR_ERR(handle);
 		goto out;
 	}
+
 	/* We cannot recurse into the filesystem as the transaction is already
 	 * started */
 	flags |= AOP_FLAG_NOFS;
@@ -5074,22 +5072,8 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 	struct inode *inode = &(ei->vfs_inode);
 	struct super_block *sb = inode->i_sb;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	if (ext4_snapshot_file(inode)) {
-		/* we never set i_blocks_high, but fsck may do it when it fixes
-		   i_blocks */
-		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
-					le32_to_cpu(raw_inode->i_blocks_lo);
-		if (ei->i_flags & EXT4_HUGE_FILE_FL) {
-			/* i_blocks represent file system block size */
-			return i_blocks  << (inode->i_blkbits - 9);
-		} else {
-			return i_blocks;
-		}
-	} else
-#endif
  	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE) || (ext4_snapshot_file(inode))) {
 		/* we are using combined 48 bit field */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
 					le32_to_cpu(raw_inode->i_blocks_lo);
@@ -5156,15 +5140,9 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		 * recovery code: that's fine, we're about to complete
 		 * the process of deleting those. */
 	}
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	ei->i_flags = le32_to_cpu(raw_inode->i_flags);
-	inode->i_blocks = ext4_inode_blocks(raw_inode, ei);
-#else
-
 	ei->i_flags = le32_to_cpu(raw_inode->i_flags);
 	inode->i_blocks = ext4_inode_blocks(raw_inode, ei);
 	ei->i_file_acl = le32_to_cpu(raw_inode->i_file_acl_lo);
-#endif
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_64BIT))
 		ei->i_file_acl |=
 			((__u64)le16_to_cpu(raw_inode->i_file_acl_high)) << 32;
@@ -5200,7 +5178,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		}
 #endif
 		ei->i_next_snapshot_ino =
-			le32_to_cpu(raw_inode->i_next_snapshot);
+			le32_to_cpu(raw_inode->i_disk_version);
 		/*
 		 * Dynamic snapshot flags are not stored on-disk, so
 		 * at this point, we only know that this inode has the
@@ -5362,11 +5340,13 @@ static int ext4_inode_blocks_set(handle_t *handle,
 		ext4_clear_inode_flag(inode, EXT4_INODE_HUGE_FILE);
 		return 0;
 	}
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE))
-		return -EFBIG;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	/* snapshot files may be represented as huge files */
-	if (!ext4_snapshot_file(inode))
+    if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE) && (!ext4_snapshot_file(inode)))
+		return -EFBIG;
+#else
+
+	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE))
 		return -EFBIG;
 #endif
 	if (i_blocks <= 0xffffffffffffULL) {
@@ -5453,10 +5433,7 @@ static int ext4_do_update_inode(handle_t *handle,
 	ext4_isize_set(raw_inode, ei->i_disksize);
 	if (ei->i_disksize > 0x7fffffffULL) {
 		struct super_block *sb = inode->i_sb;
-		if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-                                        EXT4_FEATURE_RO_COMPAT_LARGE_FILE) ||
-				EXT4_SB(sb)->s_es->s_rev_level ==
-				cpu_to_le32(EXT4_GOOD_OLD_REV)) {
+		if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,EXT4_FEATURE_RO_COMPAT_LARGE_FILE) || EXT4_SB(sb)->s_es->s_rev_level == cpu_to_le32(EXT4_GOOD_OLD_REV)) {
 			/* If this is the first large file
 			 * created, add a flag to the superblock.
 			 */
@@ -5511,12 +5488,15 @@ static int ext4_do_update_inode(handle_t *handle,
 				ei->i_data[block];
 		}
 #endif
-		raw_inode->i_next_snapshot =
+		raw_inode->i_disk_version =
 			cpu_to_le32(ei->i_next_snapshot_ino);
-		/* dynamic snapshot flags are not stored on-disk */
+      		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~EXT4_FL_SNAPSHOT_DYN_MASK);
 	}
-
+    else
+          raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+#else
+    raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
 #endif
 
 	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");

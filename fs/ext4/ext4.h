@@ -12,7 +12,7 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  *
- * Copyright (C) 2008-2010 CTERA Networks
+* Copyright (C) 2008-2010 CTERA Networks
  * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
@@ -383,9 +383,11 @@ struct flex_groups {
 #define EXT4_NOTAIL_FL			0x00008000 /* file tail should not be merged */
 #define EXT4_DIRSYNC_FL			0x00010000 /* dirsync behaviour (directories only) */
 #define EXT4_TOPDIR_FL			0x00020000 /* Top of directory hierarchies*/
+#define EXT4_HUGE_FILE_FL               0x00040000 /* Set to each huge file */
+#define EXT4_EXTENTS_FL			0x00080000 /* Inode uses extents */
+#define EXT4_EA_INODE_FL	        0x00200000 /* Inode used for large EA */
+#define EXT4_EOFBLOCKS_FL		0x00400000 /* Blocks allocated beyond EOF */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_HUGE_FILE_FL		0x00040000 /* Set to each huge file */
-/* snapshot non-persistent flags overriding unused compression flags */
 #define EXT4_SNAPFILE_LIST_FL		0x00000100 /* snapshot is on list (S) */
 #define EXT4_SNAPFILE_ENABLED_FL	0x00000200 /* snapshot is enabled (n) */
 #define EXT4_SNAPFILE_ACTIVE_FL	0x00000400 /* snapshot is active  (a) */
@@ -399,11 +401,6 @@ struct flex_groups {
 #define EXT4_SNAPFILE_TAGGED_FL	0x20000000 /* snapshot is tagged  (t) */
 /* end of snapshot flags */
 #endif
-
-#define EXT4_HUGE_FILE_FL               0x00040000 /* Set to each huge file */
-#define EXT4_EXTENTS_FL			0x00080000 /* Inode uses extents */
-#define EXT4_EA_INODE_FL	        0x00200000 /* Inode used for large EA */
-#define EXT4_EOFBLOCKS_FL		0x00400000 /* Blocks allocated beyond EOF */
 #define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
@@ -825,11 +822,7 @@ do {									       \
 #define i_disk_version osd1.linux1.l_i_version
 
 #if defined(__KERNEL__) || defined(__linux__)
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
-#define i_next_snapshot	osd1.linux1.l_i_version
-#else
 #define i_reserved1	osd1.linux1.l_i_reserved1
-#endif
 #define i_file_acl_high	osd2.linux2.l_i_file_acl_high
 #define i_blocks_high	osd2.linux2.l_i_blocks_high
 #define i_uid_low	i_uid
@@ -1163,6 +1156,10 @@ struct ext4_super_block {
 	__u8	s_reserved_char_pad;
 	__le16  s_reserved_pad;
 	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
+    __le32	s_snapshot_inum;	/* Inode number of active snapshot */
+	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
+	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
+	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
 #define EXT4_S_ERR_START offsetof(struct ext4_super_block, s_error_count)
 	__le32	s_error_count;		/* number of fs errors */
 	__le32	s_first_error_time;	/* first time an error happened */
@@ -1177,28 +1174,15 @@ struct ext4_super_block {
 	__u8	s_last_error_func[32];	/* function where the error happened */
 #define EXT4_S_ERR_END offsetof(struct ext4_super_block, s_mount_opts)
 	__u8	s_mount_opts[64];
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	/*
-	 * Snapshots support valid if EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT
-	 * is set.
-	 */
-/*180*/	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
-	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
-	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
-	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-	__u32	s_reserved[103];	/* Padding to the end of the block */
+	__u32	s_reserved[108];	/* Padding to the end of the block */
 	/* old snapshot field positions */
 /*3F0*/	__le32	s_snapshot_list_old;	/* Old snapshot list head */
 	__le32	s_snapshot_r_blocks_old;/* Old reserved for snapshot */
 	__le32	s_snapshot_id_old;	/* Old active snapshot ID */
 	__le32	s_snapshot_inum_old;	/* Old active snapshot inode */
 #else
-
-	__u32	s_reserved[107];	/* Padding to the end of the block */
-#endif
-#else
-	__le32	s_reserved[112];        /* Padding to the end of the block */
+  __le32	s_reserved[112];        /* Padding to the end of the bloc */
 #endif
 };
 
@@ -1477,8 +1461,8 @@ EXT4_INODE_BIT_FNS(state, state_flags)
 #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Ext4 has snapshots */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT  0x0080 /* Ext4 has snapshots */
 #endif
 #define EXT4_FEATURE_RO_COMPAT_HUGE_FILE        0x0008
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
@@ -1508,7 +1492,7 @@ EXT4_INODE_BIT_FNS(state, state_flags)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-                     EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT|\
+                     EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
 					 EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
 					 EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD| \

@@ -2994,10 +2994,12 @@ static void ext4_destroy_lazyinit_thread(void)
 	}
 }
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-static char *data_mode_string(unsigned long mode)
+static char *journal_mode_string(struct super_block *sb)
 {
-	switch (mode) {
-	case EXT4_MOUNT_JOURNAL_DATA:
+  switch (test_opt(sb,DATA_FLAGS)) {
+	case 0:
+      return "no-journal";
+    case EXT4_MOUNT_JOURNAL_DATA:
 		return "journal";
 	case EXT4_MOUNT_ORDERED_DATA:
 		return "ordered";
@@ -3006,7 +3008,6 @@ static char *data_mode_string(unsigned long mode)
 	}
 	return "unknown";
 }
-
 #endif
 static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 				__releases(kernel_lock)
@@ -3181,22 +3182,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		goto failed_mount;
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	/*
-	 * Large file size enabled file system can only be mounted
-	 * read-write on 32-bit systems if kernel is built with CONFIG_LBDAF
-	 */
-	if (!(sb->s_flags & MS_RDONLY) && sizeof(blkcnt_t) < sizeof(u64)) {
-		printk(KERN_ERR "EXT4-fs: Filesystem with snapshots support "
-				"cannot be mounted RDWR without "
-				"CONFIG_LBDAF");
-		goto failed_mount;
-	}
-#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Block size must be equal to page size */
-	if (blocksize != SNAPSHOT_BLOCK_SIZE) {
+	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT) && blocksize != SNAPSHOT_BLOCK_SIZE) {
 #else
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
@@ -3232,8 +3221,13 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE | EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+#else
+    has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE);
+#endif
 	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits,
 						      has_huge_files);
 	sb->s_maxbytes = ext4_max_size(sb->s_blocksize_bits, has_huge_files);
@@ -3569,16 +3563,11 @@ no_journal:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 
 	/* Ext4 unsupported features */
-	if (EXT4_SB(sb)->s_journal) {
-      if (test_opt(sb,DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA) {
-		printk(KERN_ERR "EXT4-fs: data=%s mode is not supported\n",
-               data_mode_string(test_opt(sb,DATA_FLAGS)));
+ if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT) && (!EXT4_SB(sb)->s_journal || test_opt(sb,DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA)) {
+              printk(KERN_ERR "EXT4-fs: %s mode is not supported\n",journal_mode_string(sb));
 		goto failed_mount3;
       }
-    }
-    else
-      printk(KERN_ERR "EXT4-fs: data=Out journal mode is not supported\n");
-	if (sbi->s_jquota_fmt) {
+    if (sbi->s_jquota_fmt) {
 		printk(KERN_ERR "EXT4-fs: journaled quota options are not "
 				"supported.\n");
 		goto failed_mount3;

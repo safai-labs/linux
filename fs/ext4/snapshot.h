@@ -314,6 +314,8 @@ static inline int ext4_snapshot_should_move_data(struct inode *inode)
 		return 0;
 #endif
 	/* when a data block is journaled, it is already COWed as metadata */
+    if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+      return 0;
 	if (ext4_should_journal_data(inode))
 		return 0;
 	return 1;

@@ -1209,7 +1209,7 @@ static int ext4_snapshot_disable(struct inode *inode)
 	ei->i_flags &= ~EXT4_SNAPFILE_ENABLED_FL;
 
 	/* invalidate page cache */
-	truncate_inode_pages(&inode->i_data, SNAPSHOT_BYTES_OFFSET);
+	truncate_inode_pages(&inode->i_data, 0);
 
 	/* Don't need i_size_read because we hold i_mutex */
 	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",

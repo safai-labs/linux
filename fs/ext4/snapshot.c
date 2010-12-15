@@ -440,7 +440,7 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	ext4_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
-	int inuse;
+	int inuse, err = 0;
 
 	if (block >= snapshot_blocks)
 		/*
@@ -465,13 +465,8 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (inuse && excluded) {
-		int i, err;
+		int i;
 
-		/* don't COW excluded inode blocks */
-		if (!EXT4_HAS_COMPAT_FEATURE(excluded->i_sb,
-			EXT4_FEATURE_COMPAT_EXCLUDE_INODE))
-			/* no exclude inode/bitmap */
-			return 0;
 		/*
 		 * We should never get here because excluded file blocks should
 		 * be excluded from COW bitmap.  The blocks will not be COWed
@@ -487,13 +482,14 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			excluded->i_ino, bit, bit+inuse-1, block_group);
 		for (i = 0; i < inuse; i++)
 			ext4_clear_bit(bit+i, cow_bh->b_data);
+		inuse = 0;
 		err = ext4_jbd2_file_inode(handle, snapshot);
 		mark_buffer_dirty(cow_bh);
-		return err;
 	}
 
 #endif
-	return inuse;
+	brelse(cow_bh);
+	return err ? err : inuse;
 }
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP

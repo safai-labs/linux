@@ -448,6 +448,14 @@ static inline int ext4_snapshot_should_move_data(struct inode *inode)
 
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+/* tests if the file system has an active snapshot */
+static inline int ext4_snapshot_active(struct ext4_sb_info *sbi)
+{
+	if (unlikely((sbi)->s_active_snapshot))
+		return 1;
+	return 0;
+}
+
 /*
  * tests if the file system has an active snapshot and returns its inode.
  * active snapshot is only changed under journal_lock_updates(),

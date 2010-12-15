@@ -4670,7 +4670,7 @@ static int ext4_statfs(struct dentry *dentry, struct kstatfs *buf)
 	if (buf->f_bfree < ext4_r_blocks_count(es))
 		buf->f_bavail = 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
-	if (sbi->s_active_snapshot) {
+	if (ext4_snapshot_active(sbi)) {
 		if (buf->f_bfree < ext4_r_blocks_count(es) +
 				le64_to_cpu(es->s_snapshot_r_blocks_count))
 			buf->f_bavail = 0;

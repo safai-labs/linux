@@ -109,9 +109,8 @@ ext4_snapshot_complete_cow(handle_t *handle, struct inode *snapshot,
 		struct buffer_head *sbh, struct buffer_head *bh, int sync)
 {
 	int err = 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-	SNAPSHOT_DEBUG_ONCE;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 	/* wait for completion of tracked reads before completing COW */
 	while (bh && buffer_tracked_readers_count(bh) > 0) {
 		snapshot_debug_once(2, "waiting for tracked reads: "
@@ -128,8 +127,8 @@ ext4_snapshot_complete_cow(handle_t *handle, struct inode *snapshot,
 		msleep(1);
 		/* XXX: Should we fail after N retries? */
 	}
-#endif
 
+#endif
 	unlock_buffer(sbh);
 	err = ext4_jbd2_file_inode(handle, snapshot);
 	if (err)
@@ -294,9 +293,6 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	ext4_fsblk_t bitmap_blk;
 	ext4_fsblk_t cow_bitmap_blk;
 	int err = 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_BITMAP
-	SNAPSHOT_DEBUG_ONCE;
-#endif
 
 	desc = ext4_get_group_desc(sb, block_group, NULL);
 	if (!desc)

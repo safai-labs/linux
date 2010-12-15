@@ -511,7 +511,6 @@ static inline void ext4_snapshot_end_pending_cow(struct buffer_head *sbh)
 static inline void ext4_snapshot_test_pending_cow(struct buffer_head *sbh,
 						sector_t blocknr)
 {
-	SNAPSHOT_DEBUG_ONCE;
 	while (buffer_new(sbh)) {
 		/* wait for pending COW to complete */
 		snapshot_debug_once(2, "waiting for pending cow: "

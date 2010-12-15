@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc5 (27-Feb-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc6 (27-Feb-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -128,6 +128,8 @@
 #define SNAPMAP_ISCOW(cmd)	((cmd) & SNAPMAP_COW_BIT)
 #define SNAPMAP_ISMOVE(cmd)	((cmd) & SNAPMAP_MOVE_BIT)
 #define SNAPMAP_ISSYNC(cmd)	((cmd) & SNAPMAP_SYNC_BIT)
+
+/* snapshot.c */
 
 /* helper functions for ext4_snapshot_create() */
 extern int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
@@ -319,15 +321,21 @@ extern int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 
 #endif
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
-extern int ext4_snapshot_get_inode_access(handle_t *handle,
-					   struct inode *inode,
-					   ext4_fsblk_t iblock,
-					   int count, int cmd,
-					   struct inode **prev_snapshot);
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE
 extern void init_ext4_snapshot_cow_cache(void);
+#endif
+
+/* snapshot_ctl.c */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
+
+/*
+ * Snapshot control functions
+ */
+extern void ext4_snapshot_get_flags(struct ext4_inode_info *ei,
+				     struct file *filp);
+extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
+				    unsigned int flags);
+extern int ext4_snapshot_take(struct inode *inode);
 #endif
 
 /*
@@ -353,8 +361,8 @@ static inline void exit_ext4_snapshot(void)
 	exit_ext4_snapshot_debug();
 }
 
-/* inode.c */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+/* snapshot_inode.c */
 extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,
 		struct buffer_head *cow_bh,
@@ -366,7 +374,6 @@ extern int ext4_snapshot_merge_blocks(handle_t *handle,
 		sector_t iblock, unsigned long maxblocks);
 #endif
 
-/* super.c */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* tests if @inode is a snapshot file */
 static inline int ext4_snapshot_file(struct inode *inode)
@@ -560,19 +567,55 @@ static inline int buffer_tracked_readers_count(struct buffer_head *bdev_bh)
 	return atomic_read(&bdev_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
 }
 
+/* buffer.c */
 extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
+
+#ifdef CONFIG_NEXT3_FS_DEBUG
+extern void __next3_trace_bh_count(const char *fn, struct buffer_head *bh);
+
+#define next3_trace_bh_count(bh) __next3_trace_bh_count(__func__, bh)
+#define sb_bread(sb, blk) next3_sb_bread(__func__, sb, blk)
+#define sb_getblk(sb, blk) next3_sb_getblk(__func__, sb, blk)
+#define sb_find_get_block(sb, blk) next3_sb_find_get_block(__func__, sb, blk)
+
+static inline struct buffer_head *
+next3_sb_bread(const char *fn, struct super_block *sb, sector_t block)
+{
+	struct buffer_head *bh;
+	
+	bh = __bread(sb->s_bdev, block, sb->s_blocksize);
+	if (bh)
+		__next3_trace_bh_count(fn, bh);
+	return bh;
+}
+
+static inline struct buffer_head *
+next3_sb_getblk(const char *fn, struct super_block *sb, sector_t block)
+{
+	struct buffer_head *bh;
+	
+	bh = __getblk(sb->s_bdev, block, sb->s_blocksize);
+	if (bh)
+		__next3_trace_bh_count(fn, bh);
+	return bh;
+}
+
+static inline struct buffer_head *
+next3_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
+{
+	struct buffer_head *bh;
+
+	bh = __find_get_block(sb->s_bdev, block, sb->s_blocksize);
+	if (bh)
+		__next3_trace_bh_count(fn, bh);
+	return bh;
+}
+
+#else
+#define next3_trace_bh_count(bh)
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
-/*
- * Snapshot control functions
- */
-extern void ext4_snapshot_get_flags(struct ext4_inode_info *ei,
-				     struct file *filp);
-extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
-				    unsigned int flags);
-extern int ext4_snapshot_take(struct inode *inode);
 
 #endif
 #else /* CONFIG_EXT4_FS_SNAPSHOT */

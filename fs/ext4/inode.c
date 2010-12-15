@@ -839,10 +839,7 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 				return err;
 		}
 		/* charge snapshot file owner for moved blocks */
-		if (dquot_alloc_block(inode, *blks)) {
-			err = -EDQUOT;
-			goto failed;
-		}
+		dquot_alloc_block_nofail(inode, *blks);
 		num = *blks;
 		new_blocks[indirect_blks] = current_block;
 	} else
@@ -5521,9 +5518,20 @@ has_buffer:
 
 int ext4_get_inode_loc(struct inode *inode, struct ext4_iloc *iloc)
 {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+	int in_mem = (!ext4_snapshot_feature(inode->i_sb) &&
+		!ext4_test_inode_state(inode, EXT4_STATE_XATTR));
+	
+	/*
+	 * We have all inode's data except xattrs in memory here,
+	 * but we must always read-in the entire inode block for COW.
+	 */
+	return __ext4_get_inode_loc(inode, iloc, in_mem);
+#else
 	/* We have all inode data except xattrs in memory here. */
 	return __ext4_get_inode_loc(inode, iloc,
 		!ext4_test_inode_state(inode, EXT4_STATE_XATTR));
+#endif
 }
 
 void ext4_set_inode_flags(struct inode *inode)

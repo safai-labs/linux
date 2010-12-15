@@ -29,13 +29,6 @@
  */
 #define ext4_snapblk_t long long
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 34))
-/* one snapshot patch fits all kernel versions */
-#define dquot_file_open generic_file_open
-#define dquot_alloc_block vfs_dq_alloc_block
-#define dquot_free_block vfs_dq_free_block
-#endif
-
 /*
  * We assert that snapshot must use a file system with block size == page
  * size (4K) and that the first file system block is block 0.

@@ -920,7 +920,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 			       count, kd, depth, moved);
 		/* update src and dst inodes blocks usage */
 		dquot_free_block(src, moved);
-		dquot_alloc_block(dst, moved);
+		dquot_alloc_block_nofail(dst, moved);
 		err = next3_journal_dirty_metadata(handle, pD->bh);
 		if (err)
 			goto out;
@@ -1071,10 +1071,7 @@ static int next3_alloc_branch(handle_t *handle, struct inode *inode,
 				return err;
 		}
 		/* charge snapshot file owner for moved blocks */
-		if (dquot_alloc_block(inode, *blks)) {
-			err = -EDQUOT;
-			goto failed;
-		}
+		dquot_alloc_block_nofail(inode, *blks);
 		num = *blks;
 		new_blocks[indirect_blks] = current_block;
 	} else
@@ -1362,7 +1359,16 @@ int next3_get_blocks_handle(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
 #endif
+#endif
 
+
+	J_ASSERT(handle != NULL || create == 0);
+	depth = next3_block_to_path(inode,iblock,offsets,&blocks_to_boundary);
+
+	if (depth == 0)
+		goto out;
+
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_READ
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_LIST_READ
 retry:
 	blocks_to_boundary = 0;
@@ -1402,15 +1408,7 @@ retry:
 		}
 	}
 #endif
-	err = -EIO;
 #endif
-
-
-	J_ASSERT(handle != NULL || create == 0);
-	depth = next3_block_to_path(inode,iblock,offsets,&blocks_to_boundary);
-
-	if (depth == 0)
-		goto out;
 
 	partial = next3_get_branch(inode, depth, offsets, chain, &err);
 
@@ -2815,6 +2813,7 @@ static ssize_t next3_direct_IO(int rw, struct kiocb *iocb,
 	int orphan = 0;
 	size_t count = iov_length(iov, nr_segs);
 	int retries = 0;
+
 	if (rw == WRITE) {
 		loff_t final_size = offset + count;
 
@@ -3953,7 +3952,13 @@ static int __next3_get_inode_loc(struct inode *inode,
 		 * is the only valid inode in the block, we need not read the
 		 * block.
 		 */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_JBD
+		/*  Inode block must be read-in for COW. */
+		if (in_mem && !NEXT3_HAS_RO_COMPAT_FEATURE(inode->i_sb,
+					NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+#else
 		if (in_mem) {
+#endif
 			struct buffer_head *bitmap_bh;
 			struct next3_group_desc *desc;
 			int inodes_per_buffer;

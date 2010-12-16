@@ -68,7 +68,11 @@ struct next3_block_alloc_info {
  * third extended file system inode data in memory
  */
 struct next3_inode_info {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	__le32	i_data[NEXT3_SNAPSHOT_N_BLOCKS]; /* unconverted */
+#else
 	__le32	i_data[15];	/* unconverted */
+#endif
 	__u32	i_flags;
 #ifdef NEXT3_FRAGMENTS
 	__u32	i_faddr;
@@ -106,6 +110,16 @@ struct next3_inode_info {
 
 	struct list_head i_orphan;	/* unlinked but open inodes */
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#define i_snaplist i_orphan
+	/*
+	 * In-memory snapshot list overrides i_orphan to link snapshot inodes,
+	 * but unlike the real orphan list, the next snapshot inode number
+	 * is stored in i_next_snapshot_ino and not in i_dtime
+	 */
+	__u32	i_next_snapshot_ino;
+
+#endif
 	/*
 	 * i_disksize keeps track of what the inode size is ON DISK, not
 	 * in memory.  During truncate, i_size is set to the new size by

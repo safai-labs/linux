@@ -292,6 +292,9 @@ void next3_error (struct super_block * sb, const char * function,
 	vprintk(fmt, args);
 	printk("\n");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	va_end(args);
+	/* record error message in journal super block */
+	va_start(args, fmt);
 	next3_record_journal_err(sb, __func__, function, fmt, args);
 #endif
 	va_end(args);
@@ -389,7 +392,9 @@ void next3_abort (struct super_block * sb, const char * function,
 	vprintk(fmt, args);
 	printk("\n");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	va_end(args);
 	/* record error message in journal super block */
+	va_start(args, fmt);
 	next3_record_journal_err(sb, __func__, function, fmt, args);
 #endif
 	va_end(args);
@@ -420,7 +425,9 @@ void next3_warning (struct super_block * sb, const char * function,
 	vprintk(fmt, args);
 	printk("\n");
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	va_end(args);
 	/* record error message in journal super block */
+	va_start(args, fmt);
 	next3_record_journal_err(sb, __func__, function, fmt, args);
 #endif
 	va_end(args);

@@ -62,7 +62,7 @@ static struct debugfs_blob_wrapper snapshot_version_blob = {
 /*
  * ext4_snapshot_create_debugfs_entry - register ext4 debug hooks
  * Void function doesn't return error if debug hooks are not registered.
- */ 
+ */
 void ext4_snapshot_create_debugfs_entry(void)
 {
 	int i;

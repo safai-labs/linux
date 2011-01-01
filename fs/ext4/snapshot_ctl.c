@@ -89,7 +89,6 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 	return 0;
 }
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 /*
  * ext4_snapshot_reset_bitmap_cache():
@@ -115,7 +114,6 @@ static int ext4_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 #else
 #define ext4_snapshot_reset_bitmap_cache(sb, init) 0
 #endif
-
 
 /*
  * Snapshot constructor/destructor

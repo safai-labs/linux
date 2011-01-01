@@ -19,8 +19,8 @@
 #include "ext4.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
-#define snapshot_debug_hl(n, f, a...)	snapshot_debug_l(n, handle ? 	\
-						 IS_COWING(handle) : 0, f, ## a)
+#define snapshot_debug_hl(n, f, a...) snapshot_debug_l(n, handle ? \
+					IS_COWING(handle) : 0, f, ## a)
 
 /*
  * ext4_snapshot_map_blocks() - helper function for
@@ -38,19 +38,19 @@ int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 			      ext4_fsblk_t *mapped, int cmd)
 {
 	int err;
-    struct ext4_map_blocks map;
-    map.m_len=maxblocks;
-    map.m_pblk=SNAPSHOT_IBLOCK(block);
+	struct ext4_map_blocks map;
+	map.m_len = maxblocks;
+	map.m_pblk = SNAPSHOT_IBLOCK(block);
 #ifdef WARNING_NOT_IMPLEMENTED
-    map.m_flag=?;
+	map.m_flag = ?;
 #endif
-	err = ext4_map_blocks(handle,inode,&map,cmd);
+	err = ext4_map_blocks(handle, inode, &map, cmd);
 	/*
 	 * ext4_get_blocks_handle() returns number of blocks
 	 * mapped. 0 in case of a HOLE.
 	 */
 	if (mapped && err > 0)
-      *mapped=map.m_pblk;
+		*mapped = map.m_pblk;
 
 	snapshot_debug_hl(4, "snapshot (%u) map_blocks "
 			"[%lld/%lld] = [%lld/%lld] "
@@ -62,7 +62,6 @@ int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 	return err;
 }
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 /*
  * ext4_snapshot_get_inode_access() - called from ext4_get_blocks_handle()
@@ -103,9 +102,8 @@ int ext4_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		BUG_ON(handle && IS_COWING(handle));
 #endif
 
-	if (!(flags & EXT4_SNAPFILE_LIST_FL)) {
+	if (!(flags & EXT4_SNAPFILE_LIST_FL))
 		return 0;
-	}
 
 	if (cmd) {
 		/* snapshot inode write access */
@@ -135,7 +133,6 @@ int ext4_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	return ext4_snapshot_is_active(inode) ? 1 : 0;
 }
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 /*
  * COW helper functions
@@ -174,7 +171,6 @@ __ext4_snapshot_copy_bitmap(struct buffer_head *sbh,
 	set_buffer_uptodate(sbh);
 }
 #endif
-
 /*
  * ext4_snapshot_complete_cow()
  * Unlock a newly COWed snapshot buffer and complete the COW operation.
@@ -190,7 +186,7 @@ ext4_snapshot_complete_cow(handle_t *handle,
 	unlock_buffer(sbh);
 	if (handle) {
 #ifdef WARNING_NOT_IMPLEMENTED
-      /*Patch snapshot_block_cow_patch*/
+		/*Patch snapshot_block_cow_patch*/
 		err = ext4_journal_dirty_data(handle, sbh);
 		if (err)
 			goto out;
@@ -243,7 +239,6 @@ void ext4_snapshot_copy_buffer(struct buffer_head *sbh,
 	mark_buffer_dirty(sbh);
 	sync_dirty_buffer(sbh);
 }
-
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 /*
@@ -347,11 +342,11 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (!desc)
 		return NULL;
 
-	bitmap_blk = ext4_block_bitmap(sb,desc);
+	bitmap_blk = ext4_block_bitmap(sb, desc);
 
-	ext4_lock_group(sb,block_group);
+	ext4_lock_group(sb, block_group);
 	cow_bitmap_blk = gi->bg_cow_bitmap;
-	ext4_unlock_group(sb,block_group);
+	ext4_unlock_group(sb, block_group);
 	if (cow_bitmap_blk)
 		return sb_bread(sb, cow_bitmap_blk);
 
@@ -413,9 +408,9 @@ out:
 	}
 
 	/* update or reset COW bitmap cache */
-      ext4_lock_group(sb, block_group);
+	ext4_lock_group(sb, block_group);
 	gi->bg_cow_bitmap = cow_bitmap_blk;
-    ext4_unlock_group(sb, block_group);
+	ext4_unlock_group(sb, block_group);
 
 	return cow_bh;
 }
@@ -461,8 +456,8 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * if the bit is set in the COW bitmap,
 	 * then the block is in use by snapshot
 	 */
-	for (inuse = 0; inuse < maxblocks && bit+inuse < SNAPSHOT_BLOCKS_PER_GROUP;
-			inuse++) {
+	for (inuse = 0; inuse < maxblocks && bit+inuse <
+			 SNAPSHOT_BLOCKS_PER_GROUP; inuse++) {
 		if (!ext4_test_bit(bit+inuse, cow_bh->b_data))
 			break;
 	}
@@ -470,8 +465,6 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	return inuse;
 }
 #endif
-
-
 /*
  * COW functions
  */
@@ -506,7 +499,6 @@ __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 #else
 #define ext4_snapshot_trace_cow(where, handle, sb, inode, bh, block, cmd)
 #endif
-
 
 /*
  * Begin COW or move operation.
@@ -574,7 +566,6 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 		snapshot_debug_hl(4, "active snapshot access denied!\n");
 		return -EPERM;
 	}
-
 
 	/* BEGIN COWing */
 	ext4_snapshot_cow_begin(handle);

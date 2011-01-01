@@ -104,16 +104,14 @@
 #define EXT4_QUOTA_INIT_BLOCKS(sb) 0
 #define EXT4_QUOTA_DEL_BLOCKS(sb) 0
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
-
 /*
  * This struct is binary compatible to struct handle_s in include/linux/jbd.h
  * for building a standalone ext4 module.
  * XXX: be aware of changes to the original struct!!!
  */
-struct ext4_handle_s
-{
+struct ext4_handle_s {
+
 	/* Which compound transaction is this update a part of? */
 	transaction_t		*h_transaction;
 
@@ -150,8 +148,6 @@ typedef struct ext4_handle_s		ext4_handle_t;	/* Ext4 COW handle */
 #define trace_cow_inc(handle, name)
 
 #endif
-
-
 #define EXT4_MAXQUOTAS_TRANS_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_TRANS_BLOCKS(sb))
 #define EXT4_MAXQUOTAS_INIT_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_INIT_BLOCKS(sb))
 #define EXT4_MAXQUOTAS_DEL_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_DEL_BLOCKS(sb))
@@ -182,10 +178,10 @@ int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 				   handle_t *handle, struct buffer_head *bh);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
-int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,handle_t *handle,
-				struct inode *inode, struct buffer_head *bh);
+int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
+					 handle_t *handle, struct inode *inode,
+					 struct buffer_head *bh);
 #else
-
 int __ext4_journal_get_write_access(const char *where, unsigned int line,
 				    handle_t *handle, struct buffer_head *bh);
 
@@ -210,10 +206,11 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 #define ext4_journal_get_write_access(handle, bh) \
-  __ext4_journal_get_write_access_inode(__func__,__LINE__, (handle), NULL, (bh))
+	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
+						 (handle), NULL, (bh))
 #define ext4_journal_get_write_access_inode(handle, inode, bh) \
-  __ext4_journal_get_write_access_inode(__func__,__LINE__, (handle), (inode), \
-					       (bh))
+	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
+						(handle), (inode), (bh))
 #else
 #define ext4_journal_get_write_access(handle, bh) \
 	__ext4_journal_get_write_access(__func__, __LINE__, (handle), (bh))

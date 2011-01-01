@@ -12,7 +12,7 @@
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
  *
-* Copyright (C) 2008-2010 CTERA Networks
+ * Copyright (C) 2008-2010 CTERA Networks
  * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
@@ -439,7 +439,6 @@ struct flex_groups {
 		EXT4_NODUMP_FL | EXT4_NOATIME_FL | EXT4_COMPRBLK_FL|\
 		EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
 		EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL | EXT4_SNAPFILE_FL)
-
 #else
 
 #define EXT4_FL_USER_VISIBLE		0x004BDFFF /* User visible flags */
@@ -998,10 +997,10 @@ struct ext4_inode_info {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
 #define EXT4_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
-#define EXT4_SET_FLAGS(sb,mask) \
-    EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
-#define EXT4_CLEAR_FLAGS(sb,mask) \
-    EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
+#define EXT4_SET_FLAGS(sb, mask) \
+	EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
+#define EXT4_CLEAR_FLAGS(sb, mask) \
+	EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
 #endif
 #endif
 
@@ -1156,7 +1155,7 @@ struct ext4_super_block {
 	__u8	s_reserved_char_pad;
 	__le16  s_reserved_pad;
 	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
-    __le32	s_snapshot_inum;	/* Inode number of active snapshot */
+	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
 	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
 	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
 	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
@@ -1182,7 +1181,7 @@ struct ext4_super_block {
 	__le32	s_snapshot_id_old;	/* Old active snapshot ID */
 	__le32	s_snapshot_inum_old;	/* Old active snapshot inode */
 #else
-  __le32	s_reserved[112];        /* Padding to the end of the bloc */
+	__le32	s_reserved[112];        /* Padding to the end of the bloc */
 #endif
 };
 
@@ -1492,12 +1491,12 @@ EXT4_INODE_BIT_FNS(state, state_flags)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-                     EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
+					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
 					 EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
 					 EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD| \
 					 EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD| \
-				     EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
+					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
 					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
 					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
 					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
@@ -1845,7 +1844,6 @@ extern int ext4_mb_reserve_blocks(struct super_block *, int);
 extern void ext4_discard_preallocations(struct inode *);
 extern int __init ext4_init_mballoc(void);
 extern void ext4_exit_mballoc(void);
-
 extern void ext4_free_blocks(handle_t *handle, struct inode *inode,
 			     struct buffer_head *bh, ext4_fsblk_t block,
 			     unsigned long count, int flags);

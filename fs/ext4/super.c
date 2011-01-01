@@ -2994,12 +2994,13 @@ static void ext4_destroy_lazyinit_thread(void)
 	}
 }
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
+
 static char *journal_mode_string(struct super_block *sb)
 {
-  switch (test_opt(sb,DATA_FLAGS)) {
-	case 0:
-      return "no-journal";
-    case EXT4_MOUNT_JOURNAL_DATA:
+	if (!EXT4_SB(sb)->s_journal)
+		return "no-journal";
+	switch (test_opt(sb, DATA_FLAGS)) {
+	case EXT4_MOUNT_JOURNAL_DATA:
 		return "journal";
 	case EXT4_MOUNT_ORDERED_DATA:
 		return "ordered";
@@ -3009,6 +3010,7 @@ static char *journal_mode_string(struct super_block *sb)
 	return "unknown";
 }
 #endif
+
 static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 				__releases(kernel_lock)
 				__acquires(kernel_lock)
@@ -3185,7 +3187,8 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Block size must be equal to page size */
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT) && blocksize != SNAPSHOT_BLOCK_SIZE) {
+	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)
+		 || blocksize != SNAPSHOT_BLOCK_SIZE) {
 #else
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
@@ -3223,9 +3226,10 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HUGE_FILE | EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE |
+				 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 #else
-    has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
+	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE);
 #endif
 	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits,
@@ -3404,7 +3408,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			memset(sbi->s_group_info, 0, size);
 	}
 	if (sbi->s_group_info == NULL) {
-		printk (KERN_ERR "EXT4-fs: not enough memory for "
+		printk(KERN_ERR "EXT4-fs: not enough memory for "
 				"%lu max groups\n", max_groups);
 		goto failed_mount2;
 	}
@@ -3563,17 +3567,20 @@ no_journal:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 
 	/* Ext4 unsupported features */
- if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT) && (!EXT4_SB(sb)->s_journal || test_opt(sb,DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA)) {
-              printk(KERN_ERR "EXT4-fs: %s mode is not supported\n",journal_mode_string(sb));
-		goto failed_mount3;
-      }
-    if (sbi->s_jquota_fmt) {
-		printk(KERN_ERR "EXT4-fs: journaled quota options are not "
-				"supported.\n");
+	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)
+		 && (!EXT4_SB(sb)->s_journal || test_opt(sb, DATA_FLAGS) !=
+		     EXT4_MOUNT_ORDERED_DATA) && (!test_opt(sb, QUOTA))) {
+		printk(KERN_ERR "EXT4-fs: %s mode is not supported\n",
+			journal_mode_string(sb));
 		goto failed_mount3;
 	}
-
+	if (sbi->s_jquota_fmt) {
+		printk(KERN_ERR "EXT4-fs: journaled quota options are not"
+			" supported.\n");
+		goto failed_mount3;
+	}
 #endif
+
 	/*
 	 * The jbd2_journal_load will have done any necessary log recovery,
 	 * so we can safely mount the rest of the filesystem now.
@@ -3605,7 +3612,6 @@ no_journal:
 		/* XXX: how to fail mount/force read-only at this point? */
 		ext4_error(sb, "load snapshot failed\n");
 #endif
-
 
 	/* determine the minimum size of new large inodes, if present */
 	if (sbi->s_inode_size > EXT4_GOOD_OLD_INODE_SIZE) {
@@ -4906,6 +4912,7 @@ static int __init ext4_init_fs(void)
 	if (err)
 		goto out_fs;
 #endif
+
 	ext4_li_info = NULL;
 	mutex_init(&ext4_li_mtx);
 	return 0;

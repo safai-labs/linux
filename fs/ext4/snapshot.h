@@ -20,7 +20,6 @@
 #include "ext4_jbd2.h"
 #include "snapshot_debug.h"
 
-
 #define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (1-Nov-2010)"
 
 /*
@@ -29,7 +28,7 @@
  */
 #define ext4_snapblk_t long long
 
-#if ( LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34) )
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 34))
 /* one snapshot patch fits all kernel versions */
 #define dquot_file_open generic_file_open
 #define dquot_alloc_block vfs_dq_alloc_block
@@ -88,7 +87,7 @@
 #define SNAPSHOT_SIZE(inode)					\
 	(EXT4_I(inode)->i_disksize - SNAPSHOT_BYTES_OFFSET)
 #define SNAPSHOT_SET_BLOCKS(inode, blocks)			\
-	SNAPSHOT_SET_SIZE((inode), 				\
+	SNAPSHOT_SET_SIZE((inode),				\
 			(loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_BLOCKS(inode)					\
 	(ext4_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
@@ -103,9 +102,8 @@ enum ext4_bh_state_bits {
 };
 
 BUFFER_FNS(Partial_Write, partial_write)
+
 #endif
-
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
  * snapshot_map_blocks() command flags passed to get_blocks_handle() on its
@@ -294,7 +292,6 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 {
 	return ext4_snapshot_move(handle, inode, block, count, 1);
 }
-
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 extern int ext4_snapshot_get_inode_access(handle_t *handle,
@@ -324,7 +321,6 @@ static inline void exit_ext4_snapshot(void)
 	exit_ext4_snapshot_debug();
 }
 
-
 /* balloc.c */
 extern struct buffer_head *read_block_bitmap(struct super_block *sb,
 					     unsigned int block_group);
@@ -337,7 +333,6 @@ extern ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
 					   struct ext4_iloc *iloc);
 
 /* super.c */
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* tests if @inode is a snapshot file */
 static inline int ext4_snapshot_file(struct inode *inode)
@@ -354,7 +349,6 @@ static inline int ext4_snapshot_list(struct inode *inode)
 	return EXT4_I(inode)->i_flags & EXT4_SNAPFILE_LIST_FL;
 }
 #endif
-
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
@@ -384,6 +378,7 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+
 /*
  * check if @inode data blocks should be moved-on-write
  */
@@ -394,14 +389,14 @@ static inline int ext4_snapshot_should_move_data(struct inode *inode)
 		return 0;
 #endif
 	/* when a data block is journaled, it is already COWed as metadata */
-    if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
-      return 0;
+	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+		return 0;
 	if (ext4_should_journal_data(inode))
 		return 0;
 	return 1;
 }
-#endif
 
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * tests if the file system has an active snapshot and returns its inode.
@@ -423,7 +418,6 @@ static inline int ext4_snapshot_is_active(struct inode *inode)
 	return (inode == EXT4_SB(inode->i_sb)->s_active_snapshot);
 }
 #endif
-
-
-
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */
+
+

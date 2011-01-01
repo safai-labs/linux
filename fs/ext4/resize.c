@@ -141,7 +141,11 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh,
 {
 	int err;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+	if (EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, thresh))
+#else
 	if (ext4_handle_has_enough_credits(handle, thresh))
+#endif
 		return 0;
 
 	err = ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA);
@@ -643,6 +647,10 @@ static void update_backups(struct super_block *sb,
 		struct buffer_head *bh;
 
 		/* Out of journal space, and can't get more - abort - so sad */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+		if (!EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1))
+			handle->h_buffer_credits = 0;
+#endif
 		if (ext4_handle_valid(handle) &&
 		    handle->h_buffer_credits == 0 &&
 		    ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA) &&

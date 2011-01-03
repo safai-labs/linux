@@ -426,4 +426,15 @@ static inline int ext4_snapshot_is_active(struct inode *inode)
 #endif
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
+/*
+ * Snapshot control functions
+ */
+extern void ext4_snapshot_get_flags(struct ext4_inode_info *ei,
+				     struct file *filp);
+extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
+				    unsigned int flags);
+extern int ext4_snapshot_take(struct inode *inode);
+
+#endif
 

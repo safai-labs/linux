@@ -98,9 +98,19 @@
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 enum ext4_bh_state_bits {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	BH_Tracked_Read = 30,	/* Buffer read I/O is being tracked,
+				 * to serialize write I/O to block device.
+				 * that is, don't write over this block
+				 * until I finished reading it.
+				 */
+#endif
 	BH_Partial_Write = 31,	/* Buffer should be read before write */
 };
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+BUFFER_FNS(Tracked_Read, tracked_read)
+#endif
 BUFFER_FNS(Partial_Write, partial_write)
 
 #endif
@@ -292,6 +302,10 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 {
 	return ext4_snapshot_move(handle, inode, block, count, 1);
 }
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+extern int ext4_snapshot_get_read_access(struct super_block *sb,
+					  struct buffer_head *bh);
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 extern int ext4_snapshot_get_inode_access(handle_t *handle,
@@ -502,6 +516,36 @@ static inline void ext4_snapshot_test_pending_cow(struct buffer_head *sbh,
 		/* XXX: Should we fail after N retries? */
 	}
 }
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+/*
+ * A tracked reader takes 0x10000 reference counts on the block device buffer.
+ * b_count is not likely to reach 0x10000 by get_bh() calls, but even if it
+ * does, that will only affect the result of buffer_tracked_readers_count().
+ * After 0x10000 subsequent calls to get_bh_tracked_reader(), b_count will
+ * overflow, but that requires 0x10000 parallel readers from 0x10000 different
+ * snapshots and very slow disk I/O...
+ */
+#define BH_TRACKED_READERS_COUNT_SHIFT 16
+
+static inline void get_bh_tracked_reader(struct buffer_head *bdev_bh)
+{
+	atomic_add(1<<BH_TRACKED_READERS_COUNT_SHIFT, &bdev_bh->b_count);
+}
+
+static inline void put_bh_tracked_reader(struct buffer_head *bdev_bh)
+{
+	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &bdev_bh->b_count);
+}
+
+static inline int buffer_tracked_readers_count(struct buffer_head *bdev_bh)
+{
+	return atomic_read(&bdev_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
+}
+
+extern int start_buffer_tracked_read(struct buffer_head *bh);
+extern void cancel_buffer_tracked_read(struct buffer_head *bh);
+extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 #endif
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */
 

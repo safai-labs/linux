@@ -259,6 +259,26 @@ ext4_snapshot_complete_cow(handle_t *handle,
 		struct buffer_head *sbh, struct buffer_head *bh, int sync)
 {
 	int err = 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	SNAPSHOT_DEBUG_ONCE;
+
+	/* wait for completion of tracked reads before completing COW */
+	while (bh && buffer_tracked_readers_count(bh) > 0) {
+		snapshot_debug_once(2, "waiting for tracked reads: "
+			"block = [%llu/%llu], "
+			"tracked_readers_count = %d...\n",
+			SNAPSHOT_BLOCK_TUPLE(bh->b_blocknr),
+			buffer_tracked_readers_count(bh));
+		/*
+		 * Quote from LVM snapshot pending_complete() function:
+		 * "Check for conflicting reads. This is extremely improbable,
+		 *  so msleep(1) is sufficient and there is no need for a wait
+		 *  queue." (drivers/md/dm-snap.c).
+		 */
+		msleep(1);
+		/* XXX: Should we fail after N retries? */
+	}
+#endif
 
 	unlock_buffer(sbh);
 	if (handle) {
@@ -1068,4 +1088,47 @@ out:
 	return err;
 }
 
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+/*
+ * ext4_snapshot_get_read_access - get read through access to block device.
+ * Sanity test to verify that the read block is allocated and not excluded.
+ * This test has performance penalty and is only called if SNAPTEST_READ
+ * is enabled.  An attempt to read through to block device of a non allocated
+ * or excluded block may indicate a corrupted filesystem, corrupted snapshot
+ * or corrupted exclude bitmap.  However, it may also be a read-ahead, which
+ * was not implicitly requested by the user, so be sure to disable read-ahead
+ * on block device (blockdev --setra 0 <bdev>) before enabling SNAPTEST_READ.
+ *
+ * Return values:
+ * = 0 - block is allocated and not excluded
+ * < 0 - error (or block is not allocated or excluded)
+ */
+int ext4_snapshot_get_read_access(struct super_block *sb,
+				   struct buffer_head *bh)
+{
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
+	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
+	struct buffer_head *bitmap_bh;
+	int err = 0;
+
+	if (PageReadahead(bh->b_page))
+		return 0;
+
+	bitmap_bh = read_block_bitmap(sb, block_group);
+	if (!bitmap_bh)
+		return -EIO;
+
+	if (!ext4_test_bit(bit, bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"non-allocated block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		brelse(bitmap_bh);
+		return -EIO;
+	}
+
+
+	brelse(bitmap_bh);
+	return err;
+}
 #endif

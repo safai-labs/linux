@@ -284,6 +284,121 @@ still_busy:
 	return;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+/*
+ * Tracked read functions.
+ * When reading through a ext4 snapshot file hole to a block device block,
+ * all writes to this block need to wait for completion of the async read.
+ * ext4_snapshot_readpage() always calls ext4_read_full_page() to attach
+ * a buffer head to the page and be aware of tracked reads.
+ * ext4_snapshot_get_block() calls start_buffer_tracked_read() to mark both
+ * snapshot page buffer and block device page buffer.
+ * ext4_snapshot_get_block() calls cancel_buffer_tracked_read() if snapshot
+ * doesn't need to read through to the block device.
+ * ext4_read_full_page() calls submit_buffer_tracked_read() to submit a
+ * tracked async read.
+ * end_buffer_async_read() calls end_buffer_tracked_read() to complete the
+ * tracked read operation.
+ * The only lock needed in all these functions is PageLock on the snapshot page,
+ * which is guarantied in readpage() and verified in ext4_read_full_page().
+ * The block device page buffer doesn't need any lock because the operations
+ * {get|put}_bh_tracked_reader() are atomic.
+ */
+
+/*
+ * start buffer tracked read
+ * called from inside get_block()
+ * get tracked reader ref count on buffer cache entry
+ * and set buffer tracked read flag
+ */
+int start_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *bdev_bh;
+
+	BUG_ON(buffer_tracked_read(bh));
+	BUG_ON(!buffer_mapped(bh));
+
+	/* grab the buffer cache entry */
+	bdev_bh = __getblk(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	if (!bdev_bh)
+		return -EIO;
+
+	BUG_ON(bdev_bh == bh);
+	set_buffer_tracked_read(bh);
+	get_bh_tracked_reader(bdev_bh);
+	put_bh(bdev_bh);
+	return 0;
+}
+
+/*
+ * cancel buffer tracked read
+ * called for tracked read that was started but was not submitted
+ * put tracked reader ref count on buffer cache entry
+ * and clear buffer tracked read flag
+ */
+void cancel_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *bdev_bh;
+
+	BUG_ON(!buffer_tracked_read(bh));
+	BUG_ON(!buffer_mapped(bh));
+
+	/* try to grab the buffer cache entry */
+	bdev_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	BUG_ON(!bdev_bh || bdev_bh == bh);
+	clear_buffer_tracked_read(bh);
+	clear_buffer_mapped(bh);
+	put_bh_tracked_reader(bdev_bh);
+	put_bh(bdev_bh);
+}
+
+/*
+ * submit buffer tracked read
+ * save a reference to buffer cache entry and submit I/O
+ */
+static int submit_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *bdev_bh;
+	BUG_ON(!buffer_tracked_read(bh));
+	BUG_ON(!buffer_mapped(bh));
+	/* tracked read doesn't work with multiple buffers per page */
+	BUG_ON(bh->b_this_page != bh);
+
+	/*
+	 * Try to grab the buffer cache entry before submitting async read
+	 * because we cannot call blocking function __find_get_block()
+	 * in interrupt context inside end_buffer_tracked_read().
+	 */
+	bdev_bh = __find_get_block(bh->b_bdev, bh->b_blocknr, bh->b_size);
+	BUG_ON(!bdev_bh || bdev_bh == bh);
+	/* override page buffers list with reference to buffer cache entry */
+	bh->b_this_page = bdev_bh;
+	submit_bh(READ, bh);
+	return 0;
+}
+
+/*
+ * end buffer tracked read
+ * complete submitted tracked read
+ */
+static void end_buffer_tracked_read(struct buffer_head *bh)
+{
+	struct buffer_head *bdev_bh = bh->b_this_page;
+
+	BUG_ON(!buffer_tracked_read(bh));
+	BUG_ON(!bdev_bh || bdev_bh == bh);
+	bh->b_this_page = bh;
+	/*
+	 * clear the buffer mapping to make sure
+	 * that get_block() will always be called
+	 */
+	clear_buffer_mapped(bh);
+	clear_buffer_tracked_read(bh);
+	put_bh_tracked_reader(bdev_bh);
+	put_bh(bdev_bh);
+}
+
+#endif
 /*
  * If a page's buffers are under async readin (end_buffer_async_read
  * completion) then there is a possibility that another thread of

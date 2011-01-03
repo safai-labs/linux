@@ -1116,6 +1116,30 @@ retry:
 		err = read_through;
 		goto out;
 	}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+#warning "third parameter for map_bh not compatible"
+#ifdef WARNING_NOT_IMPLEMENTED
+	if (read_through && !prev_snapshot) {
+		/*
+		 * Possible read through to block device.
+		 * Start tracked read before checking if block is mapped to
+		 * avoid race condition with COW that maps the block after
+		 * we checked if the block is mapped.  If we find that the
+		 * block is mapped, we will cancel the tracked read before
+		 * returning from this function.
+		 */
+		map_bh(bh_result, inode->i_sb, SNAPSHOT_BLOCK(iblock));
+		err = start_buffer_tracked_read(bh_result);
+		if (err < 0) {
+			snapshot_debug(1, "snapshot (%u) failed to start "
+					"tracked read on block (%lld) "
+					"(err=%d)\n", inode->i_generation,
+					(long long)bh_result->b_blocknr, err);
+			goto out;
+		}
+	}
+#endif
+#endif
 	err = -EIO;
 #endif
 
@@ -1314,6 +1338,16 @@ retry:
 
 	ext4_update_inode_fsync_trans(handle, inode, 1);
 got_it:
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+#warning "buffer_head(bh_result) not handled"
+#ifdef WARNING_NOT_IMPLEMENTED
+	/* it's not a hole - cancel tracked read before we deadlock on
+	 * pending COW */
+	if (buffer_tracked_read(bh_result))
+		cancel_buffer_tracked_read(bh_result);
+#endif
+#endif
 	map->m_flags |= EXT4_MAP_MAPPED;
 	map->m_pblk = le32_to_cpu(chain[depth-1].key);
 	map->m_len = count;
@@ -1367,6 +1401,14 @@ got_it:
 	partial = chain + depth - 1;	/* the whole chain */
 cleanup:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+#warning "bh_result????"
+#ifdef WARNING_NOT_IMPLEMENTED
+	/* cancel tracked read on failure to read through active snapshot */
+	if (read_through && err < 0 && buffer_tracked_read(bh_result))
+		cancel_buffer_tracked_read(bh_result);
+#endif
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operation on failure to alloc snapshot block */
 	if (flags && err < 0 && sbh)
@@ -3818,6 +3860,96 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
 	return generic_block_bmap(mapping, block, ext4_get_block);
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
+			struct buffer_head *bh_result, int create)
+{
+	unsigned long block_group;
+	struct ext4_group_desc *desc;
+	struct ext4_group_info *gi;
+	ext4_fsblk_t bitmap_blk = 0;
+	int err;
+
+#warning "handling of mapping between get_blocks_handle in ext3 with \
+		ind_map_blocks in ext4"
+#ifdef WARNING_NOT_IMPLEMENTED
+	BUG_ON(create != 0);
+	BUG_ON(buffer_tracked_read(bh_result));
+
+	err = ext4_get_blocks_handle(NULL, inode, SNAPSHOT_IBLOCK(iblock),
+					1, bh_result, 0);
+
+	snapshot_debug(4, "ext4_snapshot_get_block(%lld): block = (%lld), "
+			"err = %d\n",
+			(long long)iblock, buffer_mapped(bh_result) ?
+			(long long)bh_result->b_blocknr : 0, err);
+
+	if (err < 0)
+		return err;
+
+	if (!buffer_tracked_read(bh_result))
+		return 0;
+
+	/* check for read through to block bitmap */
+	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
+	desc = ext4_get_group_desc(inode->i_sb, block_group, NULL);
+	if (desc)
+		bitmap_blk = le32_to_cpu(desc->bg_block_bitmap);
+	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+		/* copy fixed block bitmap directly to page buffer */
+		cancel_buffer_tracked_read(bh_result);
+		/* cancel_buffer_tracked_read() clears mapped flag */
+		set_buffer_mapped(bh_result);
+		snapshot_debug(2, "fixing snapshot block bitmap #%lu\n",
+				block_group);
+		/*
+		 * XXX: if we return unmapped buffer, the page will be zeroed
+		 * but if we return mapped to block device and uptodate buffer
+		 * next readpage may read directly from block device without
+		 * fixing block bitmap.  This only affects fsck of snapshots.
+		 */
+		return ext4_snapshot_read_block_bitmap(inode->i_sb,
+				block_group, bh_result);
+	}
+	/* check for read through to exclude bitmap */
+	gi = EXT4_SB(inode->i_sb)->s_group_info + block_group;
+	bitmap_blk = gi->bg_exclude_bitmap;
+	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+		/* return unmapped buffer to zero out page */
+		cancel_buffer_tracked_read(bh_result);
+		/* cancel_buffer_tracked_read() clears mapped flag */
+		snapshot_debug(2, "zeroing snapshot exclude bitmap #%lu\n",
+				block_group);
+		return 0;
+	}
+
+#ifdef CONFIG_EXT4_FS_DEBUG
+	snapshot_debug(3, "started tracked read: block = [%llu/%llu]\n",
+			SNAPSHOT_BLOCK_TUPLE(bh_result->b_blocknr));
+
+	if (snapshot_enable_test[SNAPTEST_READ]) {
+		err = ext4_snapshot_get_read_access(inode->i_sb,
+				bh_result);
+		if (err) {
+			/* read through access denied */
+			cancel_buffer_tracked_read(bh_result);
+			return err;
+		}
+		/* sleep 1 tunable delay unit */
+		snapshot_test_delay(SNAPTEST_READ);
+	}
+#endif
+#endif
+	return 0;
+}
+
+static int ext4_snapshot_readpage(struct file *file, struct page *page)
+{
+	/* do read I/O with buffer heads to enable tracked reads */
+	return ext4_read_full_page(page, ext4_snapshot_get_block);
+}
+
+#endif
 static int ext4_readpage(struct file *file, struct page *page)
 {
 	return mpage_readpage(page, ext4_get_block);
@@ -4352,8 +4484,12 @@ static int ext4_no_writepage(struct page *page,
  * the snapshot COW bitmaps and a few initial blocks copied on snapshot_take().
  */
 static const struct address_space_operations ext4_snapfile_aops = {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	.readpage		= ext4_snapshot_readpage,
+#else
 	.readpage		= ext4_readpage,
 	.readpages		= ext4_readpages,
+#endif
 	.writepage		= ext4_no_writepage,
 	.bmap			= ext4_bmap,
 	.invalidatepage		= ext4_invalidatepage,

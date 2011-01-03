@@ -353,6 +353,24 @@ config EXT4_FS_SNAPSHOT_RACE_COW
 	  into the snapshot file page.
 
 
+config EXT4_FS_SNAPSHOT_RACE_READ
+	bool "snapshot race conditions - tracked reads"
+	depends on EXT4_FS_SNAPSHOT_RACE
+	default y
+	help
+	  Wait for pending read I/O requests to complete.
+	  When a snapshot file readpage reads through to the block device,
+	  the reading task increments the block tracked readers count.
+	  Upon completion of the async read I/O request of the snapshot page,
+	  the tracked readers count is decremented.
+	  When a task is COWing a block with non-zero tracked readers count,
+	  that task has to wait (in msleep(1) loop), until the block's tracked
+	  readers count drops to zero, before the COW operation is completed.
+	  After a pending COW operation has started, reader tasks have to wait
+	  (again, in msleep(1) loop), until the pending COW operation is
+	  completed, so the COWing task cannot be starved by reader tasks.
+
+
 config EXT4_FS_SNAPSHOT_CTL_INIT
 	bool "snapshot control - init new snapshot"
 	depends on EXT4_FS_SNAPSHOT_CTL

@@ -310,6 +310,27 @@ config EXT4_FS_SNAPSHOT_LIST_READ
 	  oldest found mapping is returned.  If the page is not mapped in any of
 	  the newer snapshots, a direct mapping to the block device is returned.
 
+config EXT4_FS_SNAPSHOT_RACE
+	bool "snapshot race conditions"
+	depends on EXT4_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Resolve snapshot race conditions
+
+
+config EXT4_FS_SNAPSHOT_RACE_BITMAP
+	bool "snapshot race conditions - concurrent COW bitmap operations"
+	depends on EXT4_FS_SNAPSHOT_RACE
+	default y
+	help
+	  Wait for pending COW bitmap creations to complete.
+	  When concurrent tasks try to COW buffers from the same block group
+	  for the first time, the first task to reset the COW bitmap cache
+	  is elected to create the new COW bitmap block.  The rest of the tasks
+	  wait (in msleep(1) loop), until the COW bitmap cache is uptodate.
+	  The COWing task copies the bitmap block into the new COW bitmap block
+	  and updates the COW bitmap cache with the new block number.
+
 
 config EXT4_FS_SNAPSHOT_CTL_INIT
 	bool "snapshot control - init new snapshot"

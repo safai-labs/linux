@@ -274,6 +274,10 @@ ext4_snapshot_complete_cow(handle_t *handle,
 		sync_dirty_buffer(sbh);
 
 out:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	/* COW operation is complete */
+	ext4_snapshot_end_pending_cow(sbh);
+#endif
 	return err;
 }
 
@@ -911,6 +915,15 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	 * we allocated this block -
 	 * copy block data to snapshot and complete COW operation
 	 */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	snapshot_debug(3, "COWing block [%llu/%llu] of snapshot "
+			"(%u)...\n",
+			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
+			SNAPSHOT_BLOCK_GROUP(block),
+			active_snapshot->i_generation);
+	/* sleep 1 tunable delay unit */
+	snapshot_test_delay(SNAPTEST_COW);
+#endif
 	err = ext4_snapshot_copy_buffer_cow(handle, sbh, bh);
 	if (err)
 		goto out;
@@ -922,6 +935,11 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 
 	trace_cow_inc(handle, copied);
 test_pending_cow:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	if (sbh)
+		/* wait for pending COW to complete */
+		ext4_snapshot_test_pending_cow(sbh, block);
+#endif
 
 cowed:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE

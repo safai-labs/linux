@@ -436,6 +436,73 @@ static inline int ext4_snapshot_is_active(struct inode *inode)
 	return (inode == EXT4_SB(inode->i_sb)->s_active_snapshot);
 }
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+/*
+ * Pending COW functions
+ */
+
+/*
+ * Start pending COW operation from get_blocks_handle()
+ * after allocating snapshot block and before connecting it
+ * to the snapshot inode.
+ */
+static inline void ext4_snapshot_start_pending_cow(struct buffer_head *sbh)
+{
+	/*
+	 * setting the 'new' flag on a newly allocated snapshot block buffer
+	 * indicates that the COW operation is pending.
+	 */
+	set_buffer_new(sbh);
+	/* keep buffer in cache as long as we need to test the 'new' flag */
+	get_bh(sbh);
+}
+
+/*
+ * End pending COW operation started in get_blocks_handle().
+ * Called on failure to connect the new snapshot block to the inode
+ * or on successful completion of the COW operation.
+ */
+static inline void ext4_snapshot_end_pending_cow(struct buffer_head *sbh)
+{
+	/*
+	 * clearing the 'new' flag from the snapshot block buffer
+	 * indicates that the COW operation is complete.
+	 */
+	clear_buffer_new(sbh);
+	/* we no longer need to keep the buffer in cache */
+	put_bh(sbh);
+}
+
+/*
+ * Test for pending COW operation and wait for its completion.
+ */
+static inline void ext4_snapshot_test_pending_cow(struct buffer_head *sbh,
+						sector_t blocknr)
+{
+	SNAPSHOT_DEBUG_ONCE;
+	while (buffer_new(sbh)) {
+		/* wait for pending COW to complete */
+		snapshot_debug_once(2, "waiting for pending cow: "
+				"block = [%llu/%llu]...\n",
+				SNAPSHOT_BLOCK_TUPLE(blocknr));
+		/*
+		 * An unusually long pending COW operation can be caused by
+		 * the debugging function snapshot_test_delay(SNAPTEST_COW)
+		 * and by waiting for tracked reads to complete.
+		 * The new COW buffer is locked during those events, so wait
+		 * on the buffer before the short msleep.
+		 */
+		wait_on_buffer(sbh);
+		/*
+		 * This is an unlikely event that can happen only once per
+		 * block/snapshot, so msleep(1) is sufficient and there is
+		 * no need for a wait queue.
+		 */
+		msleep(1);
+		/* XXX: Should we fail after N retries? */
+	}
+}
+#endif
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL

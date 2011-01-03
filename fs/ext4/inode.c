@@ -1095,6 +1095,9 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 	int read_through = 0;
 	struct inode *prev_snapshot;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	struct buffer_head *sbh = NULL;
+#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 retry:
@@ -1230,6 +1233,27 @@ retry:
 	if (err)
 		goto out_mutex;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	if (SNAPMAP_ISCOW(flags)) {
+		/*
+		 * COWing block or creating COW bitmap.
+		 * we now have exclusive access to the COW destination block
+		 * and we are about to create the snapshot block mapping
+		 * and make it public.
+		 * grab the buffer cache entry and mark it new
+		 * to indicate a pending COW operation.
+		 * the refcount for the buffer cache will be released
+		 * when the COW operation is either completed or canceled.
+		 */
+		sbh = sb_getblk(inode->i_sb, le32_to_cpu(chain[depth-1].key));
+		if (!sbh) {
+			err = -EIO;
+			goto out_mutex;
+		}
+		ext4_snapshot_start_pending_cow(sbh);
+	}
+
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (*(partial->p)) {
 		int ret;
@@ -1293,12 +1317,64 @@ got_it:
 	map->m_flags |= EXT4_MAP_MAPPED;
 	map->m_pblk = le32_to_cpu(chain[depth-1].key);
 	map->m_len = count;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+#warning "use of bh_result (struct buffer_head)"
+#ifdef WARNING_NOT_IMPLEMENTED
+	/*
+	 * On read of active snapshot, a mapped block may belong to a non
+	 * completed COW operation.  Use the buffer cache to test this
+	 * condition.  if (bh_result->b_blocknr == SNAPSHOT_BLOCK(iblock)),
+	 * then this is either read through to block device or moved block.
+	 * Either way, it is not a COWed block, so it cannot be pending COW.
+	 */
+	if (read_through && ext4_snapshot_is_active(inode) &&
+		bh_result->b_blocknr != SNAPSHOT_BLOCK(iblock))
+		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
+	if (read_through && sbh) {
+		/* wait for pending COW to complete */
+		ext4_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
+		lock_buffer(sbh);
+		if (buffer_uptodate(sbh)) {
+			/*
+			 * Avoid disk I/O and copy out snapshot page directly
+			 * from block device page when possible.
+			 */
+			BUG_ON(!sbh->b_page);
+			BUG_ON(!bh_result->b_page);
+			lock_buffer(bh_result);
+			copy_highpage(bh_result->b_page, sbh->b_page);
+			set_buffer_uptodate(bh_result);
+			unlock_buffer(bh_result);
+		} else if (buffer_dirty(sbh)) {
+			/*
+			 * If snapshot data buffer is dirty (just been COWed),
+			 * then it is not safe to read it from disk yet.
+			 * We shouldn't get here because snapshot data buffer
+			 * only becomes dirty during COW and because we waited
+			 * for pending COW to complete, which means that a
+			 * dirty snapshot data buffer should be uptodate.
+			 */
+			WARN_ON(1);
+		}
+		unlock_buffer(sbh);
+	}
+#endif
+#endif
 	if (count > blocks_to_boundary)
 		map->m_flags |= EXT4_MAP_BOUNDARY;
 	err = count;
 	/* Clean up and exit */
 	partial = chain + depth - 1;	/* the whole chain */
 cleanup:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	/* cancel pending COW operation on failure to alloc snapshot block */
+	if (flags && err < 0 && sbh)
+		ext4_snapshot_end_pending_cow(sbh);
+	brelse(sbh);
+#endif
+#endif
+
 	while (partial > chain) {
 		BUFFER_TRACE(partial->bh, "call brelse");
 		brelse(partial->bh);

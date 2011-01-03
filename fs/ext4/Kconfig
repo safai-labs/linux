@@ -332,6 +332,27 @@ config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	  and updates the COW bitmap cache with the new block number.
 
 
+config EXT4_FS_SNAPSHOT_RACE_COW
+	bool "snapshot race conditions - concurrent COW operations"
+	depends on EXT4_FS_SNAPSHOT_RACE
+	default y
+	help
+	  Wait for pending COW operations to complete.
+	  When concurrent tasks try to COW the same buffer, the task that takes
+	  the active snapshot truncate_mutex is elected as the the COWing task.
+	  The COWing task allocates a new snapshot block and creates a buffer
+	  cache entry with ref_count=1 for that new block.  It then locks the
+	  new buffer and marks it with the buffer_new flag.  The rest of the
+	  tasks wait (in msleep(1) loop), until the buffer_new flag is cleared.
+	  The COWing task copies the source buffer into the 'new' buffer,
+	  unlocks it, marks it as journal dirty data, clears the new_buffer flag
+	  and drops its reference count.
+	  On active snapshot readpage, the buffer cache is checked.
+	  If a 'new' buffer entry is found, the reader task waits until the
+	  buffer_new flag is cleared and then copies the 'new' buffer directly
+	  into the snapshot file page.
+
+
 config EXT4_FS_SNAPSHOT_CTL_INIT
 	bool "snapshot control - init new snapshot"
 	depends on EXT4_FS_SNAPSHOT_CTL

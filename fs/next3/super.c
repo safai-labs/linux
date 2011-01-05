@@ -318,7 +318,12 @@ static const char *next3_decode_error(struct super_block * sb, int errno,
 		errstr = "Out of memory";
 		break;
 	case -EROFS:
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+		if (!sb || (NEXT3_SB(sb)->s_journal &&
+			    NEXT3_SB(sb)->s_journal->j_flags & JFS_ABORT))
+#else
 		if (!sb || NEXT3_SB(sb)->s_journal->j_flags & JFS_ABORT)
+#endif
 			errstr = "Journal has aborted";
 		else
 			errstr = "Readonly filesystem";
@@ -537,10 +542,20 @@ static void next3_put_super (struct super_block * sb)
 	next3_snapshot_destroy(sb);
 #endif
 	next3_xattr_put_super(sb);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (sbi->s_journal) {
+		err = journal_destroy(sbi->s_journal);
+		sbi->s_journal = NULL;
+		if (err < 0)
+			next3_abort(sb, __func__,
+				    "Couldn't clean up the journal");
+	}
+#else
 	err = journal_destroy(sbi->s_journal);
 	sbi->s_journal = NULL;
 	if (err < 0)
 		next3_abort(sb, __func__, "Couldn't clean up the journal");
+#endif
 
 	if (!(sb->s_flags & MS_RDONLY)) {
 		NEXT3_CLEAR_INCOMPAT_FEATURE(sb, NEXT3_FEATURE_INCOMPAT_RECOVER);
@@ -554,10 +569,8 @@ static void next3_put_super (struct super_block * sb)
 		brelse(sbi->s_group_desc[i]);
 	kfree(sbi->s_group_desc);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	if (is_vmalloc_addr(sbi->s_group_info))
+	if (sbi->s_group_info)
 		vfree(sbi->s_group_info);
-	else
-		kfree(sbi->s_group_info);
 #endif
 	percpu_counter_destroy(&sbi->s_freeblocks_counter);
 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
@@ -705,6 +718,11 @@ static inline void next3_show_quota_options(struct seq_file *seq, struct super_b
 static char *data_mode_string(unsigned long mode)
 {
 	switch (mode) {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	case 0:
+		/* ro,noload snapshot mount options */
+		return "ronoload";
+#endif
 	case NEXT3_MOUNT_JOURNAL_DATA:
 		return "journal";
 	case NEXT3_MOUNT_ORDERED_DATA:
@@ -1760,10 +1778,6 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	int blocksize;
 	int hblock;
 	int db_count;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	unsigned long max_groups;
-	size_t size;
-#endif
 	int i;
 	int needs_recovery;
 	int ret = -EINVAL;
@@ -1891,15 +1905,30 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	/* Next3 mandatory features */
 	if (!NEXT3_HAS_RO_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
-		printk(KERN_ERR "NEXT3-fs: %s: couldn't mount because of "
-		       "missing has_snapshot feature.\n", sb->s_id);
+		next3_msg(sb ,KERN_ERR,
+			"error: couldn't mount because of "
+			"missing has_snapshot feature");
 		goto failed_mount;
 	}
 	if (!NEXT3_HAS_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_COMPAT_EXCLUDE_INODE)) {
-		printk(KERN_ERR "NEXT3-fs: %s: couldn't mount because of "
-		       "missing exclude_inode feature.\n", sb->s_id);
+		next3_msg(sb ,KERN_ERR,
+			"error: couldn't mount because of "
+			"missing exclude_inode feature");
 		goto failed_mount;
+	}
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (NEXT3_HAS_INCOMPAT_FEATURE(sb,
+				NEXT3_FEATURE_INCOMPAT_IS_SNAPSHOT)) {
+		/* mounting a snapshot image */
+		if (!(sb->s_flags & MS_RDONLY)) {
+			next3_msg(sb ,KERN_ERR,
+				"error: a snapshot cannot be mounted RDWR");
+			goto failed_mount;
+		}
+		/* snapshot mount implies 'noload' of journal and snapshots */
+		set_opt(sbi->s_mount_opt, NOLOAD);
 	}
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
@@ -1908,17 +1937,22 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	 * read-write on 32-bit systems if kernel is built with CONFIG_LBDAF
 	 */
 	if (!(sb->s_flags & MS_RDONLY) && sizeof(blkcnt_t) < sizeof(u64)) {
-		printk(KERN_ERR "NEXT3-fs: Filesystem with snapshots support "
-				"cannot be mounted RDWR without "
-				"CONFIG_LBDAF");
+		next3_msg(sb ,KERN_ERR,
+			"error: filesystem with snapshots support "
+			"cannot be mounted RDWR without "
+			"CONFIG_LBDAF");
 		goto failed_mount;
 	}
 #endif
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	/* Block size must be equal to page size */
-	if (blocksize != SNAPSHOT_BLOCK_SIZE) {
+	/* Block size must be equal to page size for snapshots support */
+	if ((blocksize != SNAPSHOT_BLOCK_SIZE &&
+		NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) ||
+	    blocksize < NEXT3_MIN_BLOCK_SIZE ||
+	    blocksize > NEXT3_MAX_BLOCK_SIZE) {
 #else
 	if (blocksize < NEXT3_MIN_BLOCK_SIZE ||
 	    blocksize > NEXT3_MAX_BLOCK_SIZE) {
@@ -2083,20 +2117,22 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		goto failed_mount2;
 	}
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	/* We allocate both existing and potentially added groups */
-	max_groups = (db_count + le16_to_cpu(es->s_reserved_gdt_blocks)) <<
-		NEXT3_DESC_PER_BLOCK_BITS(sb);
-	size = max_groups * sizeof(struct next3_group_info);
-	sbi->s_group_info = kzalloc(size, GFP_KERNEL);
-	if (sbi->s_group_info == NULL) {
+	if (!test_opt(sb, NOLOAD) &&
+		NEXT3_HAS_RO_COMPAT_FEATURE(sb,
+			NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		/* Allocate info struct for existing and future added groups */
+		unsigned long max_groups = (db_count +
+				le16_to_cpu(es->s_reserved_gdt_blocks)) <<
+					NEXT3_DESC_PER_BLOCK_BITS(sb);
+		size_t size = max_groups * sizeof(struct next3_group_info);
+
 		sbi->s_group_info = vmalloc(size);
-		if (sbi->s_group_info)
-			memset(sbi->s_group_info, 0, size);
-	}
-	if (sbi->s_group_info == NULL) {
-		printk (KERN_ERR "NEXT3-fs: not enough memory for "
-				"%lu max groups\n", max_groups);
-		goto failed_mount2;
+		if (sbi->s_group_info == NULL) {
+			printk (KERN_ERR "NEXT3-fs: not enough memory for "
+					"%lu max groups\n", max_groups);
+			goto failed_mount2;
+		}
+		memset(sbi->s_group_info, 0, size);
 	}
 #endif
 	sbi->s_gdb_count = db_count;
@@ -2152,6 +2188,25 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	    NEXT3_HAS_COMPAT_FEATURE(sb, NEXT3_FEATURE_COMPAT_HAS_JOURNAL)) {
 		if (next3_load_journal(sb, es, journal_devnum))
 			goto failed_mount2;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	} else if (test_opt(sb, NOLOAD)) {
+	       	if (!(sb->s_flags & MS_RDONLY)) {
+			next3_msg(sb, KERN_ERR,
+				"error: 'noload' requires read-only mount");
+			goto failed_mount2;
+		}
+		if (NEXT3_HAS_INCOMPAT_FEATURE(sb,
+				NEXT3_FEATURE_INCOMPAT_RECOVER)) {
+			next3_msg(sb, KERN_ERR,
+				"error: 'noload' requires clean umount");
+			goto failed_mount2;
+		}
+		/* mounting with 'ro,noload' options */
+		clear_opt(sbi->s_mount_opt, DATA_FLAGS);
+		sbi->s_journal = NULL;
+		needs_recovery = 0;
+		goto no_journal;
+#endif
 	} else if (journal_inum) {
 		if (next3_create_journal(sb, es, journal_inum))
 			goto failed_mount2;
@@ -2229,6 +2284,9 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 #endif
 
 #endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+no_journal:
+#endif
 	/*
 	 * The journal_load will have done any necessary log recovery,
 	 * so we can safely mount the rest of the filesystem now.
@@ -2254,8 +2312,17 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 	}
 
 	next3_setup_super (sb, es, sb->s_flags & MS_RDONLY);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (test_opt(sb, NOLOAD)) {
+		/* snapshot mount - no snapshots load and no recovery */
+		next3_msg(sb, KERN_INFO, "mounted snapshot in read-only mode");
+		lock_kernel();
+		return 0;
+	}
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT
-	if (next3_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
+	err = next3_snapshot_load(sb, es, sb->s_flags & MS_RDONLY);
+	if (err)
 		/* XXX: how to fail mount/force read-only at this point? */
 		next3_error(sb, __func__, "load snapshot failed\n");
 #endif
@@ -2285,15 +2352,18 @@ failed_mount3:
 	percpu_counter_destroy(&sbi->s_freeblocks_counter);
 	percpu_counter_destroy(&sbi->s_freeinodes_counter);
 	percpu_counter_destroy(&sbi->s_dirs_counter);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (sbi->s_journal) {
+		journal_destroy(sbi->s_journal);
+		sbi->s_journal = NULL;
+	}
+#else
 	journal_destroy(sbi->s_journal);
+#endif
 failed_mount2:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-	if (sbi->s_group_info) {
-		if (is_vmalloc_addr(sbi->s_group_info))
-			vfree(sbi->s_group_info);
-		else
-			kfree(sbi->s_group_info);
-	}
+	if (sbi->s_group_info)
+		vfree(sbi->s_group_info);
 #endif
 	for (i = 0; i < db_count; i++)
 		brelse(sbi->s_group_desc[i]);
@@ -2869,7 +2939,12 @@ static int next3_remount (struct super_block * sb, int * flags, char * data)
 
 	es = sbi->s_es;
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (sbi->s_journal)
+		next3_init_journal_params(sb, sbi->s_journal);
+#else
 	next3_init_journal_params(sb, sbi->s_journal);
+#endif
 
 	if ((*flags & MS_RDONLY) != (sb->s_flags & MS_RDONLY) ||
 		n_blocks_count > le32_to_cpu(es->s_blocks_count)) {
@@ -2910,6 +2985,15 @@ static int next3_remount (struct super_block * sb, int * flags, char * data)
 				err = -EROFS;
 				goto restore_opts;
 			}
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+			if (!sbi->s_journal) {
+				next3_msg(sb ,KERN_WARNING,
+					"warning: couldn't remount RDWR "
+					"because journal is not loaded.");
+				err = -EINVAL;
+				goto restore_opts;
+			}
+#endif
 
 			/*
 			 * If we have an unprocessed orphan list hanging

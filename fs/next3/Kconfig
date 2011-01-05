@@ -504,8 +504,20 @@ config NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
 	default n
 	help
 	  Snapshot excluded files blocks are not COWed to snapshot.
-	  Use 'chattr +d' to exclude a file or directory.
+	  Use 'chattr [+|-]z <dir>' to mark an excluded directory.
+	  All regular files created inside an excluded directory will be
+	  excluded from snapshots. Existing files inside <dir> are not excluded.
+	  'chattr [+|-]z <file>' is not permitted.
 	  All snapshot files are implicitly excluded, even if you select N here.
+	  This is an experimental feature.
+
+config NEXT3_FS_SNAPSHOT_MOUNT
+	bool "snapshot mount with 'ro,noload' mount options (experimental)"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default n
+	help
+	  Usually, Next3 snapshots are mounted as read-only Ext2.
+	  Mount a Next3 snapshot as read-only Next3 with no journal.
 	  This is an experimental feature.
 
 config NEXT3_FS_SNAPSHOT_CLEANUP

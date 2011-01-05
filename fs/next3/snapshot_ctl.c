@@ -265,9 +265,6 @@ int next3_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	if (err)
 		goto out;
 
-	/* set snapshot user flags */
-	NEXT3_I(inode)->i_flags &= ~NEXT3_FL_SNAPSHOT_USER_MASK;
-	NEXT3_I(inode)->i_flags |= flags & NEXT3_FL_SNAPSHOT_USER_MASK;
 non_snapshot:
 	/* set only non-snapshot flags here */
 	flags &= ~NEXT3_FL_SNAPSHOT_MASK;
@@ -888,16 +885,20 @@ int next3_snapshot_take(struct inode *inode)
 	lock_buffer(sbh);
 	memcpy(sbh->b_data, sbi->s_sbh->b_data, sb->s_blocksize);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CTL_FIX
-	/*
-	 * Convert from Next3 to Ext3 super block:
-	 * Remove the HAS_SNAPSHOT flag and snapshot inode number.
-	 * Set the IS_SNAPSHOT flag to signal fsck this is a snapshot image.
-	 */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	/* set the IS_SNAPSHOT feature to force snapshot mount options */
+	es->s_feature_incompat |=
+		cpu_to_le32(NEXT3_FEATURE_INCOMPAT_IS_SNAPSHOT);
+#else
+	/* remove the HAS_SNAPSHOT feature to disable next3 mount */
 	es->s_feature_ro_compat &=
 		~cpu_to_le32(NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+	/* set the IS_SNAPSHOT flag to signal fsck this is a snapshot */
+	es->s_flags |= cpu_to_le32(NEXT3_FLAGS_IS_SNAPSHOT_OLD);
+#endif
+	/* reset snapshots list in snapshot's super block copy */
 	es->s_snapshot_inum = 0;
 	es->s_snapshot_list = 0;
-	es->s_flags |= cpu_to_le32(NEXT3_FLAGS_IS_SNAPSHOT);
 #endif
 	set_buffer_uptodate(sbh);
 	unlock_buffer(sbh);
@@ -2018,10 +2019,11 @@ int next3_snapshot_load(struct super_block *sb, struct next3_super_block *es,
 				NEXT3_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD|
 				NEXT3_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD|
 				NEXT3_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD);
+		NEXT3_CLEAR_FLAGS(sb, NEXT3_FLAGS_IS_SNAPSHOT_OLD);
 		/* Clear deprecated big journal flag */
 		NEXT3_CLEAR_COMPAT_FEATURE(sb,
 				NEXT3_FEATURE_COMPAT_BIG_JOURNAL_OLD);
-		NEXT3_CLEAR_FLAGS(sb, NEXT3_FLAGS_BIG_JOURNAL);
+		NEXT3_CLEAR_FLAGS(sb, NEXT3_FLAGS_BIG_JOURNAL_OLD);
 		/* Keep old exclude inode flag b/c inode was not moved yet */
 	}
 

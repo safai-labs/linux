@@ -2779,7 +2779,14 @@ static void next3_invalidatepage(struct page *page, unsigned long offset)
 	if (offset == 0)
 		ClearPageChecked(page);
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (journal)
+		journal_invalidatepage(journal, page, offset);
+	else
+		block_invalidatepage(page, offset);
+#else
 	journal_invalidatepage(journal, page, offset);
+#endif
 }
 
 static int next3_releasepage(struct page *page, gfp_t wait)
@@ -2789,7 +2796,14 @@ static int next3_releasepage(struct page *page, gfp_t wait)
 	WARN_ON(PageChecked(page));
 	if (!page_has_buffers(page))
 		return 0;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (journal)
+		return journal_try_to_free_buffers(journal, page, wait);
+	else
+		return try_to_free_buffers(page);
+#else
 	return journal_try_to_free_buffers(journal, page, wait);
+#endif
 }
 
 /*
@@ -2985,9 +2999,29 @@ static const struct address_space_operations next3_snapfile_aops = {
 	.releasepage		= next3_releasepage,
 };
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+/* limited operations for ro,noload snapshot mount */
+static const struct address_space_operations next3_ronoload_aops = {
+	.readpage		= next3_readpage,
+	.readpages		= next3_readpages,
+	.writepage		= next3_no_writepage,
+	.bmap			= next3_bmap,
+	.invalidatepage		= next3_invalidatepage,
+	.releasepage		= next3_releasepage,
+	.direct_IO		= next3_direct_IO,
+	.is_partially_uptodate  = block_is_partially_uptodate,
+	.error_remove_page	= generic_error_remove_page,
+};
+
+#endif
 #endif
 void next3_set_aops(struct inode *inode)
 {
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+	if (!NEXT3_JOURNAL(inode))
+		inode->i_mapping->a_ops = &next3_ronoload_aops;
+	else
+#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
 	if (next3_snapshot_file(inode))
 		inode->i_mapping->a_ops = &next3_snapfile_aops;

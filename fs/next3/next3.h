@@ -225,56 +225,70 @@ struct next3_group_desc
 #define NEXT3_SNAPFILE_INUSE_FL		0x00000800 /* snapshot is in-use  (p) */
 /* snapshot persistent flags */
 #define NEXT3_SNAPFILE_FL		0x01000000 /* snapshot file (x) */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+#define NEXT3_NOCOW_FL			0x02000000 /* do not COW (z) */
+#endif
 #define NEXT3_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted (s) */
 #define NEXT3_SNAPFILE_SHRUNK_FL	0x08000000 /* snapshot was shrunk (h) */
 /* more snapshot non-persistent flags */
 #define NEXT3_SNAPFILE_OPEN_FL		0x10000000 /* snapshot is mounted (o) */
-#define NEXT3_SNAPFILE_TAGGED_FL	0x20000000 /* snapshot is tagged  (t) */
 /* end of snapshot flags */
 #endif
 #define NEXT3_RESERVED_FL		0x80000000 /* reserved for next3 lib */
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+/* snapshot inherited-only flags (modifiable only for directories) */
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-/* exclude file from snapshot (d) */
-#define NEXT3_NOSNAP_FL			NEXT3_NODUMP_FL
-
+#define NEXT3_FL_SNAPSHOT_INHERITED		\
+	(NEXT3_SNAPFILE_FL|NEXT3_NOCOW_FL)
+#else
+#define NEXT3_FL_SNAPSHOT_INHERITED		\
+	NEXT3_SNAPFILE_FL
 #endif
-/* snapshot flags reserved for user */
-#define NEXT3_FL_SNAPSHOT_USER_MASK		\
-	 NEXT3_SNAPFILE_TAGGED_FL
 
-/* snapshot flags modifiable by chattr */
+/* snapshot file persistent read-write flags */
 #define NEXT3_FL_SNAPSHOT_RW_MASK		\
-	(NEXT3_FL_SNAPSHOT_USER_MASK|NEXT3_SNAPFILE_FL| \
-	 NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
+	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL)
 
-/* snapshot persistent read-only flags */
+/* snapshot file persistent read-only flags */
 #define NEXT3_FL_SNAPSHOT_RO_MASK		\
 	 (NEXT3_SNAPFILE_DELETED_FL|NEXT3_SNAPFILE_SHRUNK_FL)
 
-/* non-persistent snapshot status flags */
+/* snapshot file non-persistent status flags */
 #define NEXT3_FL_SNAPSHOT_DYN_MASK		\
 	(NEXT3_SNAPFILE_LIST_FL|NEXT3_SNAPFILE_ENABLED_FL| \
 	 NEXT3_SNAPFILE_ACTIVE_FL|NEXT3_SNAPFILE_INUSE_FL| \
-	 NEXT3_SNAPFILE_OPEN_FL|NEXT3_SNAPFILE_TAGGED_FL)
+	 NEXT3_SNAPFILE_OPEN_FL)
+
+/* snapshot flags restricted to snapshot files (all but NOCOW) */
+#define NEXT3_FL_SNAPSHOT_MASK			\
+	(NEXT3_FL_SNAPSHOT_RW_MASK|NEXT3_FL_SNAPSHOT_RO_MASK| \
+	 NEXT3_FL_SNAPSHOT_DYN_MASK|NEXT3_SNAPFILE_FL)
+
+/* snapshot flags modifiable by chattr */
+#define NEXT3_FL_SNAPSHOT_MODIFIABLE		\
+	(NEXT3_FL_SNAPSHOT_INHERITED|NEXT3_FL_SNAPSHOT_RW_MASK)
 
 /* snapshot flags visible to lsattr */
-#define NEXT3_FL_SNAPSHOT_MASK			\
-	(NEXT3_FL_SNAPSHOT_DYN_MASK|NEXT3_SNAPFILE_FL| \
-	 NEXT3_FL_SNAPSHOT_RO_MASK)
+#define NEXT3_FL_SNAPSHOT_VISIBLE			\
+	(NEXT3_FL_SNAPSHOT_MODIFIABLE|NEXT3_FL_SNAPSHOT_RO_MASK| \
+	 NEXT3_FL_SNAPSHOT_DYN_MASK)
 
 /* User visible flags */
-#define NEXT3_FL_USER_VISIBLE		(NEXT3_FL_SNAPSHOT_MASK|0x0007DFFF)
+#define NEXT3_FL_USER_VISIBLE		\
+	(NEXT3_FL_SNAPSHOT_VISIBLE|0x0007DFFF)
+
 /* User modifiable flags */
-#define NEXT3_FL_USER_MODIFIABLE	(NEXT3_FL_SNAPSHOT_RW_MASK|0x000380FF)
+#define NEXT3_FL_USER_MODIFIABLE	\
+	(NEXT3_FL_SNAPSHOT_MODIFIABLE|0x000380FF)
 
 /* Flags that should be inherited by new inodes from their parent. */
 #define NEXT3_FL_INHERITED (NEXT3_SECRM_FL | NEXT3_UNRM_FL | NEXT3_COMPR_FL |\
 		NEXT3_SYNC_FL | NEXT3_IMMUTABLE_FL | NEXT3_APPEND_FL |\
 		NEXT3_NODUMP_FL | NEXT3_NOATIME_FL | NEXT3_COMPRBLK_FL|\
 		NEXT3_NOCOMPR_FL | NEXT3_JOURNAL_DATA_FL |\
-		NEXT3_NOTAIL_FL | NEXT3_DIRSYNC_FL | NEXT3_SNAPFILE_FL)
+		NEXT3_NOTAIL_FL | NEXT3_DIRSYNC_FL |\
+		NEXT3_FL_SNAPSHOT_INHERITED)
 
 #else
 #define NEXT3_FL_USER_VISIBLE		0x0003DFFF /* User visible flags */
@@ -499,21 +513,27 @@ struct next3_inode {
 #define EXT2_FLAGS_SIGNED_HASH		0x0001  /* Signed dirhash in use */
 #define EXT2_FLAGS_UNSIGNED_HASH	0x0002  /* Unsigned dirhash in use */
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
-#define NEXT3_FLAGS_IS_SNAPSHOT		0x0010 /* Is a snapshot image */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
+#define NEXT3_FLAGS_IS_SNAPSHOT_OLD	0x0010 /* Old is snapshot */
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
 #define NEXT3_FLAGS_FIX_SNAPSHOT	0x0020 /* Corrupted snapshot */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define NEXT3_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
-#define NEXT3_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
+#define NEXT3_FLAGS_BIG_JOURNAL_OLD	0x1000  /* Old big journal */
 #endif
 
 #define NEXT3_SET_FLAGS(sb,mask) \
 	NEXT3_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
 #define NEXT3_CLEAR_FLAGS(sb,mask) \
 	NEXT3_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
+#define NEXT3_TEST_FLAG(sb,flag) \
+	(NEXT3_SB(sb)->s_es->s_flags & cpu_to_le32(NEXT3_FLAGS_##flag))
+#endif
 
 /*
  * Mount flags
@@ -801,7 +821,7 @@ static inline void next3_clear_inode_state(struct inode *inode, int bit)
 #define NEXT3_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define NEXT3_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define NEXT3_FEATURE_COMPAT_DIR_INDEX		0x0020
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
 #define NEXT3_FEATURE_COMPAT_EXCLUDE_INODE	0x0080 /* Has exclude inode */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
@@ -812,7 +832,7 @@ static inline void next3_clear_inode_state(struct inode *inode, int bit)
 #define NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define NEXT3_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define NEXT3_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
 #define NEXT3_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Next3 has snapshots */
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
@@ -827,12 +847,22 @@ static inline void next3_clear_inode_state(struct inode *inode, int bit)
 #define NEXT3_FEATURE_INCOMPAT_RECOVER		0x0004 /* Needs recovery */
 #define NEXT3_FEATURE_INCOMPAT_JOURNAL_DEV	0x0008 /* Journal device */
 #define NEXT3_FEATURE_INCOMPAT_META_BG		0x0010
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+#define NEXT3_FEATURE_INCOMPAT_IS_SNAPSHOT	0x2000 /* A snapshot image */
+#endif
 
 #define NEXT3_FEATURE_COMPAT_SUPP	EXT2_FEATURE_COMPAT_EXT_ATTR
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_MOUNT
+#define NEXT3_FEATURE_INCOMPAT_SUPP	(NEXT3_FEATURE_INCOMPAT_FILETYPE| \
+					 NEXT3_FEATURE_INCOMPAT_RECOVER| \
+					 NEXT3_FEATURE_INCOMPAT_IS_SNAPSHOT| \
+					 NEXT3_FEATURE_INCOMPAT_META_BG)
+#else
 #define NEXT3_FEATURE_INCOMPAT_SUPP	(NEXT3_FEATURE_INCOMPAT_FILETYPE| \
 					 NEXT3_FEATURE_INCOMPAT_RECOVER| \
 					 NEXT3_FEATURE_INCOMPAT_META_BG)
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE
+#endif
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_OLD
 #define NEXT3_FEATURE_RO_COMPAT_SUPP	(NEXT3_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 NEXT3_FEATURE_RO_COMPAT_LARGE_FILE| \

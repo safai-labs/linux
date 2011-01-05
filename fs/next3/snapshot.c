@@ -338,41 +338,6 @@ void next3_snapshot_copy_buffer(struct buffer_head *sbh,
 	sync_dirty_buffer(sbh);
 }
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-/*
- * XXX: Experimental code
- * next3_snapshot_zero_buffer()
- * helper function for next3_snapshot_test_and_cow()
- * reset snapshot data buffer to zero and
- * add to current transaction (as dirty data)
- * 'blk' is the logical snapshot block number
- * 'blocknr' is the physical block number
- */
-static int
-next3_snapshot_zero_buffer(handle_t *handle, struct inode *inode,
-		next3_snapblk_t blk, next3_fsblk_t blocknr)
-{
-	int err;
-	struct buffer_head *sbh;
-	sbh = sb_getblk(inode->i_sb, blocknr);
-	if (!sbh)
-		return -EIO;
-
-	snapshot_debug(3, "zeroing snapshot block [%lu/%lu] = [%lu/%lu]\n",
-			SNAPSHOT_BLOCK_TUPLE(blk),
-			SNAPSHOT_BLOCK_TUPLE(blocknr));
-
-	lock_buffer(sbh);
-	memset(sbh->b_data, 0, SNAPSHOT_BLOCK_SIZE);
-	set_buffer_uptodate(sbh);
-	unlock_buffer(sbh);
-	err = next3_journal_dirty_data(handle, sbh);
-	mark_buffer_dirty(sbh);
-	brelse(sbh);
-	return err;
-}
-#endif
-
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
 /*
  * COW bitmap functions
@@ -969,7 +934,7 @@ int next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	struct inode *active_snapshot = next3_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;
 	next3_fsblk_t block = bh->b_blocknr, blk = 0;
-	int err = 0, clear = 0;
+	int err = 0, excluded = 0;
 
 	if (!active_snapshot)
 		/* no active snapshot - no need to COW */
@@ -1010,26 +975,22 @@ int next3_snapshot_test_and_cow(const char *where, handle_t *handle,
 	next3_snapshot_cow_begin(handle);
 
 	if (inode)
-		clear = next3_snapshot_excluded(inode);
-	if (clear < 0) {
-		/*
-		 * excluded file block access - don't COW and
-		 * mark block in exclude bitmap
-		 */
-		snapshot_debug_hl(4, "file (%lu) excluded from snapshot - "
-				"mark block (%lu) in exclude bitmap\n",
-				inode->i_ino, block);
+		excluded = next3_snapshot_excluded(inode);
+	if (excluded) {
+		/* don't COW excluded file block to snapshot */
+		snapshot_debug_hl(4, "file (%lu) excluded from snapshot\n",
+				inode->i_ino);
 		cow = 0;
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
 	/* get the COW bitmap and test if blocks are in use by snapshot */
 	err = next3_snapshot_test_cow_bitmap(handle, active_snapshot,
-			block, 1, clear < 0 ? inode : NULL);
+			block, 1, excluded ? inode : NULL);
 	if (err < 0)
 		goto out;
 #else
-	if (clear < 0)
+	if (excluded)
 		goto cowed;
 #endif
 	if (!err) {
@@ -1113,32 +1074,11 @@ test_pending_cow:
 		/* wait for pending COW to complete */
 		next3_snapshot_test_pending_cow(sbh, block);
 #endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-	if (clear && blk) {
-		/*
-		 * XXX: Experimental code
-		 * zero out snapshot block data
-		 */
-		err = next3_snapshot_zero_buffer(handle, active_snapshot,
-				block, blk);
-		if (err)
-			goto out;
-	}
-#endif
 
 cowed:
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
 	/* mark the buffer COWed in the current transaction */
 	next3_snapshot_mark_cowed(handle, bh);
-#endif
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (clear) {
-		/* mark COWed block in exclude bitmap */
-		clear = next3_snapshot_exclude_blocks(handle, sb,
-				block, 1);
-		if (clear < 0)
-			err = clear;
-	}
 #endif
 out:
 	brelse(sbh);

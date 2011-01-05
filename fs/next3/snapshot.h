@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-rc7 (23-Dec-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-WIP (21-Dec-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -484,14 +484,11 @@ static inline int next3_snapshot_exclude_inode(struct inode *inode)
  * Checks if the file should be excluded from snapshot.
  *
  * Returns 0 for normal file.
- * Returns > 0 for 'excluded' file.
- * Returns < 0 for 'ignored' file (stonger than 'excluded').
+ * Returns > 0 for 'excluded' file (excluded by user).
+ * Returns < 0 for 'ignored' file (excluded by system).
  *
- * Excluded and ignored file blocks are not moved to snapshot.
- * Ignored file metadata blocks are not COWed to snapshot.
- * Excluded file metadata blocks are zeroed in the snapshot file.
- * XXX: Excluded files code is experimental,
- *      but ignored files code isn't.
+ * Excluded and ignored file blocks are not COWed nor moved to snapshot.
+ * Excluded files code is experimental, but ignored files code isn't.
  */
 static inline int next3_snapshot_excluded(struct inode *inode)
 {
@@ -507,8 +504,8 @@ static inline int next3_snapshot_excluded(struct inode *inode)
 		return -1;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
-	/* XXX: exclude file with 'nosnap' flag (Experimental) */
-	if (NEXT3_I(inode)->i_flags & NEXT3_NOSNAP_FL)
+	/* exclude file with 'nocow' flag */
+	if (NEXT3_I(inode)->i_flags & NEXT3_NOCOW_FL)
 		return 1;
 #endif
 	return 0;

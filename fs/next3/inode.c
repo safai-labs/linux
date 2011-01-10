@@ -1863,6 +1863,109 @@ int next3_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 				    next3_get_block);
 }
 
+#ifdef CONFIG_NEXT3_FS_DEBUG
+/*
+ * Preallocate space for a file. This implements next3's fallocate inode
+ * operation, which gets called from sys_fallocate system call.
+ * Actually, sys_fallocate won't allow the new 'uninit' flag, so we realy
+ * call this function from next3_setattr when extending the size of a file
+ * with 'unrm' flag (for debugging).
+ */
+static long next3_fallocate_uninit(struct inode *inode, int mode,
+		loff_t offset, loff_t len)
+{
+
+	handle_t *handle;
+	loff_t new_size;
+	long lblk;
+	unsigned int max_blocks;
+	int ret = 0;
+	int ret2 = 0;
+	int retries = 0;
+	unsigned int blkbits = inode->i_blkbits;
+	struct buffer_head dummy;
+
+#define FALLOC_FL_UNINIT	0x03
+
+	/*
+	 * We only support call with the new 'uninit' flag set, because
+	 * there is no efficient way to initialize the data (to zero).
+	 * We do not support the 'keep_size' flag.
+	 */
+	if (mode != FALLOC_FL_UNINIT)
+		return -EOPNOTSUPP;
+
+	/* preallocation to directories is currently not supported */
+	if (S_ISDIR(inode->i_mode))
+		return -ENODEV;
+
+	lblk = offset >> blkbits;
+	/*
+	 * We can't just convert len to max_blocks because
+	 * If blocksize = 4096 offset = 3072 and len = 2048
+	 */
+	max_blocks = (NEXT3_BLOCK_ALIGN(len + offset, blkbits) >> blkbits)
+		- lblk;
+	snapshot_debug(2, "next3_fallocate_uninit: offset=%lld, len=%lld, "
+			"block=%ld, maxblocks=%u\n",
+			offset, len, lblk, max_blocks);
+	ret = inode_newsize_ok(inode, (len + offset));
+	if (ret)
+		return ret;
+retry:
+	handle = start_transaction(inode);
+	if (IS_ERR(handle))
+		return PTR_ERR(handle);
+	while (ret >= 0 && ret < max_blocks) {
+		lblk = lblk + ret;
+		max_blocks = max_blocks - ret;
+		if (try_to_extend_transaction(handle, inode)) {
+			next3_mark_inode_dirty(handle, inode);
+			ret2 = truncate_restart_transaction(handle, inode);
+			if (ret2)
+				return ret2;
+		}
+		dummy.b_state = 0;
+		dummy.b_blocknr = -1000;
+		ret = next3_get_blocks_handle(handle, inode, lblk, max_blocks,
+				&dummy, 1);
+		if (ret <= 0) {
+			next3_mark_inode_dirty(handle, inode);
+			break;
+		}
+		if ((lblk + ret) >= (NEXT3_BLOCK_ALIGN(offset + len, blkbits)
+					>> blkbits))
+			new_size = offset + len;
+		else
+			new_size = (lblk + ret) << blkbits;
+
+		if (new_size > inode->i_size)
+			i_size_write(inode, new_size);
+		if (new_size > NEXT3_I(inode)->i_disksize)
+			NEXT3_I(inode)->i_disksize = new_size;
+		next3_mark_inode_dirty(handle, inode);
+		cond_resched();
+	}
+	ret2 = next3_journal_stop(handle);
+	if (ret == -ENOSPC &&
+			next3_should_retry_alloc(inode->i_sb, &retries)) {
+		ret = 0;
+		goto retry;
+	}
+	return ret > 0 ? ret2 : ret;
+}
+
+long next3_fallocate(struct inode *inode, int mode, loff_t offset, loff_t len)
+{
+	int ret;
+
+	mutex_lock(&inode->i_mutex);
+	ret = next3_fallocate_uninit(inode, mode, offset, len);
+	mutex_unlock(&inode->i_mutex);
+	return ret;
+}
+
+#endif
 /*
  * `handle' can be NULL if create is zero
  */
@@ -4735,6 +4838,16 @@ int next3_setattr(struct dentry *dentry, struct iattr *attr)
 		next3_journal_stop(handle);
 	}
 
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	if (S_ISREG(inode->i_mode) &&
+	    (NEXT3_I(inode)->i_flags & NEXT3_UNRM_FL) &&
+	    attr->ia_valid & ATTR_SIZE && attr->ia_size > inode->i_size) {
+		/* allocate uninitialized blocks for extended range */
+		next3_fallocate_uninit(inode, FALLOC_FL_UNINIT,
+				inode->i_size, attr->ia_size);
+	}
+
+#endif
 	rc = inode_setattr(inode, attr);
 
 	if (!rc && (ia_valid & ATTR_MODE))

@@ -101,6 +101,9 @@ const struct inode_operations next3_file_inode_operations = {
 	.removexattr	= generic_removexattr,
 #endif
 	.check_acl	= next3_check_acl,
+#ifdef CONFIG_NEXT3_FS_DEBUG
+	.fallocate	= next3_fallocate,
+#endif
 	.fiemap		= next3_fiemap,
 };
 

@@ -125,6 +125,7 @@
 				 NEXT3_GOOD_OLD_FIRST_INO : \
 				 (s)->s_first_ino)
 #endif
+#define NEXT3_BLOCK_ALIGN(size, blkbits)	ALIGN((size), (1 << (blkbits)))
 
 /*
  * Macro-instructions used to manage fragments
@@ -1156,6 +1157,10 @@ extern void next3_get_inode_flags(struct next3_inode_info *);
 extern void next3_set_aops(struct inode *inode);
 extern int next3_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		       u64 start, u64 len);
+#ifdef CONFIG_NEXT3_FS_DEBUG
+extern long next3_fallocate(struct inode *inode, int mode,
+			loff_t offset, loff_t len);
+#endif
 
 /* ioctl.c */
 extern long next3_ioctl(struct file *, unsigned int, unsigned long);

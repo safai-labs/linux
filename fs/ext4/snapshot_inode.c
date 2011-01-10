@@ -1,4 +1,25 @@
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/time.h>
+#include <linux/jbd2.h>
+#include <linux/highuid.h>
+#include <linux/pagemap.h>
+#include <linux/quotaops.h>
+#include <linux/string.h>
+#include <linux/buffer_head.h>
+#include <linux/writeback.h>
+#include <linux/pagevec.h>
+#include <linux/mpage.h>
+#include <linux/namei.h>
+#include <linux/uio.h>
+#include <linux/bio.h>
+#include <linux/workqueue.h>
+#include <linux/kernel.h>
+#include <linux/slab.h>
+
 #include "ext4_jbd2.h"
+#include "xattr.h"
+#include "acl.h"
 #include "ext4_extents.h"
 
 #include <trace/events/ext4.h>
@@ -223,6 +244,166 @@ cleanup:
 	}
 	brelse(sbh);
 return err;
+}
+
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
+/*
+ * ext4_move_branches - move an array of branches
+ * @handle: JBD handle for this transaction
+ * @src:	inode we're moving blocks from
+ * @ps:		array of src block numbers
+ * @pd:		array of dst block numbers
+ * @depth:	depth of the branches to move
+ * @count:	max branches to move
+ * @pmoved:	pointer to counter of moved blocks
+ *
+ * We move whole branches from src to dst, skipping the holes in src
+ * and stopping at the first branch that needs to be merged at higher level.
+ * Called from ext4_snapshot_merge_blocks() under snapshot_mutex.
+ * Returns the number of merged branches.
+ */
+static int ext4_move_branches(handle_t *handle, struct inode *src,
+		__le32 *ps, __le32 *pd, int depth,
+		int count, int *pmoved)
+{
+	int i;
+
+	for (i = 0; i < count; i++, ps++, pd++) {
+		__le32 s = *ps, d = *pd;
+		if (s && d && depth)
+			/* can't move or skip entire branch, need to merge
+			   these 2 branches */
+			break;
+		if (!s || d)
+			/* skip holes is src and mapped data blocks in dst */
+			continue;
+
+		/* count moved blocks (and verify they are excluded) */
+		ext4_free_branches_cow(handle, src, NULL,
+				ps, ps+1, depth, pmoved);
+
+		/* move the entire branch from src to dst inode */
+		*pd = s;
+		*ps = 0;
+	}
+	return i;
+}
+
+/*
+ * ext4_snapshot_merge_blocks - merge blocks from @src to @dst inode
+ * @handle: JBD handle for this transaction
+ * @src:	inode we're merging blocks from
+ * @dst:	inode we're merging blocks to
+ * @iblock:	inode offset to first data block to merge
+ * @maxblocks:	inode range of data blocks to merge
+ *
+ * Merges @maxblocks data blocks starting at @iblock and all the indirect
+ * blocks that map them.
+ * Called from ext4_snapshot_merge() under snapshot_mutex.
+ * Returns the merged blocks range and <0 on error.
+ */
+int ext4_snapshot_merge_blocks(handle_t *handle,
+		struct inode *src, struct inode *dst,
+		sector_t iblock, unsigned long maxblocks)
+{
+	Indirect S[4], D[4], *pS, *pD;
+	int offsets[4];
+	int ks, kd, depth, count;
+	int ptrs = EXT4_ADDR_PER_BLOCK(src->i_sb);
+	int ptrs_bits = EXT4_ADDR_PER_BLOCK_BITS(src->i_sb);
+	int data_ptrs_bits, data_ptrs_mask, max_ptrs;
+	int moved = 0, err;
+
+	depth = ext4_block_to_path(src, iblock, offsets, NULL);
+	if (depth < 3)
+		/* snapshot blocks are mapped with double and tripple
+		   indirect blocks */
+		return -1;
+
+	memset(D, 0, sizeof(D));
+	memset(S, 0, sizeof(S));
+	pD = ext4_get_branch(dst, depth, offsets, D, &err);
+	kd = (pD ? pD - D : depth - 1);
+	if (err)
+		goto out;
+	pS = ext4_get_branch(src, depth, offsets, S, &err);
+	ks = (pS ? pS - S : depth - 1);
+	if (err)
+		goto out;
+
+	if (ks < 1 || kd < 1) {
+		/* snapshot double and tripple tree roots are pre-allocated */
+		err = -EIO;
+		goto out;
+	}
+
+	if (ks < kd) {
+		/* nothing to move from src to dst */
+		count = ext4_blks_to_skip(src, iblock, maxblocks,
+					S, depth, offsets, ks);
+		snapshot_debug(3, "skipping src snapshot (%u) holes: "
+			       "block=0x%llx, count=0x%x\n", src->i_generation,
+			       SNAPSHOT_BLOCK(iblock), count);
+		err = count;
+		goto out;
+	}
+
+	/* move branches from level kd in src to dst */
+	pS = S+kd;
+	pD = D+kd;
+
+	/* compute max branches that can be moved */
+	data_ptrs_bits = ptrs_bits * (depth - kd - 1);
+	data_ptrs_mask = (1 << data_ptrs_bits) - 1;
+	max_ptrs = (maxblocks >> data_ptrs_bits) + 1;
+	if (max_ptrs > ptrs-offsets[kd])
+		max_ptrs = ptrs-offsets[kd];
+
+	/* get write access for the splice point */
+	err = ext4_journal_get_write_access_inode(handle, src, pS->bh);
+	if (err)
+		goto out;
+	err = ext4_journal_get_write_access_inode(handle, dst, pD->bh);
+	if (err)
+		goto out;
+
+	/* move as many whole branches as possible */
+	err = ext4_move_branches(handle, src, pS->p, pD->p, depth-1-kd,
+			max_ptrs, &moved);
+	if (err < 0)
+		goto out;
+	count = err;
+	if (moved) {
+		snapshot_debug(3, "moved snapshot (%u) -> snapshot (%d) "
+			       "branches: block=0x%llx, count=0x%x, k=%d/%d, "
+			       "moved_blocks=%d\n", src->i_generation,
+			       dst->i_generation, SNAPSHOT_BLOCK(iblock),
+			       count, kd, depth, moved);
+		/* update src and dst inodes blocks usage */
+		dquot_free_block(src, moved);
+		dquot_alloc_block(dst, moved);
+		err = ext4_handle_dirty_metadata(handle, NULL, pD->bh);
+		if (err)
+			goto out;
+		err = ext4_handle_dirty_metadata(handle, NULL, pS->bh);
+		if (err)
+			goto out;
+	}
+
+	/* we merged at least 1 partial branch and optionally count-1 full
+	   branches */
+	err = (count << data_ptrs_bits) -
+		(SNAPSHOT_BLOCK(iblock) & data_ptrs_mask);
+out:
+	/* count_branch_blocks may use the entire depth of S */
+	for (ks = 1; ks < depth; ks++) {
+		if (S[ks].bh)
+			brelse(S[ks].bh);
+		if (ks <= kd)
+			brelse(D[ks].bh);
+	}
+	return err < maxblocks ? err : maxblocks;
 }
 
 #endif

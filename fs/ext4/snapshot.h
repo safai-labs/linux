@@ -408,6 +408,11 @@ extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		struct buffer_head *cow_bh,
 		int shrink, int *pmapped);
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
+extern int ext4_snapshot_merge_blocks(handle_t *handle,
+		struct inode *src, struct inode *dst,
+		sector_t iblock, unsigned long maxblocks);
+#endif
 #endif
 
 /* super.c */

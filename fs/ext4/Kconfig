@@ -499,3 +499,12 @@ config EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 	  Free blocks of deleted snapshots, which are not in use by an older
 	  non-deleted snapshot.  Shrinking helps reclaiming disk space
 	  while older snapshots are currently in use (enabled).
+
+config EXT4_FS_SNAPSHOT_CLEANUP_MERGE
+	bool "snapshot cleanup - merge shrunk snapshots"
+	depends on EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+	default y
+	help
+	  Move blocks of deleted and shrunk snapshots to an older non-deleted
+	  and disabled snapshot.  Merging helps removing snapshots from list
+	  while older snapshots are not currently in use (disabled).

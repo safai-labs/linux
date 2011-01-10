@@ -4769,7 +4769,7 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_ERROR
 			/* we may have lost write_access on bh */
 			if (is_handle_aborted(handle))
-				return;
+				return 1;
 #endif
 		}
 	}

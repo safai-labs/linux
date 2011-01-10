@@ -25,6 +25,9 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <trace/events/ext4.h>
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+#include "snapshot.h"
+#endif
 
 /*
  * MUSTDO:
@@ -4511,6 +4514,13 @@ void ext4_free_blocks(handle_t *handle, struct inode *inode,
 	struct ext4_buddy e4b;
 	int err = 0;
 	int ret;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+ 	ext4_grpblk_t group_freed;
+	int state_locked;
+	ext4_grpblk_t group_skipped = 0;
+	int i;
+	char *where=NULL;
+#endif
 
 	if (bh) {
 		if (block)
@@ -4598,6 +4608,51 @@ do_more:
 	if (err)
 		goto error_return;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	/* if we skip all blocks we won't need to aquire the state lock */
+	state_locked = 0;
+#else
+	jbd_lock_bh_state(bitmap_bh);
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+ 	for (i = 0, group_freed = 0; i < count; i++) {
+		if (state_locked) {
+			/*
+			 * Moving blocks to snapshot may sleep and may need to take this
+			 * state lock if allocating snapshot block from this block group.
+			 * TODO: get the COW bitmap and test it inside this loop before
+			 *       calling ext4_snapshot_get_delete_access().
+			 */
+			jbd_unlock_bh_state(bitmap_bh);
+			state_locked = 0;
+		}
+		ret = ext4_snapshot_get_delete_access(handle, inode,
+						       block + i, count - i);
+		if (ret < 0) {
+			ext4_journal_abort_handle(where, __LINE__, __func__, NULL,
+						   handle, ret);
+			err = ret;
+			break;
+		}
+		if (ret > 0) {
+			/* 'ret' blocks were moved to snapshot - skip them */
+			group_skipped += ret;
+			i += ret - 1;
+			cond_resched();
+			continue;
+		}
+		jbd_lock_bh_state(bitmap_bh);
+		state_locked = 1;
+	}
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	if (state_locked)
+		jbd_unlock_bh_state(bitmap_bh);
+#else
+ 	jbd_unlock_bh_state(bitmap_bh);
+#endif
+
 	/*
 	 * We are about to modify some metadata.  Call the journal APIs
 	 * to unshare ->b_data if a currently-committing transaction is
@@ -4651,6 +4706,10 @@ do_more:
 	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
 	ext4_unlock_group(sb, block_group);
 	percpu_counter_add(&sbi->s_freeblocks_counter, count);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	percpu_counter_add(&sbi->s_freeblocks_counter, -group_skipped);
+	group_skipped = 0;
+#endif
 
 	if (sbi->s_log_groups_per_flex) {
 		ext4_group_t flex_group = ext4_flex_group(sbi, block_group);

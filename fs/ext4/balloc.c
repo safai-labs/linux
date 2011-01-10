@@ -361,7 +361,50 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 	 */
 	return bh;
 }
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 
+/**
+ * read_exclude_bitmap()
+ * @sb:			super block
+ * @block_group:	given block group
+ *
+ * Read the exclude bitmap for a given block_group
+ *
+ * Return buffer_head on success or NULL in case of failure.
+ */
+struct buffer_head *
+read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
+{
+	struct ext4_group_info *gi = EXT4_SB(sb)->s_snapshot_group_info + block_group;
+	struct buffer_head *bh = NULL;
+	ext4_fsblk_t exclude_bitmap_blk;
+
+	exclude_bitmap_blk = gi->bg_exclude_bitmap;
+	if (!exclude_bitmap_blk)
+		return NULL;
+	bh = sb_getblk(sb, exclude_bitmap_blk);
+	if (unlikely(!bh)) {
+		ext4_error(sb, __func__,
+			    "Cannot read exclude bitmap - "
+			    "block_group = %d, exclude_bitmap = %lu",
+			    block_group, exclude_bitmap_blk);
+		return NULL;
+	}
+	if (likely(bh_uptodate_or_lock(bh)))
+		return bh;
+
+	if (bh_submit_read(bh) < 0) {
+		brelse(bh);
+		ext4_error(sb, __func__,
+			    "Cannot read exclude bitmap - "
+			    "block_group = %d, exclude_bitmap = %lu",
+			    block_group, exclude_bitmap_blk);
+		return NULL;
+	}
+	return bh;
+}
+
+#endif
 /**
  * ext4_add_groupblocks() -- Add given blocks to an existing group
  * @handle:			handle to this transaction
@@ -618,7 +661,11 @@ ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
 	ar.goal = goal;
 	ar.len = count ? *count : 1;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP 
+	ret = ext4_mb_new_blocks(handle, inode, &ar, errp);
+#else
 	ret = ext4_mb_new_blocks(handle, &ar, errp);
+#endif
 	if (count)
 		*count = ar.len;
 	/*

@@ -461,6 +461,9 @@ struct flex_groups {
 			   EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
 			   EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL)
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+#define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define EXT4_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
 #endif
@@ -1855,6 +1858,9 @@ extern long ext4_mb_max_to_scan;
 extern int ext4_mb_init(struct super_block *, int);
 extern int ext4_mb_release(struct super_block *);
 extern ext4_fsblk_t ext4_mb_new_blocks(handle_t *,
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+				struct inode *inode,
+#endif
 				struct ext4_allocation_request *, int *);
 extern int ext4_mb_reserve_blocks(struct super_block *, int);
 extern void ext4_discard_preallocations(struct inode *);

@@ -356,6 +356,9 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 		unsigned int block_group, struct buffer_head *cow_bh)
 {
 	struct buffer_head *bitmap_bh;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+#endif
 	char *dst, *src, *mask = NULL;
 	struct journal_head *jh;
 
@@ -364,6 +367,12 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 		return -EIO;
 
 	src = bitmap_bh->b_data;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	if (exclude_bitmap_bh)
+		/* mask block bitmap with exclude bitmap */
+		mask = exclude_bitmap_bh->b_data;
+#endif
 	/*
 	 * Another COWing task may be changing this block bitmap
 	 * (allocating active snapshot blocks) while we are trying
@@ -391,6 +400,9 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	jbd_unlock_bh_state(bitmap_bh);
 	jbd_unlock_bh_journal_head(bitmap_bh);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+#endif
 	brelse(bitmap_bh);
 	return 0;
 }
@@ -611,9 +623,118 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			break;
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	if (inuse && excluded) {
+		int i, err;
+
+		/* don't COW excluded inode blocks */
+		if (!EXT4_HAS_COMPAT_FEATURE(excluded->i_sb,
+			EXT4_FEATURE_COMPAT_EXCLUDE_INODE))
+			/* no exclude inode/bitmap */
+			return 0;
+		/*
+		 * We should never get here because excluded file blocks should
+		 * be excluded from COW bitmap.  The blocks will not be COWed
+		 * anyway, but this can indicate a messed up exclude bitmap.
+		 * Mark that exclude bitmap needs to be fixed and clear blocks
+		 * from COW bitmap.
+		 */
+		EXT4_SET_FLAGS(excluded->i_sb, EXT4_FLAGS_FIX_EXCLUDE);
+		ext4_warning(excluded->i_sb,
+			"clearing excluded file (ino=%lu) blocks [%d-%d/%lu] "
+			"from COW bitmap! - running fsck to fix exclude bitmap "
+			"is recommended.\n",
+			excluded->i_ino, bit, bit+inuse-1, block_group);
+		for (i = 0; i < inuse; i++)
+			ext4_clear_bit(bit+i, cow_bh->b_data);
+#warning "journal_dirty_data needs to be handled"
+#ifdef WARNING_NOT_IMPLEMENTED
+		err = ext4_journal_dirty_data(handle, cow_bh);
+#endif
+		mark_buffer_dirty(cow_bh);
+		return err;
+	}
+
+#endif
 	return inuse;
 }
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+/*
+ * ext4_snapshot_test_and_exclude() marks blocks in exclude bitmap
+ * @where:	name of caller function
+ * @handle:	JBD handle
+ * @sb:		super block handle
+ * @block:	address of first block to exclude
+ * @maxblocks:	max. blocks to exclude
+ * @exclude:	if false, return -EIO if block needs to be excluded
+ *
+ * Return values:
+ * >= 0 - no. of blocks set in exclude bitmap
+ * < 0 - error
+ */
+int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
+		struct super_block *sb, ext4_fsblk_t block, int maxblocks,
+		int exclude)
+{
+	struct buffer_head *exclude_bitmap_bh = NULL;
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
+	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
+	int err = 0, n = 0, excluded = 0;
+	int count = maxblocks;
+
+	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	if (!exclude_bitmap_bh)
+		return 0;
+
+	if (exclude)
+		err = ext4_journal_get_write_access(handle, exclude_bitmap_bh);
+	if (err)
+		goto out;
+
+	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
+		if (!ext4_set_bit_atomic(sb_bgl_lock(EXT4_SB(sb),
+						block_group),
+					bit, exclude_bitmap_bh->b_data)) {
+			n++;
+			if (!exclude)
+				break;
+		} else if (n) {
+			snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
+					bit-n, bit-1, block_group);
+			excluded += n;
+			n = 0;
+		}
+		bit++;
+		count--;
+	}
+
+	if (n && !exclude) {
+		EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
+		ext4_error(sb, where,
+			"snapshot file block [%d/%lu] not in exclude bitmap! - "
+			"running fsck to fix exclude bitmap is recommended.\n",
+			bit, block_group);
+		err = -EIO;
+		goto out;
+	}
+
+	if (n) {
+		snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
+				bit-n, bit-1, block_group);
+		excluded += n;
+	}
+
+	if (exclude && excluded) {
+		err = ext4_handle_dirty_metadata(handle, NULL, exclude_bitmap_bh);
+		trace_cow_add(handle, excluded, excluded);
+	}
+out:
+	brelse(exclude_bitmap_bh);
+	return err ? err : excluded;
+}
+#endif
+
 /*
  * COW functions
  */
@@ -973,6 +1094,15 @@ cowed:
 	/* mark the buffer COWed in the current transaction */
 	ext4_snapshot_mark_cowed(handle, bh);
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	if (clear) {
+		/* mark COWed block in exclude bitmap */
+		clear = ext4_snapshot_exclude_blocks(handle, sb,
+				block, 1);
+		if (clear < 0)
+			err = clear;
+	}
+#endif
 out:
 	brelse(sbh);
 	/* END COWing */
@@ -1088,6 +1218,12 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 	 */
 	if (inode)
 		dquot_free_block(inode, count);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	/* mark moved blocks in exclude bitmap */
+	excluded = ext4_snapshot_exclude_blocks(handle, sb, block, count);
+	if (excluded < 0)
+		err = excluded;
+#endif
 	trace_cow_add(handle, moved, count);
 out:
 	/* END moving */
@@ -1117,6 +1253,9 @@ int ext4_snapshot_get_read_access(struct super_block *sb,
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
 	struct buffer_head *bitmap_bh;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+#endif
 	int err = 0;
 
 	if (PageReadahead(bh->b_page))
@@ -1134,7 +1273,20 @@ int ext4_snapshot_get_read_access(struct super_block *sb,
 		return -EIO;
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	if (exclude_bitmap_bh &&
+		ext4_test_bit(bit, exclude_bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"excluded block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		err = -EIO;
+	}
+#endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+#endif
 	brelse(bitmap_bh);
 	return err;
 }

@@ -469,3 +469,12 @@ config EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
 	  flag has also changed.  When old exclude_inode flag is set,
 	  copy inode 10 to 9, clear inode 10 and clear old exclude_inode flag.
 	  (new exclude_inode flag is set during migration of super block).
+
+config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	bool "snapshot exclude - the exclude bitmap"
+	depends on EXT4_FS_SNAPSHOT_EXCLUDE
+	default y
+	help
+	  Excluding blocks is done by setting their bit in the exclude bitmap.
+	  There is one exclude bitmap block per block group and its location
+	  is cached in the group descriptor.

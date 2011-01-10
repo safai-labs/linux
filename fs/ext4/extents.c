@@ -3426,7 +3426,11 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	else
 		/* disable in-core preallocation for non-regular files */
 		ar.flags = 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	newblock = ext4_mb_new_blocks(handle, inode, &ar, &err);
+#else
 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
+#endif
 	if (!newblock)
 		goto out2;
 	ext_debug("allocate new block: goal %llu, found %llu/%u\n",

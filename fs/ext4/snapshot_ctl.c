@@ -774,6 +774,9 @@ int ext4_snapshot_take(struct inode *inode)
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_super_block *es = NULL;
 	struct buffer_head *sbh = NULL;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 	struct buffer_head *bhs[COPY_INODE_BLOCKS_NUM] = { NULL };
 	const char *mask = NULL;
@@ -932,6 +935,13 @@ copy_inode_blocks:
 	bhs[COPY_INODE_BITMAP] = sb_bread(sb,
 			ext4_inode_bitmap(sb, desc));
 	bhs[COPY_INODE_TABLE] = iloc.bh;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+	exclude_bitmap_bh = read_exclude_bitmap(sb, iloc.block_group);
+	if (exclude_bitmap_bh)
+		/* mask block bitmap with exclude bitmap */
+		mask = exclude_bitmap_bh->b_data;
+#endif
 	err = -EIO;
 	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++) {
 		brelse(sbh);
@@ -1015,6 +1025,9 @@ out_unlockfs:
 #endif
 
 out_err:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+#endif
 	brelse(sbh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)

@@ -303,6 +303,36 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 	return ext4_snapshot_move(handle, inode, block, count, 1);
 }
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+extern int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
+		struct super_block *sb, ext4_fsblk_t block, int maxblocks,
+		int exclude);
+
+/*
+ * ext4_snapshot_exclude_blocks() - exclude snapshot blocks
+ *
+ * Called from ext4_snapshot_test_and_{cow,move}() when copying/moving
+ * blocks to active snapshot.
+ *
+ * On error handle is aborted.
+ */
+#define ext4_snapshot_exclude_blocks(handle, sb, block, count) \
+	ext4_snapshot_test_and_exclude(__func__, (handle), (sb), \
+			(block), (count), 1)
+
+/*
+ * ext4_snapshot_test_excluded() - test that snapshot blocks are excluded
+ *
+ * Called from ext4_snapshot_clean(), ext4_free_branches_cow() and
+ * ext4_clear_blocks_cow() under snapshot_mutex.
+ *
+ * On error handle is aborted.
+ */
+#define ext4_snapshot_test_excluded(handle, inode, block, count) \
+	ext4_snapshot_test_and_exclude(__func__, (handle), (inode)->i_sb, \
+			(block), (count), 0)
+
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 extern int ext4_snapshot_get_read_access(struct super_block *sb,
 					  struct buffer_head *bh);
@@ -344,6 +374,10 @@ static inline void exit_ext4_snapshot(void)
 /* balloc.c */
 extern struct buffer_head *read_block_bitmap(struct super_block *sb,
 					     unsigned int block_group);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
+					       unsigned int block_group);
+#endif
 
 /* namei.c */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

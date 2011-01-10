@@ -175,6 +175,9 @@ static int ext4_snapshot_enable(struct inode *inode);
 static int ext4_snapshot_disable(struct inode *inode);
 static int ext4_snapshot_create(struct inode *inode);
 static int ext4_snapshot_delete(struct inode *inode);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+static int ext4_snapshot_exclude(handle_t *handle, struct inode *inode);
+#endif
 
 /*
  * ext4_snapshot_get_flags() check snapshot state
@@ -232,6 +235,13 @@ int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 #endif
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+	if (!(flags & EXT4_SNAPFILE_FL))
+		/* test snapshot blocks are excluded on chattr -x */
+		err = ext4_snapshot_exclude(handle, inode);
+	if (err)
+		goto out;
+#endif
 
 	if ((flags ^ oldflags) & EXT4_SNAPFILE_ENABLED_FL) {
 		/* enabled/disabled the snapshot during transaction */
@@ -1036,6 +1046,85 @@ out_err:
 	return err;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+/*
+ * ext4_snapshot_clean() "cleans" snapshot file blocks in 1 of 2 ways:
+ * 1. from ext4_snapshot_remove() with @cleanup=1 to free snapshot file
+ *    blocks, before removing snapshot file from snapshots list.
+ * 2. from ext4_snapshot_exclude() with @cleanup=0 to mark snapshot file
+ *    blocks in exclude bitmap.
+ * Called under snapshot_mutex.
+ *
+ * Return values:
+ * > 0 - no. of blocks in snapshot file (@cleanup=0)
+ * = 0 - successful cleanup (@cleanup=1)
+ * < 0 - error
+ */
+static int ext4_snapshot_clean(handle_t *handle, struct inode *inode,
+		int cleanup)
+{
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	int i, nblocks = 0;
+	int *pblocks = (cleanup ? NULL : &nblocks);
+
+	if (!ext4_snapshot_list(inode)) {
+		snapshot_debug(1, "ext4_snapshot_clean() called with "
+			       "snapshot file (ino=%lu) not on list\n",
+			       inode->i_ino);
+		return -EINVAL;
+	}
+
+	if (ei->i_flags & EXT4_SNAPFILE_ACTIVE_FL) {
+		snapshot_debug(1, "clean of active snapshot (%u) "
+			       "is not allowed.\n",
+			       inode->i_generation);
+		return -EPERM;
+	}
+
+	/*
+	 * A very simplified version of ext4_truncate() for snapshot files.
+	 * A non-active snapshot file never allocates new blocks and only frees
+	 * blocks under snapshot_mutex, so no need to take truncate_mutex here.
+	 * No need to add inode to orphan list for post crash truncate, because
+	 * snapshot is still on the snapshot list and marked for deletion.
+	 */
+	for (i = EXT4_DIND_BLOCK; i < EXT4_SNAPSHOT_N_BLOCKS; i++) {
+		int depth = (i == EXT4_DIND_BLOCK ? 2 : 3);
+		if (!ei->i_data[i])
+			continue;
+		ext4_free_branches_cow(handle, inode, NULL,
+				ei->i_data+i, ei->i_data+i+1, depth, pblocks);
+		if (cleanup)
+			ei->i_data[i] = 0;
+	}
+	return nblocks;
+}
+
+/*
+ * ext4_snapshot_exclude() marks snapshot file blocks in exclude bitmap.
+ * Snapshot file blocks should already be excluded if everything works properly.
+ * This function is used only to verify the correctness of exclude bitmap.
+ * Called under i_mutex and snapshot_mutex.
+ */
+static int ext4_snapshot_exclude(handle_t *handle, struct inode *inode)
+{
+	int err;
+
+	/* extend small transaction started in ext4_ioctl() */
+	err = extend_or_restart_transaction(handle, EXT4_MAX_TRANS_DATA);
+	if (err)
+		return err;
+
+	err = ext4_snapshot_clean(handle, inode, 0);
+	if (err < 0)
+		return err;
+
+	snapshot_debug(1, "snapshot (%u) is clean (%d blocks)\n",
+			inode->i_generation, err);
+	return 0;
+}
+
+#endif
 /*
  * ext4_snapshot_enable() enables snapshot mount
  * sets the in-use flag and the active snapshot
@@ -1178,6 +1267,18 @@ static int ext4_snapshot_remove(struct inode *inode)
 	}
 	sbi = EXT4_SB(inode->i_sb);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+	err = ext4_snapshot_clean(handle, inode, 1);
+	if (err)
+		goto out_handle;
+
+	/* reset snapshot inode size */
+	i_size_write(inode, 0);
+	ei->i_disksize = 0;
+	err = ext4_mark_inode_dirty(handle, inode);
+	if (err)
+		goto out_handle;
+#endif
 
 	err = extend_or_restart_transaction_inode(handle, inode, 2);
 	if (err)
@@ -1235,6 +1336,35 @@ out_err:
 	return err;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+/*
+ * ext4_snapshot_cleanup - shrink/merge/remove snapshot marked for deletion
+ * @inode - inode in question
+ * @used_by - latest non-deleted snapshot
+ * @deleted - true if snapshot is marked for deletion and not active
+ * @need_shrink - counter of deleted snapshots to shrink
+ * @need_merge - counter of deleted snapshots to merge
+ *
+ * Deleted snapshot with no older non-deleted snapshot - remove from list
+ * Deleted snapshot with no older enabled snapshot - add to merge count
+ * Deleted snapshot with older enabled snapshot - add to shrink count
+ * Non-deleted snapshot - shrink and merge deleted snapshots group
+ *
+ * Called from ext4_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
+ */
+static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
+		int deleted, int *need_shrink, int *need_merge)
+{
+	int err = 0;
+
+	if (deleted && !used_by)
+		/* remove permanently unused deleted snapshot */
+		return ext4_snapshot_remove(inode);
+
+	return 0;
+}
+#endif
 #endif
 /*
  * Snapshot constructor/destructor
@@ -1692,6 +1822,10 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 	int found_enabled = 0;
 	struct list_head *prev;
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+	int need_shrink = 0;
+	int need_merge = 0;
+#endif
 	int err = 0;
 
 	BUG_ON(read_only && cleanup);
@@ -1748,9 +1882,15 @@ update_snapshot:
 		/* snapshot is not in use by older enabled snapshots */
 		ei->i_flags &= ~EXT4_SNAPFILE_INUSE_FL;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+	if (cleanup)
+		err = ext4_snapshot_cleanup(inode, used_by, deleted,
+				&need_shrink, &need_merge);
+#else
 	if (cleanup && deleted && !used_by)
 		/* remove permanently unused deleted snapshot */
 		err = ext4_snapshot_remove(inode);
+#endif
 
 	if (!deleted) {
 		if (!found_active)

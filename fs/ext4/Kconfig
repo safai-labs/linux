@@ -478,3 +478,15 @@ config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	  Excluding blocks is done by setting their bit in the exclude bitmap.
 	  There is one exclude bitmap block per block group and its location
 	  is cached in the group descriptor.
+
+config EXT4_FS_SNAPSHOT_CLEANUP
+	bool "snapshot cleanup"
+	depends on EXT4_FS_SNAPSHOT_LIST
+	depends on EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	default y
+	help
+	  Cleanup snapshots list and reclaim unused blocks of deleted snapshots.
+	  Oldest snapshot can be removed from list and its blocks can be freed.
+	  Non-oldest snapshots have to be shrunk and merged before they can be
+	  removed from the list.  All snapshot blocks must be excluded in order
+	  to properly shrink/merge deleted old snapshots.

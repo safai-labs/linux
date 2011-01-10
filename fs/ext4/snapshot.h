@@ -393,6 +393,16 @@ extern int ext4_inode_list_del(handle_t *handle, struct inode *inode,
 extern ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
 					   unsigned long ino,
 					   struct ext4_iloc *iloc);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
+				    struct buffer_head *parent_bh,
+				    __le32 *first, __le32 *last,
+				    int depth, int *pblocks);
+
+#define ext4_free_branches(handle, inode, bh, first, last, depth)	\
+	ext4_free_branches_cow((handle), (inode), (bh),		\
+				(first), (last), (depth), NULL)
+#endif
 
 /* super.c */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE

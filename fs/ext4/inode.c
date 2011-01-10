@@ -277,11 +277,13 @@ no_delete:
 	ext4_clear_inode(inode);	/* We must guarantee clearing of inode... */
 }
 
+#ifndef _EXT4_H
 typedef struct {
 	__le32	*p;
 	__le32	key;
 	struct buffer_head *bh;
 } Indirect;
+#endif
 
 static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
 {
@@ -320,7 +322,7 @@ static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
  * get there at all.
  */
 
-static int ext4_block_to_path(struct inode *inode,
+int ext4_block_to_path(struct inode *inode,
 			      ext4_lblk_t i_block,
 			      ext4_lblk_t offsets[4], int *boundary)
 {
@@ -438,7 +440,7 @@ static int __ext4_check_blockref(const char *function, unsigned int line,
  *      Need to be called with
  *      down_read(&EXT4_I(inode)->i_data_sem)
  */
-static Indirect *ext4_get_branch(struct inode *inode, int depth,
+Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err)
 {

@@ -1779,6 +1779,14 @@ struct ext4_features {
 	struct completion f_kobj_unregister;
 };
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+typedef struct {
+	__le32	*p;
+	__le32	key;
+	struct buffer_head *bh;
+} Indirect;
+#endif
+
 /*
  * Function prototypes
  */
@@ -1907,6 +1915,25 @@ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
 extern qsize_t *ext4_get_reserved_space(struct inode *inode);
 extern void ext4_da_update_reserve_space(struct inode *inode,
 					int used, int quota_claim);
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+extern int ext4_block_to_path(struct inode *inode,
+			      ext4_lblk_t i_block,
+			      ext4_lblk_t offsets[4], int *boundary);
+extern Indirect *ext4_get_branch(struct inode *inode, int depth,
+				 ext4_lblk_t  *offsets,
+				 Indirect chain[4], int *err);
+extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
+			   struct buffer_head *this_bh,
+			   __le32 *first, __le32 *last,
+			   const char *bitmap, int bit,
+			   int *pfreed_blocks, int *pblocks);
+void ext4_free_data(handle_t *handle, struct inode *inode,
+		    struct buffer_head *this_bh,
+		    __le32 *first, __le32 *last);
+
+#endif
+
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);

@@ -1336,6 +1336,218 @@ out_err:
 	return err;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+/*
+ * ext4_snapshot_shrink_range - free unused blocks from deleted snapshots
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshots group
+ * @iblock:	inode offset to first data block to shrink
+ * @maxblocks:	inode range of data blocks to shrink
+ * @cow_bh:	buffer head to map the COW bitmap block of snapshot @start
+ *		if NULL, don't look for COW bitmap block
+ *
+ * Shrinks @maxblocks blocks starting at inode offset @iblock in a group of
+ * subsequent deleted snapshots starting after @start and ending before @end.
+ * Shrinking is done by finding a range of mapped blocks in @start snapshot
+ * or in one of the deleted snapshots, where no other blocks are mapped in the
+ * same range in @start snapshot or in snapshots between them.
+ * The blocks in the found range may be 'in-use' by @start snapshot, so only
+ * blocks which are not set in the COW bitmap are freed.
+ * All mapped blocks of other deleted snapshots in the same range are freed.
+ *
+ * Called from ext4_snapshot_shrink() under snapshot_mutex.
+ * Returns the shrunk blocks range and <0 on error.
+ */
+static int ext4_snapshot_shrink_range(handle_t *handle,
+		struct inode *start, struct inode *end,
+		sector_t iblock, unsigned long maxblocks,
+		struct buffer_head *cow_bh)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(start->i_sb);
+	struct list_head *l;
+	struct inode *inode = start;
+	/* start with @maxblocks range and narrow it down */
+	int err, count = maxblocks;
+	/* @start snapshot blocks should not be freed only counted */
+	int mapped, shrink = 0;
+
+	/* iterate on (@start <= snapshot < @end) */
+	list_for_each_prev(l, &EXT4_I(start)->i_snaplist) {
+		err = ext4_snapshot_shrink_blocks(handle, inode,
+				iblock, count, cow_bh, shrink, &mapped);
+		if (err < 0)
+			return err;
+
+		/* 0 < new range <= old range */
+		BUG_ON(!err || err > count);
+		count = err;
+
+		/*
+		 * shrink mode state transitions:
+		 * 1. on @start, shrink is set to 0 ('don't free' mode).
+		 * 2. after @start, shrink is incremented until mapped blocks
+		 *    are found in the shrunk range ('free unused' mode).
+		 * 3. after mapped block were found, or if cow_bh is NULL,
+		 *    shrink is set to -1 and decremented until the end of
+		 *    the deleted snapshots group ('free all' mode).
+		 */
+		if (shrink < 0)
+			/* stay in 'free all' mode */
+			shrink--;
+		else if (!cow_bh)
+			/* no COW bitmap - enter 'free all' mode */
+			shrink = -1;
+		else if (mapped)
+			/* found mapped blocks - enter 'free all' mode */
+			shrink = -1;
+		else
+			/* enter/stay in 'free unused' mode */
+			shrink++;
+
+		if (l == &sbi->s_snapshot_list)
+			/* didn't reach @end */
+			return -EINVAL;
+		inode = &list_entry(l, struct ext4_inode_info,
+						  i_snaplist)->vfs_inode;
+		if (inode == end)
+			break;
+	}
+	return count;
+}
+
+/*
+ * ext4_snapshot_shrink - free unused blocks from deleted snapshot files
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshots group
+ * @need_shrink: no. of deleted snapshots in the group
+ *
+ * Frees all blocks in subsequent deleted snapshots starting after @start and
+ * ending before @end, except for blocks which are 'in-use' by @start snapshot.
+ * (blocks 'in-use' are set in snapshot COW bitmap and not copied to snapshot).
+ * Called from ext4_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
+ */
+static int ext4_snapshot_shrink(struct inode *start, struct inode *end,
+				 int need_shrink)
+{
+	struct list_head *l;
+	handle_t *handle;
+	struct buffer_head cow_bitmap, *cow_bh = NULL;
+	ext4_fsblk_t block = 0;
+	struct ext4_sb_info *sbi = EXT4_SB(start->i_sb);
+	/* blocks beyond the size of @start are not in-use by @start */
+	ext4_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(start);
+	unsigned long count = ext4_blocks_count(sbi->s_es);
+	long block_group = -1;
+	ext4_fsblk_t bg_boundary = 0;
+	int err, ret;
+
+	snapshot_debug(3, "snapshot (%u-%u) shrink: "
+			"count = 0x%lx, need_shrink = %d\n",
+			start->i_generation, end->i_generation,
+			count, need_shrink);
+
+	/* start large truncate transaction that will be extended/restarted */
+	handle = ext4_journal_start(start, EXT4_MAX_TRANS_DATA);
+	if (IS_ERR(handle))
+		return PTR_ERR(handle);
+
+	while (count > 0) {
+		while (block >= bg_boundary) {
+			/* sleep 1/block_groups tunable delay unit */
+			snapshot_test_delay_per_ticks(SNAPTEST_DELETE,
+					sbi->s_groups_count);
+			/* reset COW bitmap cache */
+			cow_bitmap.b_state = 0;
+			cow_bitmap.b_blocknr = 0;
+			cow_bh = &cow_bitmap;
+			bg_boundary += SNAPSHOT_BLOCKS_PER_GROUP;
+			block_group++;
+			if (block >= snapshot_blocks)
+				/*
+				 * Past last snapshot block group - pass NULL
+				 * cow_bh to ext4_snapshot_shrink_range().
+				 * This will cause snapshots after resize to
+				 * shrink to the size of @start snapshot.
+				 */
+				cow_bh = NULL;
+		}
+
+		err = extend_or_restart_transaction(handle,
+						    EXT4_MAX_TRANS_DATA);
+		if (err)
+			goto out_err;
+
+		err = ext4_snapshot_shrink_range(handle, start, end,
+					      SNAPSHOT_IBLOCK(block), count,
+					      cow_bh);
+
+		snapshot_debug(3, "snapshot (%u-%u) shrink: "
+				"block = 0x%llu, count = 0x%lx, err = 0x%x\n",
+				start->i_generation, end->i_generation,
+				block, count, err);
+
+		if (buffer_mapped(&cow_bitmap) && buffer_new(&cow_bitmap)) {
+			snapshot_debug(2, "snapshot (%u-%u) shrink: "
+				"block group = %ld/%u, "
+				"COW bitmap = [%llu/%llu]\n",
+				start->i_generation, end->i_generation,
+				block_group, sbi->s_groups_count,
+				SNAPSHOT_BLOCK_TUPLE(cow_bitmap.b_blocknr));
+			clear_buffer_new(&cow_bitmap);
+		}
+
+		if (err <= 0)
+			goto out_err;
+
+		block += err;
+		count -= err;
+	}
+
+	/* marks need_shrink snapshots shrunk */
+	err = extend_or_restart_transaction(handle, need_shrink);
+	if (err)
+		goto out_err;
+
+	/* iterate on (@start < snapshot < @end) */
+	list_for_each_prev(l, &EXT4_I(start)->i_snaplist) {
+		struct ext4_inode_info *ei;
+		struct ext4_iloc iloc;
+		if (l == &sbi->s_snapshot_list)
+			break;
+		ei = list_entry(l, struct ext4_inode_info, i_snaplist);
+		if (&ei->vfs_inode == end)
+			break;
+		if (ei->i_flags & EXT4_SNAPFILE_DELETED_FL &&
+			!(ei->i_flags &
+			(EXT4_SNAPFILE_SHRUNK_FL|EXT4_SNAPFILE_ACTIVE_FL))) {
+			/* mark snapshot shrunk */
+			err = ext4_reserve_inode_write(handle, &ei->vfs_inode,
+							&iloc);
+			ei->i_flags |= EXT4_SNAPFILE_SHRUNK_FL;
+			if (!err)
+				ext4_mark_iloc_dirty(handle, &ei->vfs_inode,
+						      &iloc);
+			if (--need_shrink <= 0)
+				break;
+		}
+	}
+
+	err = 0;
+out_err:
+	ret = ext4_journal_stop(handle);
+	if (!err)
+		err = ret;
+	if (need_shrink)
+		snapshot_debug(1, "snapshot (%u-%u) shrink: "
+			       "need_shrink=%d(>0!), err=%d\n",
+			       start->i_generation, end->i_generation,
+			       need_shrink, err);
+	return err;
+}
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 /*
  * ext4_snapshot_cleanup - shrink/merge/remove snapshot marked for deletion
@@ -1362,6 +1574,25 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 		/* remove permanently unused deleted snapshot */
 		return ext4_snapshot_remove(inode);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+	if (deleted) {
+		/* deleted (non-active) snapshot file */
+		if (!(EXT4_I(inode)->i_flags & EXT4_SNAPFILE_SHRUNK_FL))
+			/* deleted snapshot needs shrinking */
+			(*need_shrink)++;
+		return 0;
+	}
+
+	/* non-deleted (or active) snapshot file */
+	if (*need_shrink) {
+		/* pass 1: shrink all deleted snapshots
+		 * between 'used_by' and 'inode' */
+		err = ext4_snapshot_shrink(used_by, inode, *need_shrink);
+		if (err)
+			return err;
+		*need_shrink = 0;
+	}
+#endif
 	return 0;
 }
 #endif

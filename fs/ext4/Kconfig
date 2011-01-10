@@ -490,3 +490,12 @@ config EXT4_FS_SNAPSHOT_CLEANUP
 	  Non-oldest snapshots have to be shrunk and merged before they can be
 	  removed from the list.  All snapshot blocks must be excluded in order
 	  to properly shrink/merge deleted old snapshots.
+
+config EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+	bool "snapshot cleanup - shrink deleted snapshots"
+	depends on EXT4_FS_SNAPSHOT_CLEANUP
+	default y
+	help
+	  Free blocks of deleted snapshots, which are not in use by an older
+	  non-deleted snapshot.  Shrinking helps reclaiming disk space
+	  while older snapshots are currently in use (enabled).

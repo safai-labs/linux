@@ -402,6 +402,12 @@ extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
 #define ext4_free_branches(handle, inode, bh, first, last, depth)	\
 	ext4_free_branches_cow((handle), (inode), (bh),		\
 				(first), (last), (depth), NULL)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
+		sector_t iblock, unsigned long maxblocks,
+		struct buffer_head *cow_bh,
+		int shrink, int *pmapped);
+#endif
 #endif
 
 /* super.c */

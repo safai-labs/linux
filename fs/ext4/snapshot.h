@@ -382,6 +382,13 @@ static inline int ext4_snapshot_list(struct inode *inode)
 }
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+static inline int ext4_snapshot_exclude_inode(struct inode *inode)
+{
+	return (inode->i_ino == EXT4_EXCLUDE_INO);
+}
+#endif
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * ext4_snapshot_excluded():
@@ -405,6 +412,11 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
 	/* snapshot files are 'ignored' */
 	if (ext4_snapshot_file(inode))
 		return -1;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+	/* exclude inode is 'ignored' */
+	if (ext4_snapshot_exclude_inode(inode))
+		return -1;
+#endif
 	return 0;
 }
 #endif

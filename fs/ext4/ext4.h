@@ -46,6 +46,10 @@
 #define CONFIG_EXT4_FS_STANDALONE
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+#define E3FSBLK "%llu"
+#endif
+
 #ifdef CONFIG_EXT4_FS_STANDALONE
 /* configuration options for standalone module */
 #define CONFIG_EXT4_DEFAULTS_TO_ORDERED
@@ -238,6 +242,9 @@ struct ext4_io_submit {
 #define EXT4_UNDEL_DIR_INO	 6	/* Undelete directory inode */
 #define EXT4_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define EXT4_JOURNAL_INO	 8	/* Journal inode */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+#define EXT4_EXCLUDE_INO		 9	/* Snapshot exclude inode */
+#endif
 
 /* First non-reserved inode for old ext4 filesystems */
 #define EXT4_GOOD_OLD_FIRST_INO	11
@@ -1357,6 +1364,9 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
 	return ino == EXT4_ROOT_INO ||
 		ino == EXT4_JOURNAL_INO ||
 		ino == EXT4_RESIZE_INO ||
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+		ino == EXT4_EXCLUDE_INO ||
+#endif
 		(ino >= EXT4_FIRST_INO(sb) &&
 		 ino <= le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count));
 }

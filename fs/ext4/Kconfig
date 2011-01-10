@@ -437,3 +437,25 @@ config EXT4_FS_SNAPSHOT_CTL
 	  Snapshot control with chattr -X.
 	  Take/delete snapshot with chattr -X +/-S.
 	  Enable/disable snapshot with chattr -X +/-n.
+
+config EXT4_FS_SNAPSHOT_EXCLUDE
+	bool "snapshot exclude"
+	depends on EXT4_FS_SNAPSHOT
+	default y
+	help
+	  Mark all snapshot blocks excluded from COW bitmap (i.e., mark that
+	  they do not need to be COWed).  The excluded blocks appear as not
+	  allocated inside the snapshot image (no snapshots of snapshot files).
+	  Excluding snapshot file blocks is essential for efficient cleanup
+	  of deleted snapshot files.
+
+config EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+	bool "snapshot exclude - the exclude inode"
+	depends on EXT4_FS_SNAPSHOT_EXCLUDE
+	default y
+	help
+	  The exclude inode owns all the exclude bitmap blocks.
+	  The exclude inode is pre-allocated by 'tune2fs -O exclude_inode'.
+	  The location of exclude bitmap blocks is read on mount time and cached
+	  in the group descriptors.  The exclude inode is extended upon online
+	  and offline resize operations when block groups are added.

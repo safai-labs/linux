@@ -5575,6 +5575,29 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		 */
 		SNAPSHOT_SET_DISABLED(inode);
 	}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+	if (ext4_snapshot_exclude_inode(inode)) {
+		if (ei->i_data[EXT4_IND_BLOCK] != 0) {
+			/* cannot link DIND branch to IND branch */
+			ret = -EIO;
+			goto bad_inode;
+		}
+		/*
+		 * Link the DIND branch to the IND branch, so we can read
+		 * exclude bitmap block addresses with ext4_bread().
+		 *
+		 * My reasons to justify this hack are:
+		 * 1. I like shortcuts and it helped keeping my patch small
+		 * 2. No user has access to the exclude inode
+		 * 3. The exclude inode is never truncated on a mounted ext4
+		 * 4. The 'expose' is only to the in-memory inode (fsck safe)
+		 * 5. A healthy exclude inode has blocks only on the DIND branch
+		 * XXX: is that a problem?
+		 */
+		ei->i_data[EXT4_IND_BLOCK] = ei->i_data[EXT4_DIND_BLOCK];
+	}
+
+#endif
 #endif
 	INIT_LIST_HEAD(&ei->i_orphan);
 
@@ -5879,6 +5902,23 @@ static int ext4_do_update_inode(handle_t *handle,
 		raw_inode->i_flags &= cpu_to_le32(~EXT4_FL_SNAPSHOT_DYN_MASK);
 	} else
 		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+	if (ext4_snapshot_exclude_inode(inode)) {
+		if (raw_inode->i_block[EXT4_IND_BLOCK] !=
+				raw_inode->i_block[EXT4_DIND_BLOCK]) {
+			err = -EIO;
+			goto out_brelse;
+		}
+		/*
+		 * Remove duplicate reference to exclude inode indirect blocks
+		 * which was exposed in ext4_iget() before storing to disk.
+		 * It was needed only in memory and we don't want to break
+		 * compatibility with ext2's disk format.
+		 */
+		raw_inode->i_block[EXT4_IND_BLOCK] = 0;
+	}
+
+#endif
 #else
 	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
 #endif

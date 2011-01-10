@@ -245,6 +245,9 @@ struct ext4_io_submit {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 #define EXT4_EXCLUDE_INO		 9	/* Snapshot exclude inode */
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+#define EXT4_EXCLUDE_INO_OLD		10	/* Old exclude inode */
+#endif
 
 /* First non-reserved inode for old ext4 filesystems */
 #define EXT4_GOOD_OLD_FIRST_INO	11

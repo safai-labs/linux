@@ -459,3 +459,13 @@ config EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	  The location of exclude bitmap blocks is read on mount time and cached
 	  in the group descriptors.  The exclude inode is extended upon online
 	  and offline resize operations when block groups are added.
+
+config EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+	bool "snapshot exclude - migrate old exclude inode"
+	depends on EXT4_FS_SNAPSHOT_EXCLUDE
+	default y
+	help
+	  Exclude inode number has changed from 10 to 9.  The exclude_inode
+	  flag has also changed.  When old exclude_inode flag is set,
+	  copy inode 10 to 9, clear inode 10 and clear old exclude_inode flag.
+	  (new exclude_inode flag is set during migration of super block).

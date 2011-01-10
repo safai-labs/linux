@@ -1393,6 +1393,20 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 		max_groups *= EXT4_DESC_PER_BLOCK(sb);
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+	if (create && EXT4_HAS_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD)) {
+		/* journal exclude inode migration done inside ext4_iget */
+		err = ext4_journal_get_write_access(handle, sbi->s_sbh);
+		EXT4_CLEAR_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD);
+		if (!err)
+		  err = ext4_handle_dirty_metadata(handle, NULL, sbi->s_sbh);
+		if (!err)
+			err = ext4_mark_inode_dirty(handle, inode);
+	}
+
+#endif
 	/*
 	 * Init exclude bitmap blocks for all existing block groups and
 	 * allocate indirect blocks for all reserved block groups.

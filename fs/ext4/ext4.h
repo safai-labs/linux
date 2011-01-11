@@ -47,7 +47,7 @@
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#define E3FSBLK "%llu"
+#define E4FSBLK "%llu"
 #endif
 
 #ifdef CONFIG_EXT4_FS_STANDALONE

@@ -7,7 +7,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
 ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
 		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o \
-		snapshot_inode.o
+		snapshot_inode.o buffer.o
 
 ext4-y	+= snapshot.o snapshot_ctl.o
 

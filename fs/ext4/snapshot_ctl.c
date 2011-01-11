@@ -384,7 +384,7 @@ static int ext4_snapshot_create(struct inode *inode)
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	struct ext4_inode_info *ei = EXT4_I(inode);
-	int i, err, ret;
+	int i, err, ret,inodes_per_block,inode_offset;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 	int count, nind;
 	const long double_blocks = (1 << (2 * SNAPSHOT_ADDR_PER_BLOCK_BITS));
@@ -612,8 +612,24 @@ alloc_inode_blocks:
 	if (err)
 		goto out_handle;
 
-	iloc.block_group = 0;
-	inode_blk = ext4_get_inode_block(sb, ino, &iloc);
+	iloc.bh = NULL;
+	if (!ext4_valid_inum(sb, inode->i_ino))
+		return -EIO;
+
+	iloc.block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
+	desc = ext4_get_group_desc(sb, iloc.block_group, NULL);
+	if (!desc)
+		return -EIO;
+
+	/*
+	 * Figure out the offset within the block group inode table
+	 */
+	inodes_per_block = (EXT4_BLOCK_SIZE(sb) / EXT4_INODE_SIZE(sb));
+	inode_offset = ((inode->i_ino - 1) %
+			EXT4_INODES_PER_GROUP(sb));
+	inode_blk = ext4_inode_table(sb, desc) + (inode_offset / inodes_per_block);
+	iloc.offset = (inode_offset % inodes_per_block) * EXT4_INODE_SIZE(sb);
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 	if (!inode_blk || inode_blk == prev_inode_blk)
 		goto next_snapshot;

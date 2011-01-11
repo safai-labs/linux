@@ -372,8 +372,6 @@ static inline void exit_ext4_snapshot(void)
 }
 
 /* balloc.c */
-extern struct buffer_head *read_block_bitmap(struct super_block *sb,
-					     unsigned int block_group);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
 					       unsigned int block_group);

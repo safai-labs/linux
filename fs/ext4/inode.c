@@ -615,18 +615,6 @@ static int ext4_blks_to_allocate(Indirect *branch, int k, unsigned int blks,
 	return count;
 }
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-void ext4_free_data_cow(handle_t *handle, struct inode *inode,
-			   struct buffer_head *this_bh,
-			   __le32 *first, __le32 *last,
-			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int *pblocks);
-
-#define ext4_free_data(handle, inode, bh, first, last)		\
-	ext4_free_data_cow(handle, inode, bh, first, last,		\
-			    NULL, 0, NULL, NULL)
-
-#endif
 /**
  *	ext4_alloc_blocks: multiple allocate blocks needed for a branch
  *	@indirect_blks: the number of blocks need to allocate for indirect

@@ -362,7 +362,7 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	char *dst, *src, *mask = NULL;
 	struct journal_head *jh;
 
-	bitmap_bh = read_block_bitmap(sb, block_group);
+	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
 	if (!bitmap_bh)
 		return -EIO;
 
@@ -1261,7 +1261,7 @@ int ext4_snapshot_get_read_access(struct super_block *sb,
 	if (PageReadahead(bh->b_page))
 		return 0;
 
-	bitmap_bh = read_block_bitmap(sb, block_group);
+	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
 	if (!bitmap_bh)
 		return -EIO;
 

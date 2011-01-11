@@ -1923,15 +1923,15 @@ extern int ext4_block_to_path(struct inode *inode,
 extern Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err);
-extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
+void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
 			   int *pfreed_blocks, int *pblocks);
-void ext4_free_data(handle_t *handle, struct inode *inode,
-		    struct buffer_head *this_bh,
-		    __le32 *first, __le32 *last);
 
+#define ext4_free_data(handle, inode, bh, first, last)		\
+	ext4_free_data_cow(handle, inode, bh, first, last,		\
+			    NULL, 0, NULL, NULL)
 #endif
 
 /* ioctl.c */

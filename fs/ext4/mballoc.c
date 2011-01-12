@@ -25,9 +25,7 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <trace/events/ext4.h>
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 #include "snapshot.h"
-#endif
 
 /*
  * MUSTDO:
@@ -2758,6 +2756,16 @@ void ext4_exit_mballoc(void)
 	ext4_remove_debugfs_entry();
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+/*
+ * dummy exclude inode is passed to ext4_journal_get_write_access_inode()
+ * to ensure that exclude bitmap will not be COWed.
+ */
+static struct inode dummy_exclude_inode = {
+	.i_ino = EXT4_EXCLUDE_INO
+};
+#endif
+
 
 /*
  * Check quota and mark chosen space (ac->ac_b_ex) non-free in bitmaps
@@ -2765,9 +2773,6 @@ void ext4_exit_mballoc(void)
  */
 static noinline_for_stack int
 ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-			    struct buffer_head *exclude_bitmap_bh,
-#endif
 				handle_t *handle, unsigned int reserv_blks)
 {
 	struct buffer_head *bitmap_bh = NULL;
@@ -2777,12 +2782,39 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	struct super_block *sb;
 	ext4_fsblk_t block;
 	int err, len;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+	int fatal;
+#endif
+
 
 	BUG_ON(ac->ac_status != AC_STATUS_FOUND);
 	BUG_ON(ac->ac_b_ex.fe_len <= 0);
 
 	sb = ac->ac_sb;
 	sbi = EXT4_SB(sb);
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	if (ext4_snapshot_excluded(ac->ac_inode)) {
+		/*
+		 * allocating blocks for excluded file - try to read exclude
+		 * bitmap
+		 */
+		exclude_bitmap_bh = read_exclude_bitmap(sb, 
+							ac->ac_b_ex.fe_group);
+		if (exclude_bitmap_bh) {
+			fatal = ext4_journal_get_write_access_inode(
+					handle, &dummy_exclude_inode,
+					exclude_bitmap_bh);
+			if (fatal) {
+				brelse(exclude_bitmap_bh);
+				err = fatal;
+				goto out_err;
+			}
+		}
+	}
+
+#endif
 
 	err = -EIO;
 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
@@ -2836,6 +2868,10 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 #endif
 	mb_set_bits(bitmap_bh->b_data, ac->ac_b_ex.fe_start,ac->ac_b_ex.fe_len);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+		mb_set_bits(exclude_bitmap_bh->b_data, ac->ac_b_ex.fe_start,
+			    ac->ac_b_ex.fe_len);
+#endif
 	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
 		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
 		ext4_free_blks_set(sb, gdp,
@@ -2847,24 +2883,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
 
 	ext4_unlock_group(sb, ac->ac_b_ex.fe_group);
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	/*
-	 * Mark excluded file block in exclude bitmap.  Perhaps it would have
-	 * been better to mark the block excluded before marking it allocated
-	 * or to mark both under jbd_lock_bh_state(), to avoid the temporary
-	 * in-consistent state of a snapshot file block not marked excluded.
-	 * However, this kind of in-consistency can be neglected because when
-	 * the exclude bitmap is used for creating the COW bitmap it is masked
-	 * with the frozen copy of block bitmap in b_committed_data, where this
-	 * block is not marked allocated.
-	 */
-		ext4_lock_group(sb, ac->ac_b_ex.fe_group);
-		mb_set_bits(exclude_bitmap_bh->b_data, ac->ac_b_ex.fe_start,
-			    ac->ac_b_ex.fe_len);
-		ext4_unlock_group(sb, ac->ac_b_ex.fe_group);
-
-#endif
 
 	percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
 	/*
@@ -2886,7 +2904,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 		if (!err && exclude_bitmap_bh)
 			err = ext4_handle_dirty_metadata(handle, NULL,
 						     exclude_bitmap_bh);
-		brelse(exclude_bitmap_bh);
 #endif
 	if (err)
 		goto out_err;
@@ -2896,8 +2913,6 @@ out_err:
 	ext4_mark_super_dirty(sb);
 	brelse(bitmap_bh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (exclude_bitmap_bh)
-		err = ext4_journal_release_buffer(handle, exclude_bitmap_bh);
 	brelse(exclude_bitmap_bh);
 #endif
 	return err;
@@ -4293,24 +4308,13 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
 	return freed;
 }
 
-/*
- * dummy exclude inode is passed to ext4_journal_get_write_access_inode()
- * to ensure that exclude bitmap will not be COWed.
- */
-static struct inode dummy_exclude_inode = {
-	.i_ino = EXT4_EXCLUDE_INO
-};
-
 
 /*
  * Main entry point into mballoc to allocate blocks
  * it tries to use preallocation first, then falls back
  * to usual allocation
  */
-ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-				struct inode *inode,
-#endif
+ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle, 
 				struct ext4_allocation_request *ar, int *errp)
 {
 	int freed;
@@ -4320,45 +4324,9 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
 	ext4_fsblk_t block = 0;
 	unsigned int inquota = 0;
 	unsigned int reserv_blks = 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	struct buffer_head *exclude_bitmap_bh = NULL;
-	struct ext4_super_block *es;
-	int fatal;
-	int group;
-#endif
 
 	sb = ar->inode->i_sb;
 	sbi = EXT4_SB(sb);
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	es = EXT4_SB(sb)->s_es;
-	if (ar->goal < le32_to_cpu(es->s_first_data_block) ||
-	    ar->goal >= ext4_blocks_count(es))
-		ar->goal = le32_to_cpu(es->s_first_data_block);
-	group = (ar->goal - le32_to_cpu(es->s_first_data_block)) /
-			EXT4_BLOCKS_PER_GROUP(sb);
-#endif
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (ext4_snapshot_excluded(inode)) {
-		/*
-		 * allocating blocks for excluded file - try to read exclude
-		 * bitmap
-		 */
-		exclude_bitmap_bh = read_exclude_bitmap(sb, group);
-		if (exclude_bitmap_bh) {
-			fatal = ext4_journal_get_write_access_inode(
-					handle, &dummy_exclude_inode,
-					exclude_bitmap_bh);
-			if (fatal) {
-				brelse(exclude_bitmap_bh);
-				*errp = fatal;
-				return -1;
-			}
-		}
-	}
-
-#endif
 
 	trace_ext4_request_blocks(ar);
 
@@ -4426,12 +4394,7 @@ repeat:
 			ext4_mb_new_preallocation(ac);
 	}
 	if (likely(ac->ac_status == AC_STATUS_FOUND)) {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-		*errp = ext4_mb_mark_diskspace_used(ac, exclude_bitmap_bh,
-						    handle, reserv_blks);
-#else
 		*errp = ext4_mb_mark_diskspace_used(ac, handle, reserv_blks);
-#endif
 		if (*errp == -EAGAIN) {
 			/*
 			 * drop the reference that we took
@@ -4601,16 +4564,11 @@ void ext4_free_blocks(handle_t *handle, struct inode *inode,
 	int err = 0;
 	int ret;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
- 	ext4_grpblk_t group_freed;
-	int state_locked;
 	ext4_grpblk_t group_skipped = 0;
-	int i;
 	char *where=NULL;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	int  exclude_bitmap_dirty = 0;
-	/* excluded_file is an attribute of the inode */
-	int excluded_file = ext4_snapshot_excluded(inode);
 	/* excluded_block is determined by testing exclude bitmap */
 	int excluded_block;
 #endif
@@ -4697,11 +4655,6 @@ do_more:
 		goto error_return;
 	}
 
-	BUFFER_TRACE(bitmap_bh, "getting write access");
-	err = ext4_journal_get_write_access(handle, bitmap_bh);
-	if (err)
-		goto error_return;
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	/*
 	 * we may be freeing blocks of snapshot/excluded file
@@ -4720,41 +4673,32 @@ do_more:
 	}
 
 #endif
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
-	/* if we skip all blocks we won't need to aquire the state lock */
-	state_locked = 0;
-#else
-	jbd_lock_bh_state(bitmap_bh);
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
- 	for (i = 0, group_freed = 0; i < count; i++) {
-		if (state_locked) {
-			/*
-			 * Moving blocks to snapshot may sleep and may need to take this
-			 * state lock if allocating snapshot block from this block group.
-			 * TODO: get the COW bitmap and test it inside this loop before
-			 *       calling ext4_snapshot_get_delete_access().
-			 */
-			jbd_unlock_bh_state(bitmap_bh);
-			state_locked = 0;
-		}
-		ret = ext4_snapshot_get_delete_access(handle, inode,
-						       block + i, count - i);
+		ret = ext4_snapshot_get_delete_access(handle, inode, 
+						      block, count);
 		if (ret < 0) {
 			ext4_journal_abort_handle(where, __LINE__, __func__, NULL,
 						   handle, ret);
 			err = ret;
-			break;
+			goto error_return;
 		}
 		if (ret > 0) {
 			/* 'ret' blocks were moved to snapshot - skip them */
 			group_skipped += ret;
-			i += ret - 1;
+			block += ret;
+			count -= ret;
+			count += overflow;
 			cond_resched();
-			continue;
+			if (count > 0)
+				goto do_more;
+			/* no more blocks to free/move to snapshot */
+			ext4_mark_super_dirty(sb);
+			goto error_return;
 		}
-		jbd_lock_bh_state(bitmap_bh);
-		state_locked = 1;
+#warning "very ineffecient way of implementation of ext4_free_blocks"
+		overflow += count - 1;
+		count = 1;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 		/*
 		 * A free block should never be excluded from snapshot, so we
@@ -4762,41 +4706,16 @@ do_more:
 		 */
 		excluded_block = (exclude_bitmap_bh &&
 			ext4_clear_bit_atomic(sb_bgl_lock(sbi, block_group),
-				bit + i, exclude_bitmap_bh->b_data)) ? 1 : 0;
-		if ((excluded_block && !excluded_file) ||
-			(excluded_file && !excluded_block)) {
-			jbd_unlock_bh_state(bitmap_bh);
-			/*
-			 * Freeing an excluded block of a non-excluded file
-			 * or a non-excluded block of an excluded file.  The
-			 * status of this block is now correct (not excluded),
-			 * but this indicates a messed up exclude bitmap.
-			 * mark that exclude bitmap needs to be fixed and call
-			 * ext4_error() which commits the super block.
-			 */
-			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
-			ext4_error(sb,
-				"%sexcluded file (ino=%lu) block [%d/%u] "
-				"was %sexcluded! - "
-				"run fsck to fix exclude bitmap.\n",
-				excluded_file ? "" : "non-",
-				inode ? inode->i_ino : 0,
-				bit + i, block_group,
-				excluded_block ? "" : "not ");
-			jbd_lock_bh_state(bitmap_bh);
-		}
+				bit, exclude_bitmap_bh->b_data)) ? 1 : 0;
 		if (excluded_block)
 			exclude_bitmap_dirty = 1;
 #endif
-	}
 #endif
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
-	if (state_locked)
-		jbd_unlock_bh_state(bitmap_bh);
-#else
- 	jbd_unlock_bh_state(bitmap_bh);
-#endif
+	BUFFER_TRACE(bitmap_bh, "getting write access");
+	err = ext4_journal_get_write_access(handle, bitmap_bh);
+	if (err)
+		goto error_return;
 
 	/*
 	 * We are about to modify some metadata.  Call the journal APIs
@@ -4851,10 +4770,6 @@ do_more:
 	gdp->bg_checksum = ext4_group_desc_csum(sbi, block_group, gdp);
 	ext4_unlock_group(sb, block_group);
 	percpu_counter_add(&sbi->s_freeblocks_counter, count);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
-	percpu_counter_add(&sbi->s_freeblocks_counter, -group_skipped);
-	group_skipped = 0;
-#endif
 
 	if (sbi->s_log_groups_per_flex) {
 		ext4_group_t flex_group = ext4_flex_group(sbi, block_group);

@@ -704,11 +704,7 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 		/* enable in-core preallocation only for regular files */
 		ar.flags = EXT4_MB_HINT_DATA;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	current_block = ext4_mb_new_blocks(handle, inode, &ar, err);
-#else
 	current_block = ext4_mb_new_blocks(handle, &ar, err);
-#endif
 	if (unlikely(current_block + ar.len > EXT4_MAX_BLOCK_FILE_PHYS)) {
 		EXT4_ERROR_INODE(inode,
 				 "current_block %llu + ar.len %d > %d!",

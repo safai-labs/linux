@@ -661,11 +661,7 @@ ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
 	ar.goal = goal;
 	ar.len = count ? *count : 1;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP 
-	ret = ext4_mb_new_blocks(handle, inode, &ar, errp);
-#else
 	ret = ext4_mb_new_blocks(handle, &ar, errp);
-#endif
 	if (count)
 		*count = ar.len;
 	/*

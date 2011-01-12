@@ -277,15 +277,21 @@ static int setup_new_group_blocks(struct super_block *sb,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	if (EXT4_HAS_COMPAT_FEATURE(sb,
 		EXT4_FEATURE_COMPAT_EXCLUDE_INODE))
-		/* clear reserved exclude bitmap block */
-		ext4_set_bit(itend - start,bh->b_data);
-
+		{
+			/* clear reserved exclude bitmap block */
+			ext4_set_bit(itend - start,bh->b_data);
+			itend++;
+		}
 #endif
 	/* Zero out all of the inode table blocks */
 	block = input->inode_table;
 	ext4_debug("clear inode table blocks %#04llx -> %#04llx\n",
 			block, sbi->s_itb_per_group);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+	err = sb_issue_zeroout(sb, block, itend - block, GFP_NOFS);
+#else
 	err = sb_issue_zeroout(sb, block, sbi->s_itb_per_group + 1, GFP_NOFS);
+#endif
 	if (err)
 		goto exit_bh;
 
@@ -955,7 +961,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 		exclude_bitmap = cpu_to_le32(first_free);
 		((__le32 *)exclude_bh->b_data)[ind_offset] = exclude_bitmap;
 		snapshot_debug(2, "allocated new exclude bitmap #%u block "
-					"("E4FSBLK")\n", input->group, first_free);
+					"(%llu)\n", input->group, first_free);
 		ext4_handle_dirty_metadata(handle, NULL, exclude_bh);
 
 		/*

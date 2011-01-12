@@ -46,10 +46,6 @@
 #define CONFIG_EXT4_FS_STANDALONE
 #endif
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#define E4FSBLK "%llu"
-#endif
-
 #ifdef CONFIG_EXT4_FS_STANDALONE
 /* configuration options for standalone module */
 #define CONFIG_EXT4_DEFAULTS_TO_ORDERED

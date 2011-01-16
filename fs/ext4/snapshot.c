@@ -368,7 +368,7 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 
 	src = bitmap_bh->b_data;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh)
 		/* mask block bitmap with exclude bitmap */
 		mask = exclude_bitmap_bh->b_data;
@@ -683,7 +683,7 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 	int err = 0, n = 0, excluded = 0;
 	int count = maxblocks;
 
-	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (!exclude_bitmap_bh)
 		return 0;
 
@@ -1274,7 +1274,7 @@ int ext4_snapshot_get_read_access(struct super_block *sb,
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh &&
 		ext4_test_bit(bit, exclude_bitmap_bh->b_data)) {
 		snapshot_debug(2, "warning: attempt to read through to "

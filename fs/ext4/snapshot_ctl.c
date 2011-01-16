@@ -372,6 +372,32 @@ out:
 }
 #endif
 
+ext4_fsblk_t ext4_get_inode_block(struct superblock *sb, struct inode *inode, 
+			  struct ext4_iloc *iloc)
+{
+	ext4_fsblk_t block;
+	struct ext4_group_desc *desc;
+	int inodes_per_block, inode_offset;
+	iloc->bh = NULL;
+	if (!ext4_valid_inum(sb, inode->i_ino))
+		return 0;
+
+	iloc->block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
+	desc = ext4_get_group_desc(sb, iloc->block_group, NULL);
+	if (!desc)
+		return 0;
+
+	/*
+	 * Figure out the offset within the block group inode table
+	 */
+	inodes_per_block = (EXT4_BLOCK_SIZE(sb) / EXT4_INODE_SIZE(sb));
+	inode_offset = ((inode->i_ino - 1) %
+			EXT4_INODES_PER_GROUP(sb));
+	block = ext4_inode_table(sb, desc) + (inode_offset / inodes_per_block);
+	iloc->offset = (inode_offset % inodes_per_block) * EXT4_INODE_SIZE(sb);
+	return block;
+}
+
 /*
  * ext4_snapshot_create() initializes a snapshot file
  * and adds it to the list of snapshots
@@ -384,14 +410,14 @@ static int ext4_snapshot_create(struct inode *inode)
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	struct ext4_inode_info *ei = EXT4_I(inode);
-	int i, err, ret,inodes_per_block,inode_offset;
+	int i, err, ret;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 	int count, nind;
 	const long double_blocks = (1 << (2 * SNAPSHOT_ADDR_PER_BLOCK_BITS));
 	struct buffer_head *bh = NULL;
 	struct ext4_group_desc *desc;
 	unsigned long ino;
-	struct ext4_iloc iloc;
+	struct ext4_iloc *iloc;
 	ext4_fsblk_t bmap_blk = 0, imap_blk = 0, inode_blk = 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 	ext4_fsblk_t prev_inode_blk = 0;
@@ -612,23 +638,7 @@ alloc_inode_blocks:
 	if (err)
 		goto out_handle;
 
-	iloc.bh = NULL;
-	if (!ext4_valid_inum(sb, inode->i_ino))
-		return -EIO;
-
-	iloc.block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
-	desc = ext4_get_group_desc(sb, iloc.block_group, NULL);
-	if (!desc)
-		return -EIO;
-
-	/*
-	 * Figure out the offset within the block group inode table
-	 */
-	inodes_per_block = (EXT4_BLOCK_SIZE(sb) / EXT4_INODE_SIZE(sb));
-	inode_offset = ((inode->i_ino - 1) %
-			EXT4_INODES_PER_GROUP(sb));
-	inode_blk = ext4_inode_table(sb, desc) + (inode_offset / inodes_per_block);
-	iloc.offset = (inode_offset % inodes_per_block) * EXT4_INODE_SIZE(sb);
+	inode_blk = ext4_get_inode_block(sb, inode, iloc);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 	if (!inode_blk || inode_blk == prev_inode_blk)
@@ -639,7 +649,7 @@ alloc_inode_blocks:
 #endif
 	bmap_blk = 0;
 	imap_blk = 0;
-	desc = ext4_get_group_desc(sb, iloc.block_group, NULL);
+	desc = ext4_get_group_desc(sb, iloc->block_group, NULL);
 	if (!desc)
 		goto next_snapshot;
 
@@ -672,14 +682,14 @@ alloc_inode_blocks:
 next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
 #ifdef CONFIG_EXT4_FS_DEBUG
-		ext4_fsblk_t blk0 = iloc.block_group *
+		ext4_fsblk_t blk0 = iloc->block_group *
 			EXT4_BLOCKS_PER_GROUP(sb);
 		snapshot_debug(1, "failed to allocate block/inode bitmap "
 				"or inode table block of inode (%lu) "
 				"(%llu,%llu,%llu/%u) for snapshot (%u)\n",
 				ino, bmap_blk - blk0,
 				imap_blk - blk0, inode_blk - blk0,
-				iloc.block_group, inode->i_generation);
+				iloc->block_group, inode->i_generation);
 #endif
 		if (!err)
 			err = -EIO;
@@ -963,7 +973,7 @@ copy_inode_blocks:
 	bhs[COPY_INODE_TABLE] = iloc.bh;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	brelse(exclude_bitmap_bh);
-	exclude_bitmap_bh = read_exclude_bitmap(sb, iloc.block_group);
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, iloc.block_group);
 	if (exclude_bitmap_bh)
 		/* mask block bitmap with exclude bitmap */
 		mask = exclude_bitmap_bh->b_data;

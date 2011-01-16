@@ -373,7 +373,7 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
  * Return buffer_head on success or NULL in case of failure.
  */
 struct buffer_head *
-read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
+ext4_read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 {
 	struct ext4_group_info *gi = EXT4_SB(sb)->s_snapshot_group_info + block_group;
 	struct buffer_head *bh = NULL;

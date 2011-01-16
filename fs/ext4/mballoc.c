@@ -2800,7 +2800,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 		 * allocating blocks for excluded file - try to read exclude
 		 * bitmap
 		 */
-		exclude_bitmap_bh = read_exclude_bitmap(sb, 
+		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, 
 							ac->ac_b_ex.fe_group);
 		if (exclude_bitmap_bh) {
 			fatal = ext4_journal_get_write_access_inode(
@@ -4663,7 +4663,7 @@ do_more:
 	 * skip the exclude bitmap update
 	 */
 	brelse(exclude_bitmap_bh);
-	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh) {
 		err = ext4_journal_get_write_access_inode(
 			handle, &dummy_exclude_inode, exclude_bitmap_bh);

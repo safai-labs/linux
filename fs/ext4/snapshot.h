@@ -373,8 +373,8 @@ static inline void exit_ext4_snapshot(void)
 
 /* inode.c */
 extern ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
-					   unsigned long ino,
-					   struct ext4_iloc *iloc);
+					 struct *inode,
+					 struct ext4_iloc *iloc);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,

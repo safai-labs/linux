@@ -1826,7 +1826,7 @@ extern unsigned ext4_init_block_bitmap(struct super_block *sb,
 #define ext4_free_blocks_after_init(sb, group, desc)			\
 		ext4_init_block_bitmap(sb, NULL, group, desc)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
+extern struct buffer_head *ext4_read_exclude_bitmap(struct super_block *sb,
 					       unsigned int block_group);
 #endif
 
@@ -1921,7 +1921,7 @@ extern int ext4_block_to_path(struct inode *inode,
 extern Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err);
-void ext4_free_data_cow(handle_t *handle, struct inode *inode,
+extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,

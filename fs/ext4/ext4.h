@@ -1825,6 +1825,11 @@ extern unsigned ext4_init_block_bitmap(struct super_block *sb,
 				       struct ext4_group_desc *desc);
 #define ext4_free_blocks_after_init(sb, group, desc)			\
 		ext4_init_block_bitmap(sb, NULL, group, desc)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
+					       unsigned int block_group);
+#endif
+
 
 /* dir.c */
 extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
@@ -1926,6 +1931,15 @@ void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 	ext4_free_data_cow(handle, inode, bh, first, last,		\
 			    NULL, 0, NULL, NULL)
 #endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
+				    struct buffer_head *parent_bh,
+				    __le32 *first, __le32 *last,
+				    int depth, int *pblocks);
+
+#define ext4_free_branches(handle, inode, bh, first, last, depth)	\
+	ext4_free_branches_cow((handle), (inode), (bh),		\
+				(first), (last), (depth), NULL)
 
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
@@ -1939,6 +1953,14 @@ extern int ext4_orphan_add(handle_t *, struct inode *);
 extern int ext4_orphan_del(handle_t *, struct inode *);
 extern int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
 				__u32 start_minor_hash, __u32 *next_hash);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
+extern int ext4_inode_list_add(handle_t *handle, struct inode *inode,
+				__u32 *i_next, __le32 *s_last,
+				struct list_head *s_list, const char *name);
+extern int ext4_inode_list_del(handle_t *handle, struct inode *inode,
+				__u32 *i_next, __le32 *s_last,
+				struct list_head *s_list, const char *name);
+#endif
 
 /* resize.c */
 extern int ext4_group_add(struct super_block *sb,
@@ -2019,6 +2041,10 @@ extern __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 group,
 				   struct ext4_group_desc *gdp);
 extern int ext4_group_desc_csum_verify(struct ext4_sb_info *sbi, __u32 group,
 				       struct ext4_group_desc *gdp);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
+struct kstatfs;
+extern int ext4_statfs_sb(struct super_block *sb, struct kstatfs *buf);
+#endif
 
 static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
 {

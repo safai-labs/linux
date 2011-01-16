@@ -4855,7 +4855,7 @@ void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   const char *bitmap, int bit,
 			   int *pfreed_blocks, int *pblocks)
 #else
-void ext4_free_data(handle_t *handle, struct inode *inode,
+static void ext4_free_data(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last)
 #endif

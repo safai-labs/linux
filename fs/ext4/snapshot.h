@@ -371,35 +371,10 @@ static inline void exit_ext4_snapshot(void)
 	exit_ext4_snapshot_debug();
 }
 
-/* balloc.c */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-extern struct buffer_head *read_exclude_bitmap(struct super_block *sb,
-					       unsigned int block_group);
-#endif
-
-/* namei.c */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
-extern int ext4_inode_list_add(handle_t *handle, struct inode *inode,
-				__u32 *i_next, __le32 *s_last,
-				struct list_head *s_list, const char *name);
-extern int ext4_inode_list_del(handle_t *handle, struct inode *inode,
-				__u32 *i_next, __le32 *s_last,
-				struct list_head *s_list, const char *name);
-#endif
-
 /* inode.c */
 extern ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
 					   unsigned long ino,
 					   struct ext4_iloc *iloc);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
-				    struct buffer_head *parent_bh,
-				    __le32 *first, __le32 *last,
-				    int depth, int *pblocks);
-
-#define ext4_free_branches(handle, inode, bh, first, last, depth)	\
-	ext4_free_branches_cow((handle), (inode), (bh),		\
-				(first), (last), (depth), NULL)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,
@@ -411,13 +386,8 @@ extern int ext4_snapshot_merge_blocks(handle_t *handle,
 		struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks);
 #endif
-#endif
 
 /* super.c */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
-struct kstatfs;
-extern int ext4_statfs_sb(struct super_block *sb, struct kstatfs *buf);
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* tests if @inode is a snapshot file */
 static inline int ext4_snapshot_file(struct inode *inode)

@@ -1775,7 +1775,7 @@ struct ext4_features {
 	struct completion f_kobj_unregister;
 };
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 typedef struct {
 	__le32	*p;
 	__le32	key;
@@ -1914,7 +1914,7 @@ extern qsize_t *ext4_get_reserved_space(struct inode *inode);
 extern void ext4_da_update_reserve_space(struct inode *inode,
 					int used, int quota_claim);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 extern int ext4_block_to_path(struct inode *inode,
 			      ext4_lblk_t i_block,
 			      ext4_lblk_t offsets[4], int *boundary);

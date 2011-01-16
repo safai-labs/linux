@@ -277,7 +277,7 @@ no_delete:
 	ext4_clear_inode(inode);	/* We must guarantee clearing of inode... */
 }
 
-#ifndef _EXT4_H
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 typedef struct {
 	__le32	*p;
 	__le32	key;
@@ -322,9 +322,15 @@ static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
  * get there at all.
  */
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 int ext4_block_to_path(struct inode *inode,
 			      ext4_lblk_t i_block,
 			      ext4_lblk_t offsets[4], int *boundary)
+#else
+static int ext4_block_to_path(struct inode *inode,
+			      ext4_lblk_t i_block,
+			      ext4_lblk_t offsets[4], int *boundary)
+#endif
 {
 	int ptrs = EXT4_ADDR_PER_BLOCK(inode->i_sb);
 	int ptrs_bits = EXT4_ADDR_PER_BLOCK_BITS(inode->i_sb);
@@ -440,9 +446,15 @@ static int __ext4_check_blockref(const char *function, unsigned int line,
  *      Need to be called with
  *      down_read(&EXT4_I(inode)->i_data_sem)
  */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err)
+#else
+static Indirect *ext4_get_branch(struct inode *inode, int depth,
+				 ext4_lblk_t  *offsets,
+				 Indirect chain[4], int *err)
+#endif
 {
 	struct super_block *sb = inode->i_sb;
 	Indirect *p = chain;

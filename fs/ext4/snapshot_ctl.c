@@ -372,7 +372,7 @@ out:
 }
 #endif
 
-ext4_fsblk_t ext4_get_inode_block(struct superblock *sb, struct inode *inode, 
+ext4_fsblk_t ext4_get_inode_block(struct super_block *sb, struct inode *inode, 
 			  struct ext4_iloc *iloc)
 {
 	ext4_fsblk_t block;

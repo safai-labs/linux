@@ -384,9 +384,9 @@ ext4_read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 		return NULL;
 	bh = sb_getblk(sb, exclude_bitmap_blk);
 	if (unlikely(!bh)) {
-		ext4_error(sb, __func__,
+		ext4_error(sb,
 			    "Cannot read exclude bitmap - "
-			    "block_group = %d, exclude_bitmap = %lu",
+			    "block_group = %d, exclude_bitmap = %llu",
 			    block_group, exclude_bitmap_blk);
 		return NULL;
 	}
@@ -395,9 +395,9 @@ ext4_read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 
 	if (bh_submit_read(bh) < 0) {
 		brelse(bh);
-		ext4_error(sb, __func__,
+		ext4_error(sb,
 			    "Cannot read exclude bitmap - "
-			    "block_group = %d, exclude_bitmap = %lu",
+			    "block_group = %d, exclude_bitmap = %llu",
 			    block_group, exclude_bitmap_blk);
 		return NULL;
 	}

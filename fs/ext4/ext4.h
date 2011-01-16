@@ -1940,6 +1940,7 @@ extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
 #define ext4_free_branches(handle, inode, bh, first, last, depth)	\
 	ext4_free_branches_cow((handle), (inode), (bh),		\
 				(first), (last), (depth), NULL)
+#endif
 
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);

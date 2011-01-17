@@ -4563,8 +4563,6 @@ void __ext4_free_blocks(const char *where, handle_t *handle,
 	struct ext4_buddy e4b;
 	int err = 0;
 	int ret;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
-	char *where = NULL;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	int  exclude_bitmap_dirty = 0;
@@ -4572,7 +4570,6 @@ void __ext4_free_blocks(const char *where, handle_t *handle,
 	int excluded_block;
 	/* excluded_file is an attribute of the inode */
 	int excluded_file = ext4_snapshot_excluded(inode);
-#endif
 #endif
 
 	if (bh) {
@@ -4704,7 +4701,7 @@ do_more:
 	 * skip the exclude bitmap update
 	 */
 	brelse(exclude_bitmap_bh);
-	exclude_bitmap_bh = read_exclude_bitmap(sb, block_group);
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh) {
 		err = ext4_journal_get_write_access_inode(
 			handle, &dummy_exclude_inode, exclude_bitmap_bh);
@@ -4722,27 +4719,32 @@ do_more:
 	}
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	int i;
-	if(excluded_file) {
-		for (i = 0; i < count; i++)
-			if(!mb_test_bit(bit + i, exclude_bitmap_bh->b_data))
-				break;
-	}
-	else {
-		for (i = 0; i < count; i++)
-			if(mb_test_bit(bit + i, exclude_bitmap_bh->b_data))
-				break;
-	}
-	if(i < count) {
-		EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
-		ext4_error(sb, "%sexcluded file (ino=%lu) block [%d/%u] "
-			  "was %sexcluded! - run fsck to fix exclude bitmap.\n",
-			   excluded_file ? "" : "non-",
-			   inode ? inode->i_ino : 0,
-			   bit + i, block_group,
-			   excluded_block ? "" : "not ");
-		if(!excluded_file)
-			excluded_block = 1;
+	{
+		int i;
+		if(excluded_file) {
+			for (i = 0; i < count; i++)
+				if(!mb_test_bit(bit + i,
+						exclude_bitmap_bh->b_data))
+					break;
+		}
+		else {
+			for (i = 0; i < count; i++)
+				if(mb_test_bit(bit + i,
+					       exclude_bitmap_bh->b_data))
+					break;
+		}
+		if(i < count) {
+			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
+			ext4_error(sb, "%sexcluded file (ino=%lu)"
+				   " block [%d/%u] was %sexcluded!"
+				   " - run fsck to fix exclude bitmap.\n",
+				   excluded_file ? "" : "non-",
+				   inode ? inode->i_ino : 0,
+				   bit + i, block_group,
+				   excluded_block ? "" : "not ");
+			if(!excluded_file)
+				excluded_block = 1;
+		}
 	}
 #endif
 	trace_ext4_mballoc_free(sb, inode, block_group, bit, count);
@@ -4782,7 +4784,7 @@ do_more:
 		 * always clear exclude bitmap just to be on the safe side.
 		 */
 	if (excluded_file || excluded_block) {
-		mb_clear_bits(excluded_bitmap_bh->b_data, bit, count);
+		mb_clear_bits(exclude_bitmap_bh->b_data, bit, count);
 		exclude_bitmap_dirty = 1;
 	}
 	if (excluded_block)

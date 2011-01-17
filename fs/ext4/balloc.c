@@ -375,11 +375,11 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 struct buffer_head *
 ext4_read_exclude_bitmap(struct super_block *sb, unsigned int block_group)
 {
-	struct ext4_group_info *gi = EXT4_SB(sb)->s_snapshot_group_info + block_group;
+	struct ext4_group_info *grp = ext4_get_group_info(sb, block_group);
 	struct buffer_head *bh = NULL;
 	ext4_fsblk_t exclude_bitmap_blk;
 
-	exclude_bitmap_blk = gi->bg_exclude_bitmap;
+	exclude_bitmap_blk = grp->bg_exclude_bitmap;
 	if (!exclude_bitmap_blk)
 		return NULL;
 	bh = sb_getblk(sb, exclude_bitmap_blk);

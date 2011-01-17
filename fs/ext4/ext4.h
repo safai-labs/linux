@@ -1260,7 +1260,6 @@ struct ext4_sb_info {
 	u32 s_min_batch_time;
 	struct block_device *journal_bdev;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	struct ext4_group_info *s_snapshot_group_info;	/* [ sb_bgl_lock ] */
 	struct mutex s_snapshot_mutex;		/* protects 2 fields below: */
 	struct inode *s_active_snapshot;	/* [ s_snapshot_mutex ] */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

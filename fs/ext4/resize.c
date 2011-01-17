@@ -770,7 +770,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	struct ext4_group_desc *gdp;
 	struct inode *inode = NULL;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	struct ext4_group_info *gi = EXT4_SB(sb)->s_snapshot_group_info + input->group;
+	struct ext4_group_info *grp = ext4_get_group_info(sb, input->group);
 	struct inode *exclude_inode = NULL;
 	struct buffer_head *exclude_bh = NULL;
 	int dind_offset = input->group / SNAPSHOT_ADDR_PER_BLOCK;
@@ -978,7 +978,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 		ext4_mark_iloc_dirty(handle, exclude_inode, &iloc);
 	}
 	/* update exclude bitmap cache */
-	gi->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
+	grp->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
 no_exclude_inode:
 #endif
 	/*

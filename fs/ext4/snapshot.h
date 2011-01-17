@@ -372,9 +372,6 @@ static inline void exit_ext4_snapshot(void)
 }
 
 /* inode.c */
-extern ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
-					 struct inode *inode,
-					 struct ext4_iloc *iloc);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		sector_t iblock, unsigned long maxblocks,
@@ -582,8 +579,6 @@ extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 #endif
-#endif	/* _LINUX_EXT4_SNAPSHOT_H */
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
 /*
  * Snapshot control functions
@@ -595,4 +590,4 @@ extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 extern int ext4_snapshot_take(struct inode *inode);
 
 #endif
-
+#endif	/* _LINUX_EXT4_SNAPSHOT_H */

@@ -443,8 +443,7 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			       unsigned int block_group)
 {
 	struct super_block *sb = snapshot->i_sb;
-	struct ext4_sb_info *sbi = EXT4_SB(sb);
-	struct ext4_group_info *gi = sbi->s_snapshot_group_info + block_group;
+	struct ext4_group_info *grp = ext4_get_group_info(sb, block_group);
 	struct ext4_group_desc *desc;
 	struct buffer_head *cow_bh;
 	ext4_fsblk_t bitmap_blk;
@@ -476,10 +475,10 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 */
 	do {
 		ext4_lock_group(sb, block_group);
-		cow_bitmap_blk = gi->bg_cow_bitmap;
+		cow_bitmap_blk = grp->bg_cow_bitmap;
 		if (cow_bitmap_blk == 0)
 			/* mark pending COW of bitmap block */
-			gi->bg_cow_bitmap = bitmap_blk;
+			grp->bg_cow_bitmap = bitmap_blk;
 		ext4_unlock_group(sb, block_group);
 
 		if (cow_bitmap_blk == 0) {
@@ -505,7 +504,7 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	} while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk);
 #else
 	ext4_lock_group(sb, block_group);
-	cow_bitmap_blk = gi->bg_cow_bitmap;
+	cow_bitmap_blk = grp->bg_cow_bitmap;
 	ext4_unlock_group(sb, block_group);
 #endif
 	if (cow_bitmap_blk)
@@ -570,7 +569,7 @@ out:
 
 	/* update or reset COW bitmap cache */
 	ext4_lock_group(sb, block_group);
-	gi->bg_cow_bitmap = cow_bitmap_blk;
+	grp->bg_cow_bitmap = cow_bitmap_blk;
 	ext4_unlock_group(sb, block_group);
 
 	return cow_bh;

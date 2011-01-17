@@ -98,21 +98,17 @@ static int ext4_snapshot_set_active(struct super_block *sb,
  *
  * Resets the COW/exclude bitmap cache for all block groups.
  *
- * Called from init_bitmap_cache() with @init=1 under sb_lock during mount time.
- * Called from snapshot_take() with @init=0 under journal_lock_updates().
- * Returns 0 on success and <0 on error.
+ * Called from snapshot_take() under journal_lock_updates().
  */
-static int ext4_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
+static void ext4_snapshot_reset_bitmap_cache(struct super_block *sb)
 {
-	struct ext4_group_info *gi = EXT4_SB(sb)->s_snapshot_group_info;
+	struct ext4_group_info *grp;
 	int i;
 
-	for (i = 0; i < EXT4_SB(sb)->s_groups_count; i++, gi++) {
-		gi->bg_cow_bitmap = 0;
-		if (init)
-			gi->bg_exclude_bitmap = 0;
+	for (i = 0; i < EXT4_SB(sb)->s_groups_count; i++) {
+		grp = ext4_get_group_info(sb, i);
+		grp->bg_cow_bitmap = 0;
 	}
-	return 0;
 }
 #else
 #define ext4_snapshot_reset_bitmap_cache(sb, init) 0
@@ -372,8 +368,9 @@ out:
 }
 #endif
 
-ext4_fsblk_t ext4_get_inode_block(struct super_block *sb, struct inode *inode, 
-			  struct ext4_iloc *iloc)
+static ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
+					 struct inode *inode,
+					 struct ext4_iloc *iloc)
 {
 	ext4_fsblk_t block;
 	struct ext4_group_desc *desc;
@@ -1027,9 +1024,7 @@ fix_inode_copy:
 #endif
 #endif
 	/* reset COW bitmap cache */
-	err = ext4_snapshot_reset_bitmap_cache(sb, 0);
-	if (err)
-		goto out_unlockfs;
+	ext4_snapshot_reset_bitmap_cache(sb);
 	/* set as in-memory active snapshot */
 	err = ext4_snapshot_set_active(sb, inode);
 	if (err)
@@ -1865,19 +1860,14 @@ out:
  */
 static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 {
-	struct ext4_group_info *gi = EXT4_SB(sb)->s_snapshot_group_info;
+	struct ext4_group_info *grp;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	handle_t *handle = NULL;
 	struct inode *inode;
 	__le32 exclude_bitmap = 0;
-	int grp, max_groups = sbi->s_groups_count;
+	int i, max_groups = sbi->s_groups_count;
 	int err = 0, ret;
 	loff_t i_size;
-
-	/* reset COW/exclude bitmap cache */
-	err = ext4_snapshot_reset_bitmap_cache(sb, 1);
-	if (err)
-		return err;
 
 	if (!EXT4_HAS_COMPAT_FEATURE(sb,
 				      EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
@@ -1925,20 +1915,21 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	 * allocate indirect blocks for all reserved block groups.
 	 */
 	err = -EIO;
-	for (grp = 0; grp < max_groups; grp++, gi++) {
-		exclude_bitmap = ext4_exclude_inode_getblk(handle, inode, grp,
+	for (i = 0; i < max_groups; i++) {
+		exclude_bitmap = ext4_exclude_inode_getblk(handle, inode, i,
 				create);
-		if (create && grp >= sbi->s_groups_count)
+		if (create && i >= sbi->s_groups_count)
 			/* only allocating indirect blocks with getblk above */
 			continue;
 
 		if (create && !exclude_bitmap)
 			goto out;
 
-		gi->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
+		grp = ext4_get_group_info(sb, i);
+		grp->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
 		snapshot_debug(2, "update exclude bitmap #%d cache "
-			       "(block=%lu)\n", grp,
-			       gi->bg_exclude_bitmap);
+			       "(block=%lu)\n", i,
+			       grp->bg_exclude_bitmap);
 	}
 
 	err = 0;
@@ -1963,8 +1954,7 @@ out:
 
 #else
 /* with no exclude inode, exclude bitmap is reset to 0 */
-#define ext4_snapshot_init_bitmap_cache(sb, create)	\
-		ext4_snapshot_reset_bitmap_cache(sb, 1)
+#define ext4_snapshot_init_bitmap_cache(sb, create) 0
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE

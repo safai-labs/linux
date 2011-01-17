@@ -770,7 +770,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	struct ext4_group_desc *gdp;
 	struct inode *inode = NULL;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	struct ext4_group_info *grp = ext4_get_group_info(sb, input->group);
+	struct ext4_group_info *grp;
 	struct inode *exclude_inode = NULL;
 	struct buffer_head *exclude_bh = NULL;
 	int dind_offset = input->group / SNAPSHOT_ADDR_PER_BLOCK;
@@ -934,7 +934,16 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	gdp->bg_flags = cpu_to_le16(EXT4_BG_INODE_ZEROED);
 	gdp->bg_checksum = ext4_group_desc_csum(sbi, input->group, gdp);
 
+	/*
+	 * We can allocate memory for mb_alloc based on the new group
+	 * descriptor
+	 */
+	err = ext4_mb_add_groupinfo(sb, input->group, gdp);
+	if (err)
+		goto exit_journal;
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+	grp = ext4_get_group_info(sb, input->group);
 	if (!exclude_inode)
 		goto no_exclude_inode;
 	if (exclude_bitmap) {
@@ -981,14 +990,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	grp->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
 no_exclude_inode:
 #endif
-	/*
-	 * We can allocate memory for mb_alloc based on the new group
-	 * descriptor
-	 */
-	err = ext4_mb_add_groupinfo(sb, input->group, gdp);
-	if (err)
-		goto exit_journal;
-
 	/*
 	 * Make the new blocks and inodes valid next.  We do this before
 	 * increasing the group count so that once the group is enabled,

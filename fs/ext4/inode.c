@@ -3908,7 +3908,7 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
 	desc = ext4_get_group_desc(inode->i_sb, block_group, NULL);
 	if (desc)
-		bitmap_blk = le32_to_cpu(desc->bg_block_bitmap);
+		bitmap_blk = ext4_block_bitmap(inode->i_sb, desc);
 	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
 		/* copy fixed block bitmap directly to page buffer */
 		cancel_buffer_tracked_read(bh_result);

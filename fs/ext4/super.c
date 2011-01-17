@@ -658,14 +658,6 @@ void ext4_msg (struct super_block * sb, const char *prefix,
 	printk("%sEXT4-fs (%s): ", prefix, sb->s_id);
 	vprintk(fmt, args);
 	printk("\n");
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_ERROR
-#warning "function" parameter not declared
-#ifdef WARNING_NOT_IMPLEMENTED
-	/* record error message in journal super block */
-	ext4_record_journal_err(sb, __func__, function, fmt, args);
-#endif
-#endif
 	va_end(args);
 }
 

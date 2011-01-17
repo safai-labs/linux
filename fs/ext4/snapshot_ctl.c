@@ -6,7 +6,7 @@
  * Copyright (C) 2008-2010 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
-* the terms of the GNU General Public License, version 2, or at your
+ * the terms of the GNU General Public License, version 2, or at your
  * option, any later version, incorporated herein by reference.
  *
  * Ext4 snapshots control functions.
@@ -1954,7 +1954,7 @@ out:
 
 #else
 /* with no exclude inode, exclude bitmap is reset to 0 */
-#define ext4_snapshot_init_bitmap_cache(sb, create) 0
+#define ext4_snapshot_init_bitmap_cache(sb, create) 
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE

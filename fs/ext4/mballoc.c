@@ -4544,12 +4544,11 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  * @inode:		inode
  * @block:		start physical block to free
  * @count:		number of blocks to count
- * @metadata: 		Are these metadata blocks
+ * @metadata:		Are these metadata blocks
  */
-void __ext4_free_blocks(const char *where, handle_t *handle,
-			struct inode *inode,
-			struct buffer_head *bh, ext4_fsblk_t block,
-			unsigned long count, int flags)
+void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
+			struct inode *inode, struct buffer_head *bh,
+			ext4_fsblk_t block, unsigned long count, int flags)
 {
 	struct buffer_head *bitmap_bh = NULL;
 	struct super_block *sb = inode->i_sb;
@@ -4657,7 +4656,7 @@ do_more:
 	ret = ext4_snapshot_get_delete_access(handle, inode,
 					      block, count);
 	if (ret < 0) {
-		ext4_journal_abort_handle(where, __LINE__, __func__,
+		ext4_journal_abort_handle(where, line, __func__,
 					  NULL, handle, ret);
 		err = ret;
 		goto error_return;
@@ -4719,20 +4718,14 @@ do_more:
 	}
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	{
+	if(exclude_bitmap_bh) {
 		int i;
-		if(excluded_file) {
-			for (i = 0; i < count; i++)
-				if(!mb_test_bit(bit + i,
-						exclude_bitmap_bh->b_data))
-					break;
-		}
-		else {
-			for (i = 0; i < count; i++)
-				if(mb_test_bit(bit + i,
-					       exclude_bitmap_bh->b_data))
-					break;
-		}
+		if(excluded_file)
+			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
+						  bit + count, bit) - bit;
+		else
+			i = mb_find_next_bit(exclude_bitmap_bh->b_data,
+					     bit + count, bit) - bit;
 		if(i < count) {
 			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
 			ext4_error(sb, "%sexcluded file (ino=%lu)"
@@ -4783,12 +4776,10 @@ do_more:
 		 * A free block should never be excluded from snapshot, so we
 		 * always clear exclude bitmap just to be on the safe side.
 		 */
-	if (excluded_file || excluded_block) {
+	if (exclude_bitmap_bh && (excluded_file || excluded_block)) {
 		mb_clear_bits(exclude_bitmap_bh->b_data, bit, count);
 		exclude_bitmap_dirty = 1;
 	}
-	if (excluded_block)
-		exclude_bitmap_dirty = 1;
 #endif
 
 	ret = ext4_free_blks_count(sb, gdp) + count;
@@ -4811,7 +4802,8 @@ do_more:
 	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh && exclude_bitmap_dirty) {
-		ret = ext4_handle_dirty_metadata(handle, NULL, exclude_bitmap_bh);
+		ret = ext4_handle_dirty_metadata(handle, NULL,
+						 exclude_bitmap_bh);
 		if (!err)
 			err = ret;
 	}

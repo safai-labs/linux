@@ -421,3 +421,398 @@ out:
 }
 
 #endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+/*
+ * ext4_snapshot_get_inode_access() - called from ext4_get_blocks_handle()
+ * on snapshot file access.
+ * return value <0 indicates access not granted
+ * return value 0 indicates snapshot inode read through access
+ * in which case 'prev_snapshot' is pointed to the previous snapshot
+ * on the list or set to NULL to indicate read through to block device.
+ */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+/*
+ * In-memory snapshot list manipulation is protected by snapshot_mutex.
+ * In this function we read the in-memory snapshot list without holding
+ * snapshot_mutex, because we don't want to slow down snapshot read performance.
+ * Following is a proof, that even though we don't hold snapshot_mutex here,
+ * reading the list is safe from races with snapshot list delete and add (take).
+ *
+ * Proof of no race with snapshot delete:
+ * --------------------------------------
+ * We get here only when reading from an enabled snapshot or when reading
+ * through from an enabled snapshot to a newer snapshot.  Snapshot delete
+ * operation is only allowed for a disabled snapshot, when no older enabled
+ * snapshot exists (i.e., the deleted snapshot in not 'in-use').  Hence,
+ * read through is safe from races with snapshot list delete operations.
+ *
+ * Proof of no race with snapshot take:
+ * ------------------------------------
+ * Snapshot B take is composed of the following steps:
+ * - Add snapshot B to head of list (active_snapshot is A).
+ * - Allocate and copy snapshot B initial blocks.
+ * - Clear snapshot A 'active' flag.
+ * - Set snapshot B 'list' and 'active' flags.
+ * - Set snapshot B as active snapshot (active_snapshot=B).
+ *
+ * When reading from snapshot A during snapshot B take, we have 2 cases:
+ * 1. is_active(A) is tested before setting active_snapshot=B -
+ *    read through from A to block device.
+ * 2. is_active(A) is tested after setting active_snapshot=B -
+ *    read through from A to B.
+ *
+ * When reading from snapshot B during snapshot B take, we have 3 cases:
+ * 1. B->flags and B->prev are read before adding B to list -
+ *    access to B denied.
+ * 2. B->flags is read before setting the 'list' and 'active' flags -
+ *    normal file access to B.
+ * 3. B->flags is read after setting the 'list' and 'active' flags -
+ *    read through from B to block device.
+ */
+#endif
+
+static int ext4_snapshot_get_block_access(struct inode *inode,
+		struct inode **prev_snapshot)
+{
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	unsigned int flags = ei->i_flags;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+	struct list_head *prev = ei->i_snaplist.prev;
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+	if (!(flags & EXT4_SNAPFILE_LIST_FL)) 
+	  	/* snapshot not on the list - read/write access denied */
+		return -EPERM;
+	
+#endif
+
+	/*
+	 * Snapshot image read through access: (!cmd && !handle)
+	 * indicates this is ext4_snapshot_readpage()
+	 * calling ext4_snapshot_get_block()
+	 */
+	*prev_snapshot = NULL;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+	if (ext4_snapshot_is_active(inode) ||
+			(flags & EXT4_SNAPFILE_ACTIVE_FL))
+		/* read through from active snapshot to block device */
+		return 0;
+
+	if (list_empty(prev))
+		/* not on snapshots list? */
+		return -EIO;
+
+	if (prev == &EXT4_SB(inode->i_sb)->s_snapshot_list)
+		/* active snapshot not found on list? */
+		return -EIO;
+
+	/* read through to prev snapshot on the list */
+	ei = list_entry(prev, struct ext4_inode_info, i_snaplist);
+	*prev_snapshot = &ei->vfs_inode;
+
+	if (!ext4_snapshot_file(*prev_snapshot))
+		/* non snapshot file on the list? */
+		return -EIO;
+
+	return 0;
+
+#endif
+}
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+/*
+ * ext4_snapshot_get_read_access - get read through access to block device.
+ * Sanity test to verify that the read block is allocated and not excluded.
+ * This test has performance penalty and is only called if SNAPTEST_READ
+ * is enabled.  An attempt to read through to block device of a non allocated
+ * or excluded block may indicate a corrupted filesystem, corrupted snapshot
+ * or corrupted exclude bitmap.  However, it may also be a read-ahead, which
+ * was not implicitly requested by the user, so be sure to disable read-ahead
+ * on block device (blockdev --setra 0 <bdev>) before enabling SNAPTEST_READ.
+ *
+ * Return values:
+ * = 0 - block is allocated and not excluded
+ * < 0 - error (or block is not allocated or excluded)
+ */
+static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
+				   struct buffer_head *bh)
+{
+	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
+	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
+	struct buffer_head *bitmap_bh;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	struct buffer_head *exclude_bitmap_bh = NULL;
+#endif
+	int err = 0;
+
+	if (PageReadahead(bh->b_page))
+		return 0;
+
+	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
+	if (!bitmap_bh)
+		return -EIO;
+
+	if (!ext4_test_bit(bit, bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"non-allocated block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		brelse(bitmap_bh);
+		return -EIO;
+	}
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
+	if (exclude_bitmap_bh &&
+		ext4_test_bit(bit, exclude_bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"excluded block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		err = -EIO;
+	}
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	brelse(exclude_bitmap_bh);
+#endif
+	brelse(bitmap_bh);
+	return err;
+}
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+static int ext4_snapshot_read_through(struct inode *inode, sector_t iblock,
+			struct buffer_head *bh_result, int create)
+{
+	int err;
+	struct ext4_map_blocks map;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+	struct inode *prev_snapshot;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	struct buffer_head *sbh = NULL;
+#endif
+	map.m_lblk = iblock;
+	map.m_len = bh_result->b_size >> inode->i_blkbits;
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+	do{
+		prev_snapshot = NULL;
+#endif
+		if (ext4_snapshot_file(inode))
+			/* normal or read through snapshot file access? */
+			err = ext4_snapshot_get_block_access(inode,
+							     &prev_snapshot);
+		if (err < 0)
+		  return err;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+		if (!err && !prev_snapshot) {
+		/*
+		 * Possible read through to block device.
+		 * Start tracked read before checking if block is mapped to
+		 * avoid race condition with COW that maps the block after
+		 * we checked if the block is mapped.  If we find that the
+		 * block is mapped, we will cancel the tracked read before
+		 * returning from this function.
+		 */
+			map_bh(bh_result, inode->i_sb, SNAPSHOT_BLOCK(iblock));
+			err = start_buffer_tracked_read(bh_result);
+			if (err < 0) {
+				snapshot_debug(1,
+					 "snapshot (%u) failed to start "
+					 "tracked read on block (%lld) "
+					 "(err=%d)\n", inode->i_generation,
+					 (long long)bh_result->b_blocknr, err);
+				goto out;
+			}
+		}
+#endif
+		err = ext4_ind_map_blocks(NULL, inode, &map, 0);
+		snapshot_debug(4, "ext4_snapshot_get_block(%lld): block = "
+			       "(%lld), err = %d\n",
+				   (long long)iblock, buffer_mapped(bh_result) ?
+				   (long long)bh_result->b_blocknr : 0, err);
+		if (err < 0)
+		  return err;
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+		if (!err)
+			inode = prev_snapshot;
+		/* repeat the same routine with prev snapshot */
+	}while(!err && prev_snapshot);
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+
+	/*
+	 * On read of snapshot file, an unmapped block is a peephole to prev
+	 * snapshot.  On read of active snapshot, an unmapped block is a
+	 * peephole to the block device.  On first block write, the peephole
+	 * is filled forever.
+	 */
+	if (!err){
+		if(ext4_snapshot_is_active(inode)) {
+			/* active snapshot - read though holes to block
+			 * device */
+			clear_buffer_new(bh_result);
+			map_bh(bh_result, inode->i_sb,
+			       SNAPSHOT_BLOCK(iblock));
+			err = 1;
+		} else {
+			err = -EIO;
+		}
+		goto out;
+	}
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	/* it's not a hole - cancel tracked read before we deadlock on
+	 * pending COW */
+	if (buffer_tracked_read(bh_result))
+		cancel_buffer_tracked_read(bh_result);
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	/*
+	 * On read of active snapshot, a mapped block may belong to a non
+	 * completed COW operation.  Use the buffer cache to test this
+	 * condition.  if (bh_result->b_blocknr == SNAPSHOT_BLOCK(iblock)),
+	 * then this is either read through to block device or moved block.
+	 * Either way, it is not a COWed block, so it cannot be pending COW.
+	 */
+	if (ext4_snapshot_is_active(inode) &&
+	    bh_result->b_blocknr != SNAPSHOT_BLOCK(iblock))
+		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
+	if (sbh) {
+		/* wait for pending COW to complete */
+		ext4_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
+		lock_buffer(sbh);
+		if (buffer_uptodate(sbh)) {
+			/*
+			 * Avoid disk I/O and copy out snapshot page directly
+			 * from block device page when possible.
+			 */
+			BUG_ON(!sbh->b_page);
+			BUG_ON(!bh_result->b_page);
+			lock_buffer(bh_result);
+			copy_highpage(bh_result->b_page, sbh->b_page);
+			set_buffer_uptodate(bh_result);
+			unlock_buffer(bh_result);
+		} else if (buffer_dirty(sbh)) {
+			/*
+			 * If snapshot data buffer is dirty (just been COWed),
+			 * then it is not safe to read it from disk yet.
+			 * We shouldn't get here because snapshot data buffer
+			 * only becomes dirty during COW and because we waited
+			 * for pending COW to complete, which means that a
+			 * dirty snapshot data buffer should be uptodate.
+			 */
+			WARN_ON(1);
+		}
+		unlock_buffer(sbh);
+	}
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	/* cancel tracked read on failure to read through active snapshot */
+	if (err < 0 && buffer_tracked_read(bh_result))
+		cancel_buffer_tracked_read(bh_result);
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	/* cancel pending COW operation on failure to alloc snapshot block */
+	if (create && err < 0 && sbh)
+		ext4_snapshot_end_pending_cow(sbh);
+	brelse(sbh);
+#endif
+#endif
+out:
+	return 0;
+}
+
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
+			struct buffer_head *bh_result, int create)
+{
+	unsigned long block_group;
+	struct ext4_group_desc *desc;
+	struct ext4_group_info *grp;
+	ext4_fsblk_t bitmap_blk = 0;
+	int err;
+
+	BUG_ON(create != 0);
+	BUG_ON(buffer_tracked_read(bh_result));
+
+	err = ext4_snapshot_read_through(inode, iblock, bh_result,create);
+	snapshot_debug(4, "ext4_snapshot_get_block(%lld): block = (%lld), "
+		       "err = %d\n",
+		       (long long)iblock, buffer_mapped(bh_result) ?
+		       (long long)bh_result->b_blocknr : 0, err);
+	if (err < 0)
+		return err;
+
+	if (!buffer_tracked_read(bh_result))
+		return 0;
+
+	/* check for read through to block bitmap */
+	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
+	desc = ext4_get_group_desc(inode->i_sb, block_group, NULL);
+	if (desc)
+		bitmap_blk = ext4_block_bitmap(inode->i_sb, desc);
+	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+		/* copy fixed block bitmap directly to page buffer */
+		cancel_buffer_tracked_read(bh_result);
+		/* cancel_buffer_tracked_read() clears mapped flag */
+		set_buffer_mapped(bh_result);
+		snapshot_debug(2, "fixing snapshot block bitmap #%lu\n",
+			       block_group);
+		/*
+		 * XXX: if we return unmapped buffer, the page will be zeroed
+		 * but if we return mapped to block device and uptodate buffer
+		 * next readpage may read directly from block device without
+		 * fixing block bitmap.  This only affects fsck of snapshots.
+		 */
+		return ext4_snapshot_read_block_bitmap(inode->i_sb,
+						       block_group, bh_result);
+	}
+	/* check for read through to exclude bitmap */
+	grp = ext4_get_group_info(inode->i_sb, block_group);
+	bitmap_blk = grp->bg_exclude_bitmap;
+	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+		/* return unmapped buffer to zero out page */
+		cancel_buffer_tracked_read(bh_result);
+		/* cancel_buffer_tracked_read() clears mapped flag */
+		snapshot_debug(2, "zeroing snapshot exclude bitmap #%lu\n",
+			       block_group);
+		return 0;
+	}
+
+#ifdef CONFIG_EXT4_FS_DEBUG
+	snapshot_debug(3, "started tracked read: block = [%llu/%llu]\n",
+		       SNAPSHOT_BLOCK_TUPLE(bh_result->b_blocknr));
+	if (snapshot_enable_test[SNAPTEST_READ]) {
+		err = ext4_snapshot_get_blockdev_access(inode->i_sb,
+						    bh_result);
+		if (err) {
+			/* read through access denied */
+			cancel_buffer_tracked_read(bh_result);
+			return err;
+		}
+		/* sleep 1 tunable delay unit */
+		snapshot_test_delay(SNAPTEST_READ);
+	}
+#endif
+		return 0;
+}
+
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
+int ext4_snapshot_readpage(struct file *file, struct page *page)
+{
+	/* do read I/O with buffer heads to enable tracked reads */
+	return ext4_read_full_page(page, ext4_snapshot_get_block);
+}
+#endif

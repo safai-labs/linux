@@ -333,10 +333,7 @@ extern int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 			(block), (count), 0)
 
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-extern int ext4_snapshot_get_read_access(struct super_block *sb,
-					  struct buffer_head *bh);
-#endif
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 extern int ext4_snapshot_get_inode_access(handle_t *handle,
 					   struct inode *inode,

@@ -1916,9 +1916,7 @@ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
 extern qsize_t *ext4_get_reserved_space(struct inode *inode);
 extern void ext4_da_update_reserve_space(struct inode *inode,
 					int used, int quota_claim);
-extern int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
-			       struct ext4_map_blocks *map,
-			int flags);
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* snapshot_inode.c */
 extern int ext4_snapshot_readpage(struct file *file, struct page *page);

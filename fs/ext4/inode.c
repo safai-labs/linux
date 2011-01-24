@@ -1092,7 +1092,7 @@ err_out:
  * these 2 values, while higher bits are used for mapping snapshot blocks.
  */
 #endif
-int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
+static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			       struct ext4_map_blocks *map,
 			       int flags)
 {

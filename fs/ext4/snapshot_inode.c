@@ -424,7 +424,7 @@ out:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 /*
- * ext4_snapshot_get_inode_access() - called from ext4_get_blocks_handle()
+ * ext4_snapshot_get_block_access() - called from ext4_get_blocks_handle()
  * on snapshot file access.
  * return value <0 indicates access not granted
  * return value 0 indicates snapshot inode read through access
@@ -524,7 +524,7 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 /*
- * ext4_snapshot_get_read_access - get read through access to block device.
+ * ext4_snapshot_get_blockdev_access - get read through access to block device.
  * Sanity test to verify that the read block is allocated and not excluded.
  * This test has performance penalty and is only called if SNAPTEST_READ
  * is enabled.  An attempt to read through to block device of a non allocated
@@ -588,7 +588,6 @@ static int ext4_snapshot_read_through(struct inode *inode, sector_t iblock,
 {
 	int err;
 	struct ext4_map_blocks map;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 	struct inode *prev_snapshot;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
@@ -628,14 +627,14 @@ static int ext4_snapshot_read_through(struct inode *inode, sector_t iblock,
 			}
 		}
 #endif
-		err = ext4_ind_map_blocks(NULL, inode, &map, 0);
+		err = ext4_map_blocks(NULL, inode, &map, 0);
 		snapshot_debug(4, "ext4_snapshot_get_block(%lld): block = "
 			       "(%lld), err = %d\n",
 				   (long long)iblock, buffer_mapped(bh_result) ?
 				   (long long)bh_result->b_blocknr : 0, err);
 		if (err < 0)
 		  return err;
-#endif
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 		if (!err)
 			inode = prev_snapshot;

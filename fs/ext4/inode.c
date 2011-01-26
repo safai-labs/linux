@@ -1131,9 +1131,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		if (err < 0)
 			/* cleanup the whole chain and exit */
 			goto cleanup;
-		if (err > 0)
-			/* check again under truncate_mutex */
-			err = -EAGAIN;
 	}
 
 #endif
@@ -1186,7 +1183,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 				offsets + (partial - chain), partial);
 #endif
 	if (err)
-		goto out_mutex;
+		goto cleanup;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	if (SNAPMAP_ISCOW(flags)) {
@@ -1203,7 +1200,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		sbh = sb_getblk(inode->i_sb, le32_to_cpu(chain[depth-1].key));
 		if (!sbh) {
 			err = -EIO;
-			goto out_mutex;
+			goto cleanup;
 		}
 		ext4_snapshot_start_pending_cow(sbh);
 	}
@@ -1226,7 +1223,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			clear_buffer_mapped(bh_result);
 			if (!buffer_uptodate(bh_result)) {
 				err = -EIO;
-				goto out_mutex;
+				goto cleanup;
 			}
 		}
 		if (buffer_partial_write(bh_result))
@@ -1241,7 +1238,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			ext4_free_blocks(handle, inode, partial->bh,
 				le32_to_cpu(partial->key), 1, flags);
 			err = ret ? : -EIO;
-			goto out_mutex;
+			goto cleanup;
 		}
 		/* block moved to snapshot - continue to splice new block */
 		err = 0;
@@ -1262,7 +1259,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		err = ext4_splice_branch(handle, inode, map->m_lblk,
 					 partial, indirect_blks, count);
 #endif
- out_mutex:
 	if (err)
 		goto cleanup;
 
@@ -1508,7 +1504,24 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		    struct ext4_map_blocks *map, int flags)
 {
 	int retval;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+	int cowing = 0;
 
+	if (handle && IS_COWING(handle)) {
+		/*
+		 * locking order for locks validator:
+		 * inode (VFS operation) -> active snapshot (COW operation)
+		 *
+		 * The i_data_sem lock is nested during COW operation, but
+		 * the active snapshot i_data_sem write lock is not taken
+		 * otherwise, because snapshot file has read-only aops and
+		 * because truncate/unlink of active snapshot is not permitted.
+		 */
+		BUG_ON(!ext4_snapshot_is_active(inode));
+		cowing = 1;
+	}
+
+#endif
 	map->m_flags = 0;
 	ext_debug("ext4_map_blocks(): inode %lu, flag %d, max_blocks %u,"
 		  "logical block %lu\n", inode->i_ino, flags, map->m_len,
@@ -1517,7 +1530,11 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	 * Try to see if we can get the block without requesting a new
 	 * file system block.
 	 */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+	down_read_nested((&EXT4_I(inode)->i_data_sem), cowing);
+#else
 	down_read((&EXT4_I(inode)->i_data_sem));
+#endif
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
 		retval = ext4_ext_map_blocks(handle, inode, map, 0);
 	} else {
@@ -1563,7 +1580,11 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	 * the write lock of i_data_sem, and call get_blocks()
 	 * with create == 1 flag.
 	 */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+	down_write_nested((&EXT4_I(inode)->i_data_sem), cowing);
+#else
 	down_write((&EXT4_I(inode)->i_data_sem));
+#endif
 
 	/*
 	 * if the caller is from delayed allocation writeout path
@@ -1673,8 +1694,13 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
 
 	map.m_lblk = block;
 	map.m_len = 1;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
+	/* passing SNAPMAP flags on create argument */
+	err = ext4_map_blocks(handle, inode, &map, create);
+#else
 	err = ext4_map_blocks(handle, inode, &map,
 			      create ? EXT4_GET_BLOCKS_CREATE : 0);
+#endif
 
 	if (err < 0)
 		*errp = err;
@@ -1691,6 +1717,16 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
 		J_ASSERT(create != 0);
 		J_ASSERT(handle != NULL);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+		if (SNAPMAP_ISCOW(create)) {
+			/* COWing block or creating COW bitmap */
+			lock_buffer(bh);
+			clear_buffer_uptodate(bh);
+			/* flag locked buffer and return */
+			*errp = 1;
+			return bh;
+		}
+#endif
 		/*
 		 * Now that we do not always journal data, we should
 		 * keep in mind whether this should always journal the
@@ -4581,17 +4617,14 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 		}
 	}
 
-	for (p = first; p < last; p++)
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-		u32 nr = le32_to_cpu(*p);
-		if (nr && bitmap && ext4_test_bit(bit + (p - first), bitmap))
+	for (p = first; p < last; p++) {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+		if (*p && bitmap && ext4_test_bit(bit + (p - first), bitmap))
 			/* don't free block used by older snapshot */
-			nr = 0;
-		if (nr)
-			*p = 0;
-#else
-		*p = 0;
+			continue;
 #endif
+		*p = 0;
+	}
 
 	ext4_free_blocks(handle, inode, 0, block_to_free, count, flags);
 	return 0;
@@ -5792,17 +5825,6 @@ static int ext4_do_update_inode(handle_t *handle,
 		for (block = 0; block < EXT4_N_BLOCKS; block++)
 			raw_inode->i_block[block] = ei->i_data[block];
 
-	/*
-	 * snapshot on-disk list overrides snapshot inode on-disk version
-	 * snapshot files are not writable so do not need a persistent version
-	 */
-	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
-	if (ei->i_extra_isize) {
-		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
-			raw_inode->i_version_hi =
-			cpu_to_le32(inode->i_version >> 32);
-		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
-	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 	if (ext4_snapshot_file(inode)) {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
@@ -5818,12 +5840,26 @@ static int ext4_do_update_inode(handle_t *handle,
 				ei->i_data[block];
 		}
 #endif
+		/*
+		 * Snapshot on-disk list overrides snapshot on-disk version.
+		 * Snapshot files are not writable and have a fixed version.
+		 */
 		raw_inode->i_disk_version =
 			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~EXT4_FL_SNAPSHOT_DYN_MASK);
 	} else
 		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+#else
+	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+#endif
+	if (ei->i_extra_isize) {
+		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
+			raw_inode->i_version_hi =
+			cpu_to_le32(inode->i_version >> 32);
+		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
+	}
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	if (ext4_snapshot_exclude_inode(inode)) {
 		if (raw_inode->i_block[EXT4_IND_BLOCK] !=
@@ -5841,10 +5877,6 @@ static int ext4_do_update_inode(handle_t *handle,
 	}
 
 #endif
-#else
-	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
-#endif
-
 	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
 	rc = ext4_handle_dirty_metadata(handle, NULL, bh);
 	if (!err)
@@ -5853,11 +5885,6 @@ static int ext4_do_update_inode(handle_t *handle,
 
 	ext4_update_inode_fsync_trans(handle, inode, 0);
 out_brelse:
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-		ext4_warning(inode->i_sb,
-				"ino=%lu, i_blocks=%lld is too big",
-				inode->i_ino, (long long)inode->i_blocks);
-#endif
 	brelse(bh);
 	ext4_std_error(inode->i_sb, err);
 	return err;

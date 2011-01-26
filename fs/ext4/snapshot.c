@@ -37,11 +37,10 @@ int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 {
 	int err;
 	struct ext4_map_blocks map;
+
+	map.m_lblk = SNAPSHOT_IBLOCK(block);
 	map.m_len = maxblocks;
-	map.m_pblk = SNAPSHOT_IBLOCK(block);
-#ifdef WARNING_NOT_IMPLEMENTED
-	map.m_flag = ?;
-#endif
+
 	err = ext4_map_blocks(handle, inode, &map, cmd);
 	/*
 	 * ext4_get_blocks_handle() returns number of blocks
@@ -106,7 +105,7 @@ __ext4_snapshot_copy_bitmap(struct buffer_head *sbh,
  * as dirty data.
  */
 static inline int
-ext4_snapshot_complete_cow(handle_t *handle,
+ext4_snapshot_complete_cow(handle_t *handle, struct inode *snapshot,
 		struct buffer_head *sbh, struct buffer_head *bh, int sync)
 {
 	int err = 0;
@@ -132,18 +131,12 @@ ext4_snapshot_complete_cow(handle_t *handle,
 #endif
 
 	unlock_buffer(sbh);
-	if (handle) {
-#ifdef WARNING_NOT_IMPLEMENTED
-		/*Patch snapshot_block_cow_patch*/
-		err = ext4_journal_dirty_data(handle, sbh);
-		if (err)
-			goto out;
-#endif
-	}
+	err = ext4_jbd2_file_inode(handle, snapshot);
+	if (err)
+		goto out;
 	mark_buffer_dirty(sbh);
 	if (sync)
 		sync_dirty_buffer(sbh);
-
 out:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* COW operation is complete */
@@ -159,12 +152,12 @@ out:
  * add complete the COW operation
  */
 static inline int
-ext4_snapshot_copy_buffer_cow(handle_t *handle,
+ext4_snapshot_copy_buffer_cow(handle_t *handle, struct inode *snapshot,
 				   struct buffer_head *sbh,
 				   struct buffer_head *bh)
 {
 	__ext4_snapshot_copy_buffer(sbh, bh);
-	return ext4_snapshot_complete_cow(handle, sbh, bh, 0);
+	return ext4_snapshot_complete_cow(handle, snapshot, sbh, bh, 0);
 }
 
 /*
@@ -395,7 +388,7 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * of block bitmap, because it is copied directly to page buffer by
 	 * ext4_snapshot_read_block_bitmap()
 	 */
-	err = ext4_snapshot_complete_cow(handle, cow_bh, NULL, 1);
+	err = ext4_snapshot_complete_cow(handle, snapshot, cow_bh, NULL, 1);
 	if (err)
 		goto out;
 
@@ -497,10 +490,7 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			excluded->i_ino, bit, bit+inuse-1, block_group);
 		for (i = 0; i < inuse; i++)
 			ext4_clear_bit(bit+i, cow_bh->b_data);
-#warning "journal_dirty_data needs to be handled"
-#ifdef WARNING_NOT_IMPLEMENTED
-		err = ext4_journal_dirty_data(handle, cow_bh);
-#endif
+		err = ext4_jbd2_file_inode(handle, snapshot);
 		mark_buffer_dirty(cow_bh);
 		return err;
 	}
@@ -922,7 +912,8 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	/* sleep 1 tunable delay unit */
 	snapshot_test_delay(SNAPTEST_COW);
 #endif
-	err = ext4_snapshot_copy_buffer_cow(handle, sbh, bh);
+	err = ext4_snapshot_copy_buffer_cow(handle, active_snapshot,
+			sbh, bh);
 	if (err)
 		goto out;
 	snapshot_debug(3, "block [%lld/%lld] of snapshot (%u) "

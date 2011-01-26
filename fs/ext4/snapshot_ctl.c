@@ -373,7 +373,11 @@ static ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
 	ext4_fsblk_t block;
 	struct ext4_group_desc *desc;
 	int inodes_per_block, inode_offset;
+
 	iloc->bh = NULL;
+	iloc->offset = 0;
+	iloc->block_group = 0;
+
 	if (!ext4_valid_inum(sb, inode->i_ino))
 		return 0;
 
@@ -412,7 +416,7 @@ static int ext4_snapshot_create(struct inode *inode)
 	struct buffer_head *bh = NULL;
 	struct ext4_group_desc *desc;
 	unsigned long ino;
-	struct ext4_iloc *iloc;
+	struct ext4_iloc iloc;
 	ext4_fsblk_t bmap_blk = 0, imap_blk = 0, inode_blk = 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 	ext4_fsblk_t prev_inode_blk = 0;
@@ -633,7 +637,7 @@ alloc_inode_blocks:
 	if (err)
 		goto out_handle;
 
-	inode_blk = ext4_get_inode_block(sb, inode, iloc);
+	inode_blk = ext4_get_inode_block(sb, inode, &iloc);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 	if (!inode_blk || inode_blk == prev_inode_blk)
@@ -644,7 +648,7 @@ alloc_inode_blocks:
 #endif
 	bmap_blk = 0;
 	imap_blk = 0;
-	desc = ext4_get_group_desc(sb, iloc->block_group, NULL);
+	desc = ext4_get_group_desc(sb, iloc.block_group, NULL);
 	if (!desc)
 		goto next_snapshot;
 
@@ -677,14 +681,14 @@ alloc_inode_blocks:
 next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
 #ifdef CONFIG_EXT4_FS_DEBUG
-		ext4_fsblk_t blk0 = iloc->block_group *
+		ext4_fsblk_t blk0 = iloc.block_group *
 			EXT4_BLOCKS_PER_GROUP(sb);
 		snapshot_debug(1, "failed to allocate block/inode bitmap "
 				"or inode table block of inode (%lu) "
 				"(%llu,%llu,%llu/%u) for snapshot (%u)\n",
 				ino, bmap_blk - blk0,
 				imap_blk - blk0, inode_blk - blk0,
-				iloc->block_group, inode->i_generation);
+				iloc.block_group, inode->i_generation);
 #endif
 		if (!err)
 			err = -EIO;

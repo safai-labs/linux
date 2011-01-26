@@ -20,7 +20,7 @@
 #include "ext4_jbd2.h"
 #include "snapshot_debug.h"
 
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (1-Nov-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (26-Jan-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -119,18 +119,22 @@ BUFFER_FNS(Partial_Write, partial_write)
  * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
  * @flags argument. The higher bits are used for mapping snapshot blocks.
  */
+/* handle COW race conditions */
+#define SNAPMAP_COW_BIT		0x20
+/* allocate only indirect blocks */
+#define SNAPMAP_MOVE_BIT	0x40
+/* bypass journal and sync allocated indirect blocks directly to disk */
+#define SNAPMAP_SYNC_BIT	0x80
 /* original meaning - only check if blocks are mapped */
 #define SNAPMAP_READ	0
 /* original meaning - allocate missing blocks and indirect blocks */
 #define SNAPMAP_WRITE	EXT4_GET_BLOCKS_CREATE
-/* creating COWed block - handle COW race conditions */
-#define SNAPMAP_COW	0x20
-/* moving blocks to snapshot - allocate only indirect blocks */
-#define SNAPMAP_MOVE	0x40
-/* bypass journal and sync allocated indirect blocks directly to disk */
-#define SNAPMAP_SYNC	0x80
-/* creating COW bitmap - handle COW races and bypass journal */
-#define SNAPMAP_BITMAP	(SNAPMAP_COW|SNAPMAP_SYNC)
+/* creating COWed block */
+#define SNAPMAP_COW	(SNAPMAP_WRITE|SNAPMAP_COW_BIT)
+/* moving blocks to snapshot */
+#define SNAPMAP_MOVE	(SNAPMAP_WRITE|SNAPMAP_MOVE_BIT)
+ /* creating COW bitmap - handle COW races and bypass journal */
+#define SNAPMAP_BITMAP	(SNAPMAP_COW|SNAPMAP_SYNC_BIT)
 
 /* original @create flag test - only check map or create map? */
 #define SNAPMAP_ISREAD(cmd)	((cmd) == SNAPMAP_READ)
@@ -138,9 +142,9 @@ BUFFER_FNS(Partial_Write, partial_write)
 #define SNAPMAP_ISCREATE(cmd)	((cmd) != SNAPMAP_READ)
 /* test special cases when mapping snapshot blocks */
 #define SNAPMAP_ISSPECIAL(cmd)	((cmd) & ~SNAPMAP_WRITE)
-#define SNAPMAP_ISCOW(cmd)	((cmd) & SNAPMAP_COW)
-#define SNAPMAP_ISMOVE(cmd)	((cmd) & SNAPMAP_MOVE)
-#define SNAPMAP_ISSYNC(cmd)	((cmd) & SNAPMAP_SYNC)
+#define SNAPMAP_ISCOW(cmd)	((cmd) & SNAPMAP_COW_BIT)
+#define SNAPMAP_ISMOVE(cmd)	((cmd) & SNAPMAP_MOVE_BIT)
+#define SNAPMAP_ISSYNC(cmd)	((cmd) & SNAPMAP_SYNC_BIT)
 
 /* helper functions for ext4_snapshot_create() */
 extern int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,

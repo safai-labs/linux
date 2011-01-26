@@ -116,21 +116,19 @@ BUFFER_FNS(Partial_Write, partial_write)
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
- * snapshot_map_blocks() command flags passed to get_blocks_handle() on its
- * @create argument.  All places in original code call get_blocks_handle()
- * with @create 0 or 1.  The behavior of the function remains the same for
- * these 2 values, while higher bits are used for mapping snapshot blocks.
+ * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
+ * @flags argument. The higher bits are used for mapping snapshot blocks.
  */
 /* original meaning - only check if blocks are mapped */
 #define SNAPMAP_READ	0
 /* original meaning - allocate missing blocks and indirect blocks */
-#define SNAPMAP_WRITE	0x1
+#define SNAPMAP_WRITE	EXT4_GET_BLOCKS_CREATE
 /* creating COWed block - handle COW race conditions */
-#define SNAPMAP_COW	0x2
+#define SNAPMAP_COW	0x20
 /* moving blocks to snapshot - allocate only indirect blocks */
-#define SNAPMAP_MOVE	0x4
+#define SNAPMAP_MOVE	0x40
 /* bypass journal and sync allocated indirect blocks directly to disk */
-#define SNAPMAP_SYNC	0x8
+#define SNAPMAP_SYNC	0x80
 /* creating COW bitmap - handle COW races and bypass journal */
 #define SNAPMAP_BITMAP	(SNAPMAP_COW|SNAPMAP_SYNC)
 

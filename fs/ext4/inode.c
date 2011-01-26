@@ -1086,10 +1086,8 @@ err_out:
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
- * snapshot_map_blocks() command flags are passed to get_blocks_handle() on its
- * @create argument.  All places in original code call get_blocks_handle()
- * with @create 0 or 1.  The behavior of the function remains the same for
- * these 2 values, while higher bits are used for mapping snapshot blocks.
+ * snapshot_map_blocks() command flags passed to ext4_ind_map_blocks() on its
+ * @flags argument. The higher bits are used for mapping snapshot blocks.
  */
 #endif
 static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
@@ -1282,6 +1280,12 @@ got_it:
 	/* Clean up and exit */
 	partial = chain + depth - 1;	/* the whole chain */
 cleanup:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	/* cancel pending COW operation on failure to alloc snapshot block */
+	if (err < 0 && sbh)
+		ext4_snapshot_end_pending_cow(sbh);
+	brelse(sbh);
+#endif
 	while (partial > chain) {
 		BUFFER_TRACE(partial->bh, "call brelse");
 		brelse(partial->bh);

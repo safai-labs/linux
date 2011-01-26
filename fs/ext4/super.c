@@ -3280,7 +3280,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Block size must be equal to page size */
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)
-		 || blocksize != SNAPSHOT_BLOCK_SIZE) {
+		&& blocksize != SNAPSHOT_BLOCK_SIZE) {
 #else
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
@@ -3685,12 +3685,6 @@ no_journal:
 
 	ext4_setup_super(sb, es, sb->s_flags & MS_RDONLY);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
-		/* XXX: how to fail mount/force read-only at this point? */
-		ext4_error(sb, "load snapshot failed\n");
-#endif
-
 	/* determine the minimum size of new large inodes, if present */
 	if (sbi->s_inode_size > EXT4_GOOD_OLD_INODE_SIZE) {
 		sbi->s_want_extra_isize = sizeof(struct ext4_inode) -
@@ -3764,6 +3758,11 @@ no_journal:
 		goto failed_mount4;
 	};
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
+		/* XXX: how to fail mount/force read-only at this point? */
+		ext4_error(sb, "load snapshot failed\n");
+#endif
 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
 	ext4_orphan_cleanup(sb, es);
 	EXT4_SB(sb)->s_mount_state &= ~EXT4_ORPHAN_FS;

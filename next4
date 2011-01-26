@@ -617,17 +617,17 @@ case "$1" in
 	fi
 	F=${M}M
 	cd $NEXT4MNT/$TESTDIR > /dev/null
-	echo Appending $F zeros to $F.1 with direct I/O
-	# append writes to new allocated blocks using direct I/O
-	dd if=/dev/zero bs=1M count=$M of=$F.1 conv=notrunc oflag=append,direct status=noxfer || exit 1
+	echo Appending $F zeros to $F.1
+	# append writes to new allocated blocks
+	dd if=/dev/zero bs=1M count=$M of=$F.1 conv=notrunc oflag=append status=noxfer || exit 1
 	echo Writing $F random data to $n files
 	for i in $( seq 1 $n ) ; do
 		# 1st rewrite moves existing blocks to snapshot and allocates new blocks
 		fallocate -mrs -l 1M $F.$i 2>/dev/null || \
 			dd if=/dev/urandom bs=1M count=$M of=$F.$i conv=notrunc status=noxfer || exit 1
-		# subsequent rewrites write to existing blocks using mmap or direct I/O
+		# subsequent rewrites write to existing blocks using mmap or dd
 		fallocate -mrs -l 1M $F.1 2>/dev/null || \
-			dd if=/dev/urandom bs=1M count=$M of=$F.1 conv=notrunc oflag=direct status=noxfer || exit 1
+			dd if=/dev/urandom bs=1M count=$M of=$F.1 conv=notrunc status=noxfer || exit 1
 	done
 	for i in $( seq 1 $n ) ; do
 		md5sum $F.$i || exit 1

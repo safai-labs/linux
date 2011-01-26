@@ -367,7 +367,7 @@ out:
 #endif
 
 static ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
-					 struct inode *inode,
+					 unsigned long ino,
 					 struct ext4_iloc *iloc)
 {
 	ext4_fsblk_t block;
@@ -378,10 +378,10 @@ static ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
 	iloc->offset = 0;
 	iloc->block_group = 0;
 
-	if (!ext4_valid_inum(sb, inode->i_ino))
+	if (!ext4_valid_inum(sb, ino))
 		return 0;
 
-	iloc->block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
+	iloc->block_group = (ino - 1) / EXT4_INODES_PER_GROUP(sb);
 	desc = ext4_get_group_desc(sb, iloc->block_group, NULL);
 	if (!desc)
 		return 0;
@@ -390,7 +390,7 @@ static ext4_fsblk_t ext4_get_inode_block(struct super_block *sb,
 	 * Figure out the offset within the block group inode table
 	 */
 	inodes_per_block = (EXT4_BLOCK_SIZE(sb) / EXT4_INODE_SIZE(sb));
-	inode_offset = ((inode->i_ino - 1) %
+	inode_offset = ((ino - 1) %
 			EXT4_INODES_PER_GROUP(sb));
 	block = ext4_inode_table(sb, desc) + (inode_offset / inodes_per_block);
 	iloc->offset = (inode_offset % inodes_per_block) * EXT4_INODE_SIZE(sb);
@@ -570,7 +570,7 @@ static int ext4_snapshot_create(struct inode *inode)
 	for (i = 0; i < nind; i++) {
 		brelse(bh);
 		bh = ext4_getblk(handle, inode, i, SNAPMAP_WRITE, &err);
-		if (!bh || err)
+		if (!bh)
 			break;
 		/* zero out indirect block and journal as dirty metadata */
 		err = ext4_journal_get_write_access(handle, bh);
@@ -637,7 +637,7 @@ alloc_inode_blocks:
 	if (err)
 		goto out_handle;
 
-	inode_blk = ext4_get_inode_block(sb, inode, &iloc);
+	inode_blk = ext4_get_inode_block(sb, ino, &iloc);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 	if (!inode_blk || inode_blk == prev_inode_blk)
@@ -719,13 +719,6 @@ out_handle:
 	return err;
 }
 
-/*
- * If we call ext4_getblk() with NULL handle we will get read through access
- * to snapshot inode.  We don't want read through access in snapshot_take(),
- * so we call ext4_getblk() with this dummy handle and since we are not
- * allocating snapshot block here the handle will not be used anyway.
- */
-static handle_t dummy_handle;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 /*
  * ext4_snapshot_copy_block() - copy block to new snapshot
@@ -749,11 +742,11 @@ static struct buffer_head *ext4_snapshot_copy_block(struct inode *snapshot,
 	if (!bh)
 		return NULL;
 
-	sbh = ext4_getblk(&dummy_handle, snapshot,
+	sbh = ext4_getblk(NULL, snapshot,
 			SNAPSHOT_IBLOCK(bh->b_blocknr),
 			SNAPMAP_READ, &err);
 
-	if (err || !sbh || sbh->b_blocknr == bh->b_blocknr) {
+	if (!sbh || sbh->b_blocknr == bh->b_blocknr) {
 		snapshot_debug(1, "failed to copy %s (%lu) "
 				"block [%llu/%llu] to snapshot (%u)\n",
 				name, idx,
@@ -840,7 +833,7 @@ int ext4_snapshot_take(struct inode *inode)
 		snapshot_debug(1, "warning: super block of snapshot (%u) is "
 			       "broken!\n", inode->i_generation);
 	} else
-		sbh = ext4_getblk(&dummy_handle, inode, SNAPSHOT_IBLOCK(0),
+		sbh = ext4_getblk(NULL, inode, SNAPSHOT_IBLOCK(0),
 				   SNAPMAP_READ, &err);
 
 	if (!sbh || sbh->b_blocknr == 0) {

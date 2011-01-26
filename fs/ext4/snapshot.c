@@ -366,7 +366,7 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	/* allocate snapshot block for COW bitmap */
 	cow_bh = ext4_getblk(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
 				SNAPMAP_BITMAP, &err);
-	if (!cow_bh || err < 0)
+	if (!cow_bh)
 		goto out;
 	if (!err) {
 		/*
@@ -886,7 +886,7 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	/* try to allocate snapshot block to make a backup copy */
 	sbh = ext4_getblk(handle, active_snapshot, SNAPSHOT_IBLOCK(block),
 			   SNAPMAP_COW, &err);
-	if (!sbh || err < 0)
+	if (!sbh)
 		goto out;
 
 	blk = sbh->b_blocknr;

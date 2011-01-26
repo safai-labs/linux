@@ -12,9 +12,7 @@
  * Ext4 snapshots core functions.
  */
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
 #include <linux/quotaops.h>
-#endif
 #include "snapshot.h"
 #include "ext4.h"
 

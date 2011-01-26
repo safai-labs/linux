@@ -12,9 +12,7 @@
  * Ext4 snapshots control functions.
  */
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
 #include <linux/statfs.h>
-#endif
 #include "snapshot.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE

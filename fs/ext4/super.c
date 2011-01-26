@@ -4986,7 +4986,7 @@ static struct file_system_type ext4_fs_type = {
 	.fs_flags	= FS_REQUIRES_DEV,
 };
 
-int __init ext4_init_feat_adverts(void)
+static int __init ext4_init_feat_adverts(void)
 {
 	struct ext4_features *ef;
 	int ret = -ENOMEM;
@@ -5008,6 +5008,13 @@ int __init ext4_init_feat_adverts(void)
 	ret = 0;
 out:
 	return ret;
+}
+
+static void ext4_exit_feat_adverts(void)
+{
+	kobject_put(&ext4_feat->f_kobj);
+	wait_for_completion(&ext4_feat->f_kobj_unregister);
+	kfree(ext4_feat);
 }
 
 static int __init ext4_init_fs(void)
@@ -5065,7 +5072,7 @@ out1:
 out2:
 	ext4_exit_mballoc();
 out3:
-	kfree(ext4_feat);
+	ext4_exit_feat_adverts();
 	remove_proc_entry("fs/ext4", NULL);
 	kset_unregister(ext4_kset);
 out4:
@@ -5087,6 +5094,7 @@ static void __exit ext4_exit_fs(void)
 	destroy_inodecache();
 	ext4_exit_xattr();
 	ext4_exit_mballoc();
+	ext4_exit_feat_adverts();
 	remove_proc_entry("fs/ext4", NULL);
 	kset_unregister(ext4_kset);
 	ext4_exit_system_zone();

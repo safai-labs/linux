@@ -6,9 +6,11 @@
 # Next4 snapshot management script
 #
 
-SCRIPT_NAME=next4
+SCRIPT_NAME=$(basename $0)
 SCRIPT_VER=1.0.13
 SCRIPT_DESC="Next4 snapshot management script"
+# fs/module name = script name
+MNTTYPE=$SCRIPT_NAME
 
 # generic e2fs progs
 FSCK=e2fsck
@@ -104,10 +106,10 @@ if [ -z $NEXT4DEV ] && [ -z $NEXT4MNT ] ; then
 		. ./$CONFFILE
 	elif [ -f ~/$CONFFILE ] ; then
 		. ~/$CONFFILE
-	elif [ $( mount -t next4 | wc -l ) = 1 ] ; then
+	elif [ $( mount -t $MNTTYPE | wc -l ) = 1 ] ; then
 		# exactly one mounted next4 filesystem found - use it
-		NEXT4DEV=$( mount -t next4 | ( read a b c d ; echo $a ) )
-		NEXT4MNT=$( mount -t next4 | ( read a b c d ; echo $c ) )
+		NEXT4DEV=$( mount -t $MNTTYPE | ( read a b c d ; echo $a ) )
+		NEXT4MNT=$( mount -t $MNTTYPE | ( read a b c d ; echo $c ) )
 	fi
 fi
 
@@ -415,7 +417,7 @@ case "$1" in
 			MNTOPT="-o loop"
 		fi
 		# we may be called from mount.next4 so add -i
-		mount -t next4 -i $MNTOPT $NEXT4DEV $NEXT4MNT || exit 1
+		mount -t $MNTTYPE -i $MNTOPT $NEXT4DEV $NEXT4MNT || exit 1
 		echo next4 filesystem is mounted on $NEXT4MNT
 	else
   		$0 enable $s || exit 1
@@ -485,7 +487,7 @@ case "$1" in
 	fi
 	if [ -z $s ] ; then
 		echo "Fscking next4 filesystem on $NEXT4DEV..."
-		$FSCK -nf -C 0 $NEXT4DEV >&2 && \
+		$FSCK -pf -C 0 $NEXT4DEV >&2 && \
 			echo next4 filesystem on $NEXT4DEV 'is healthy' || \
 			echo next4 filesystem on $NEXT4DEV 'has errors'
 	else
@@ -624,10 +626,10 @@ case "$1" in
 	for i in $( seq 1 $n ) ; do
 		# 1st rewrite moves existing blocks to snapshot and allocates new blocks
 		fallocate -mrs -l 1M $F.$i 2>/dev/null || \
-			dd if=/dev/urandom bs=1M count=$M of=$F.$i conv=notrunc status=noxfer || exit 1
-		# subsequent rewrites write to existing blocks using mmap or dd
+			dd if=/dev/urandom bs=1M count=$M of=$F.$i status=noxfer || exit 1
+		# subsequent rewrites doesn't move blocks to snapshot
 		fallocate -mrs -l 1M $F.1 2>/dev/null || \
-			dd if=/dev/urandom bs=1M count=$M of=$F.1 conv=notrunc status=noxfer || exit 1
+			dd if=/dev/urandom bs=1M count=$M of=$F.1 status=noxfer || exit 1
 	done
 	for i in $( seq 1 $n ) ; do
 		md5sum $F.$i || exit 1

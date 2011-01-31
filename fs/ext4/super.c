@@ -270,20 +270,20 @@ handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
 			return ERR_PTR(-EROFS);
 		}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-	/* sanity test for standalone module */
-	if (sizeof(ext4_handle_t) != sizeof(handle_t))
-		return ERR_PTR(-EINVAL);
+		/* sanity test for standalone module */
+		if (sizeof(ext4_handle_t) != sizeof(handle_t))
+			return ERR_PTR(-EINVAL);
 
-	handle = (ext4_handle_t *)jbd2_journal_start(journal,
-			       EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
-	if (!IS_ERR(handle)) {
-		if (handle->h_ref == 1) {
-			handle->h_base_credits = nblocks;
-			handle->h_user_credits = nblocks;
+		handle = (ext4_handle_t *)jbd2_journal_start(journal,
+				EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
+		if (!IS_ERR(handle)) {
+			if (handle->h_ref == 1) {
+				handle->h_base_credits = nblocks;
+				handle->h_user_credits = nblocks;
+			}
+			ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
 		}
-		ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
-	}
-	return (handle_t *)handle;
+		return (handle_t *)handle;
 #else
 
 		return jbd2_journal_start(journal, nblocks);

@@ -399,6 +399,7 @@ static inline void ext4_handle_sync(handle_t *handle)
 		handle->h_sync = 1;
 }
 
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_RELEASE
 static inline void ext4_handle_release_buffer(handle_t *handle,
 						struct buffer_head *bh)
 {
@@ -406,6 +407,7 @@ static inline void ext4_handle_release_buffer(handle_t *handle,
 		jbd2_journal_release_buffer(handle, bh);
 }
 
+#endif
 static inline int ext4_handle_is_aborted(handle_t *handle)
 {
 	if (ext4_handle_valid(handle))
@@ -457,12 +459,16 @@ static inline handle_t *ext4_journal_current_handle(void)
 static inline int __ext4_journal_extend(const char *where,
 		ext4_handle_t *handle, int nblocks)
 {
-	int lower = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits+nblocks);
+	int lower, missing = 0;
 	int err = 0;
-	int missing = lower - handle->h_buffer_credits;
+	
+	if (ext4_handle_valid((handle_t *)handle)) {
+		lower = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits +
+				nblocks);
+		missing = lower - handle->h_buffer_credits;
+	}
+	/* extend transaction to keep buffer credits above lower limit */
 	if (missing > 0)
-		/* extend transaction to keep buffer credits above lower
-		 * limit */
 		err = jbd2_journal_extend((handle_t *)handle, missing);
 	if (!err) {
 		handle->h_base_credits += nblocks;
@@ -482,7 +488,10 @@ static inline int __ext4_journal_extend(const char *where,
 static inline int __ext4_journal_restart(const char *where,
 		ext4_handle_t *handle, int nblocks)
 {
-	int err = jbd2_journal_restart((handle_t *)handle,
+	int err = 0;
+
+	if (ext4_handle_valid((handle_t *)handle))
+		err = jbd2_journal_restart((handle_t *)handle,
 				  EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
 	if (!err) {
 		handle->h_base_credits = nblocks;

@@ -622,17 +622,25 @@ case "$1" in
 	fi
 	F=${M}M
 	cd $NEXT4MNT/$TESTDIR > /dev/null
+	NOTRUNC="conv=notrunc"
+	# uncomment the following line to run in-place and partial write tests
+	#INPLACE=$NOTRUNC
+	if [ -z $INPLACE ] ; then
+		TRUNCSIZE=0
+	else
+		TRUNCSIZE=4
+	fi
 	echo Appending $F zeros to $F.1
 	# append writes to new allocated blocks
-	dd if=/dev/zero bs=1M count=$M of=$F.1 conv=notrunc oflag=append status=noxfer || exit 1
+	dd if=/dev/zero bs=1M count=$M of=$F.1 $NOTRUNC oflag=append status=noxfer || exit 1
 	echo Writing $F random data to $n files
 	for i in $( seq 1 $n ) ; do
 		# 1st rewrite moves existing blocks to snapshot and allocates new blocks
 		fallocate -mrs -l 1M $F.$i 2>/dev/null || \
-			dd if=/dev/urandom bs=1M count=$M of=$F.$i status=noxfer || exit 1
+			dd if=/dev/urandom bs=1M count=$M of=$F.$i $INPLACE status=noxfer || exit 1
 		# subsequent rewrites doesn't move blocks to snapshot
 		fallocate -mrs -l 1M $F.1 2>/dev/null || \
-			dd if=/dev/urandom bs=1M count=$M of=$F.1 status=noxfer || exit 1
+			dd if=/dev/urandom bs=1M count=$M of=$F.1 $INPLACE status=noxfer || exit 1
 	done
 	for i in $( seq 1 $n ) ; do
 		md5sum $F.$i || exit 1
@@ -661,8 +669,8 @@ case "$1" in
 	  3)
 		echo Remove test:
 		echo ------------
-		echo 'Truncating c.txt (to size 4)'
-		truncate -s 4 $NEXT4MNT/C/c.txt
+		echo "Truncating c.txt (to size $TRUNCSIZE)"
+		truncate -s $TRUNCSIZE $NEXT4MNT/C/c.txt
 		echo 'Removing d.txt'
 		rm $NEXT4MNT/D/d.txt
 	  ;;

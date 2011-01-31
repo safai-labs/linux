@@ -88,9 +88,6 @@ static int ext4_blks_to_skip(struct inode *inode, long i_block,
 	}
 	/* offset of block from start of splice point */
 	i_block &= ((1 << data_ptrs_bits) - 1);
-	/* up to 4 triple indirect blocks are used to map 2^32 blocks */
-	if (ext4_snapshot_file(inode) && depth == 4 && k == 0)
-		final = EXT4_SNAPSHOT_NTIND_BLOCKS;
 
 	count++;
 	while (count <= max_ptrs &&

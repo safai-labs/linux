@@ -20,7 +20,7 @@
 #include "ext4_jbd2.h"
 #include "snapshot_debug.h"
 
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (26-Jan-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (31-Jan-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses

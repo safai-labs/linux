@@ -227,6 +227,7 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	 * because before allocating/freeing any other blocks a task
 	 * must first get_undo_access() and get here.
 	 */
+#warning committed_data is obsolete and locks should be replaced with group_lock
 	jbd_lock_bh_journal_head(bitmap_bh);
 	jbd_lock_bh_state(bitmap_bh);
 	jh = bh2jh(bitmap_bh);

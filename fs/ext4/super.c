@@ -2376,7 +2376,7 @@ static loff_t ext4_max_bitmap_size(int bits, int has_huge_files)
 	res += 1LL << (bits-2);
 	res += 1LL << (2*(bits-2));
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	res += EXT4_SNAPSHOT_NTIND_BLOCKS * (1LL << (3*(bits-2)));
+	res += (1LL + EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS) << (3*(bits-2));
 #else
 	res += 1LL << (3*(bits-2));
 #endif

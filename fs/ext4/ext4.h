@@ -395,9 +395,9 @@ struct flex_groups {
  * Snapshot files in small filesystems (<= 4G), use only 1 double indirect
  * block to map the entire filesystem.
  */
-#define	EXT4_SNAPSHOT_NTIND_BLOCKS	4
-#define	EXT4_SNAPSHOT_N_BLOCKS		(EXT4_TIND_BLOCK + \
-					 EXT4_SNAPSHOT_NTIND_BLOCKS)
+#define	EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS	3
+#define	EXT4_SNAPSHOT_N_BLOCKS		(EXT4_TIND_BLOCK + 1 + \
+					 EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS)
 #endif
 
 /*
@@ -469,16 +469,16 @@ struct flex_groups {
 	 EXT4_FL_SNAPSHOT_RO_MASK)
 
 /* User visible flags */
-#define EXT4_FL_USER_VISIBLE		(EXT4_FL_SNAPSHOT_MASK|0x0007DFFF)
+#define EXT4_FL_USER_VISIBLE	(EXT4_FL_SNAPSHOT_MASK|0x004BDFFF)
 /* User modifiable flags */
-#define EXT4_FL_USER_MODIFIABLE	(EXT4_FL_SNAPSHOT_RW_MASK|0x000380FF)
+#define EXT4_FL_USER_MODIFIABLE	(EXT4_FL_SNAPSHOT_RW_MASK|0x004B80FF)
 
 /* Flags that should be inherited by new inodes from their parent. */
 #define EXT4_FL_INHERITED (EXT4_SECRM_FL | EXT4_UNRM_FL | EXT4_COMPR_FL |\
-		EXT4_SYNC_FL | EXT4_IMMUTABLE_FL | EXT4_APPEND_FL |\
-		EXT4_NODUMP_FL | EXT4_NOATIME_FL | EXT4_COMPRBLK_FL|\
-		EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
-		EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL | EXT4_SNAPFILE_FL)
+			   EXT4_SYNC_FL | EXT4_IMMUTABLE_FL | EXT4_APPEND_FL |\
+			   EXT4_NODUMP_FL | EXT4_NOATIME_FL |\
+			   EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
+			   EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL | EXT4_SNAPFILE_FL)
 #else
 
 #define EXT4_FL_USER_VISIBLE		0x004BDFFF /* User visible flags */
@@ -543,6 +543,11 @@ enum {
 	EXT4_INODE_EXTENTS	= 19,	/* Inode uses extents */
 	EXT4_INODE_EA_INODE	= 21,	/* Inode used for large EA */
 	EXT4_INODE_EOFBLOCKS	= 22,	/* Blocks allocated beyond EOF */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+	EXT4_INODE_SNAPFILE	= 24,	/* Snapshot file/dir */
+	EXT4_INODE_SNAPFILE_DELETED = 26,	/* Snapshot is deleted */
+	EXT4_INODE_SNAPFILE_SHRUNK = 27,	/* Snapshot was shrunk */
+#endif
 	EXT4_INODE_RESERVED	= 31,	/* reserved for ext4 lib */
 };
 
@@ -589,6 +594,11 @@ static inline void ext4_check_flag_values(void)
 	CHECK_FLAG_VALUE(EXTENTS);
 	CHECK_FLAG_VALUE(EA_INODE);
 	CHECK_FLAG_VALUE(EOFBLOCKS);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+	CHECK_FLAG_VALUE(SNAPFILE);
+	CHECK_FLAG_VALUE(SNAPFILE_DELETED);
+	CHECK_FLAG_VALUE(SNAPFILE_SHRUNK);
+#endif
 	CHECK_FLAG_VALUE(RESERVED);
 }
 
@@ -902,11 +912,7 @@ struct ext4_ext_cache {
  * fourth extended file system inode data in memory
  */
 struct ext4_inode_info {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	__le32	i_data[EXT4_SNAPSHOT_N_BLOCKS]; /* unconverted */
-#else
 	__le32	i_data[15];	/* unconverted */
-#endif
 	__u32	i_dtime;
 	ext4_fsblk_t	i_file_acl;
 

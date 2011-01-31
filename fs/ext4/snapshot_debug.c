@@ -422,7 +422,7 @@ void ext4_snapshot_dump(int n, struct inode *inode)
 		ext4_snapshot_dump_dind(n, 0, &di, nr, 0);
 	/* print triple indirect branches (rest of snapshot image) */
 	do {
-		nr = le32_to_cpu(ei->i_data[i]);
+		nr = le32_to_cpu(ei->i_data[i%EXT4_N_BLOCKS]);
 		if (nr)
 			ext4_snapshot_dump_tind(n, 0, &di, nr,
 					i - EXT4_TIND_BLOCK);

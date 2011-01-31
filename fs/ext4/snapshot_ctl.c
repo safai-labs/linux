@@ -349,14 +349,14 @@ static inline int ext4_snapshot_shift_blocks(struct ext4_inode_info *ei,
 	 */
 	for (i = 0; i < count; i++)
 		if (!ei->i_data[from+i] ||
-				ei->i_data[to+i])
+				ei->i_data[(to+i)%EXT4_N_BLOCKS])
 			goto out;
 
 	/*
 	 * shift 'count' blocks from position 'from' to 'to'
 	 */
 	for (i = 0; i < count; i++) {
-		ei->i_data[to+i] = ei->i_data[from+i];
+		ei->i_data[(to+i)%EXT4_N_BLOCKS] = ei->i_data[from+i];
 		ei->i_data[from+i] = 0;
 	}
 	err = 0;
@@ -553,7 +553,7 @@ static int ext4_snapshot_create(struct inode *inode)
 		/* add up to 4 triple indirect blocks to map 2^32 blocks */
 		nind += ((snapshot_blocks - double_blocks) >>
 			(3 * SNAPSHOT_ADDR_PER_BLOCK_BITS)) + 1;
-	if (nind > EXT4_SNAPSHOT_NTIND_BLOCKS + 1) {
+	if (nind > 2 + EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS) {
 		snapshot_debug(1, "need too many [d,t]ind blocks (%d) "
 				"for snapshot (%u)\n",
 				nind, inode->i_generation);
@@ -1106,12 +1106,14 @@ static int ext4_snapshot_clean(handle_t *handle, struct inode *inode,
 	 */
 	for (i = EXT4_DIND_BLOCK; i < EXT4_SNAPSHOT_N_BLOCKS; i++) {
 		int depth = (i == EXT4_DIND_BLOCK ? 2 : 3);
-		if (!ei->i_data[i])
+		int j = i%EXT4_N_BLOCKS;
+
+		if (!ei->i_data[j])
 			continue;
 		ext4_free_branches_cow(handle, inode, NULL,
-				ei->i_data+i, ei->i_data+i+1, depth, pblocks);
+				ei->i_data+j, ei->i_data+j+1, depth, pblocks);
 		if (cleanup)
-			ei->i_data[i] = 0;
+			ei->i_data[j] = 0;
 	}
 	return nblocks;
 }

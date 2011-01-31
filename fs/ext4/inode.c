@@ -364,10 +364,11 @@ static int ext4_block_to_path(struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	} else if (ext4_snapshot_file(inode) &&
 			(tind = (i_block >> (ptrs_bits * 3))) <
-			EXT4_SNAPSHOT_NTIND_BLOCKS) {
+			EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS + 1) {
+		BUG_ON(tind == 0);
 		/* use up to 4 triple indirect blocks to map 2^32 blocks */
 		i_block -= (tind << (ptrs_bits * 3));
-		offsets[n++] = EXT4_TIND_BLOCK + tind;
+		offsets[n++] = (EXT4_TIND_BLOCK + tind) % EXT4_NDIR_BLOCKS;
 		offsets[n++] = i_block >> (ptrs_bits * 2);
 		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
 		offsets[n++] = i_block & (ptrs - 1);
@@ -5120,6 +5121,12 @@ do_indirects:
 	/* Kill the remaining (whole) subtrees */
 	switch (offsets[0]) {
 	default:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+		if (ext4_snapshot_file(inode) &&
+				offsets[0] < EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS)
+			/* Freeing snapshot extra tind branches */
+			break;
+#endif
 		nr = i_data[EXT4_IND_BLOCK];
 		if (nr) {
 			ext4_free_branches(handle, inode, NULL, &nr, &nr+1, 1);
@@ -5146,12 +5153,12 @@ do_indirects:
 		int i;
 
 		/* Kill the remaining snapshot file triple indirect trees */
-		for (i = 1; i < EXT4_SNAPSHOT_NTIND_BLOCKS; i++) {
-			nr = i_data[EXT4_TIND_BLOCK + i];
+		for (i = 0; i < EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS; i++) {
+			nr = i_data[i];
 			if (!nr)
 				continue;
 			ext4_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
-			i_data[EXT4_TIND_BLOCK + i] = 0;
+			i_data[i] = 0;
 		}
 	}
 #endif
@@ -5384,10 +5391,10 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
 			EXT4_FEATURE_RO_COMPAT_HUGE_FILE) ||
-			 (ext4_snapshot_file(inode))) {
+			ext4_snapshot_file(inode)) {
 #else
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				       EXT4_FEATURE_RO_COMPAT_HUGE_FILE) {
+				       EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
 #endif
 		/* we are using combined 48 bit field */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
@@ -5495,20 +5502,6 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 	/* snapshot on-disk list is stored in snapshot inode on-disk version */
 	if (ext4_snapshot_file(inode)) {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-		/*
-		 * ei->i_data[] has more blocks than raw_inode->i_block[].
-		 * Snapshot files don't use the first EXT4_NDIR_BLOCKS of
-		 * ei->i_data[] and store the extra blocks at the
-		 * begining of raw_inode->i_block[].
-		 */
-		for (block = EXT4_N_BLOCKS; block < EXT4_SNAPSHOT_N_BLOCKS;
-				block++) {
-			ei->i_data[block] =
-				raw_inode->i_block[block-EXT4_N_BLOCKS];
-			ei->i_data[block-EXT4_N_BLOCKS] = 0;
-		}
-#endif
 		ei->i_next_snapshot_ino =
 			le32_to_cpu(raw_inode->i_disk_version);
 
@@ -5697,11 +5690,10 @@ static int ext4_inode_blocks_set(handle_t *handle,
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	/* snapshot files may be represented as huge files */
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE)
-		 && (!ext4_snapshot_file(inode)))
+	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE) &&
+			!ext4_snapshot_file(inode))
 		return -EFBIG;
 #else
-
 	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE))
 		return -EFBIG;
 #endif
@@ -5827,19 +5819,6 @@ static int ext4_do_update_inode(handle_t *handle,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 	if (ext4_snapshot_file(inode)) {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-		/*
-		 * ei->i_data[] has more blocks than raw_inode->i_block[].
-		 * Snapshot files don't use the first EXT4_NDIR_BLOCKS of
-		 * ei->i_data[] and store the extra blocks at the
-		 * begining of raw_inode->i_block[].
-		 */
-		for (block = EXT4_N_BLOCKS; block < EXT4_SNAPSHOT_N_BLOCKS;
-				block++) {
-			raw_inode->i_block[block-EXT4_N_BLOCKS] =
-				ei->i_data[block];
-		}
-#endif
 		/*
 		 * Snapshot on-disk list overrides snapshot on-disk version.
 		 * Snapshot files are not writable and have a fixed version.

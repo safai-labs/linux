@@ -45,7 +45,7 @@ if [ $# -ge 2 ] && [ $1 != help ] && [ $1_$2 != $1_help ] && [ $1 != config ] &&
 	s=$( echo $2 | ( IFS=$IFS@ ; read a b ; echo $b ) )
 	if [ -z $s ] ; then
 		# check if argument is a next4 mount point
-		dev=$( cat /proc/mounts | while read a b c d ; do ( [ _$b = _$2 ] && [ _$c = _next4 ] && echo $a ) ; done )
+		dev=$( cat /proc/mounts | while read a b c d ; do ( [ _$b = _$2 ] && [ _$c = _$MNTTYPE ] && echo $a ) ; done )
 		if [ ! -z $dev ] ; then
 			# found next4 mount point
 			NEXT4MNT=$2
@@ -62,9 +62,9 @@ if [ $# -ge 2 ] && [ $1 != help ] && [ $1_$2 != $1_help ] && [ $1 != config ] &&
 		# snapshot name is prepended with next4 mount point
 		NEXT4MNT=$( echo $2 | ( IFS=$IFS@ ; read a b ; echo $a ) )
 		# find next4 block device from next4 mount point
-		NEXT4DEV=$( cat /proc/mounts | while read a b c d ; do ( [ _$b = _$NEXT4MNT ] && [ _$c = _next4 ] && echo $a ) ; done )
+		NEXT4DEV=$( cat /proc/mounts | while read a b c d ; do ( [ _$b = _$NEXT4MNT ] && [ _$c = _$MNTTYPE ] && echo $a ) ; done )
 		if [ -z $NEXT4DEV ] ; then
-			echo "$0 $1 $2: $NEXT4MNT is not a mounted next4 filesystem!"
+			echo "$0 $1 $2: $NEXT4MNT is not a mounted $MNTTYPE filesystem!"
 			exit 1
 		fi
 		# strip / from snapshot name
@@ -73,7 +73,7 @@ if [ $# -ge 2 ] && [ $1 != help ] && [ $1_$2 != $1_help ] && [ $1 != config ] &&
 fi
 
 SYSDEBUGDIR=/sys/kernel/debug
-SNAPDEBUGDIR=$SYSDEBUGDIR/next4
+SNAPDEBUGDIR=$SYSDEBUGDIR/$MNTTYPE
 
 # default debug-level is old-debug-level
 if [ ! -d $SNAPDEBUGDIR ] ; then
@@ -98,7 +98,7 @@ else
 fi
 
 # read next4 block device and mount point from conf file
-CONFFILE=.next4.conf
+CONFFILE=.$MNTTYPE.conf
 
 # look for snapshot config file in current then home directory
 if [ -z $NEXT4DEV ] && [ -z $NEXT4MNT ] ; then
@@ -106,10 +106,10 @@ if [ -z $NEXT4DEV ] && [ -z $NEXT4MNT ] ; then
 		. ./$CONFFILE
 	elif [ -f ~/$CONFFILE ] ; then
 		. ~/$CONFFILE
-	elif [ $( mount -t $MNTTYPE | wc -l ) = 1 ] ; then
-		# exactly one mounted next4 filesystem found - use it
-		NEXT4DEV=$( mount -t $MNTTYPE | ( read a b c d ; echo $a ) )
-		NEXT4MNT=$( mount -t $MNTTYPE | ( read a b c d ; echo $c ) )
+	elif [ $( mount -t $MNTTYPE | grep -v noload | wc -l ) = 1 ] ; then
+		# exactly one mounted next4 filesystem found (mounted snapshots excluded)
+		NEXT4DEV=$( mount -t $MNTTYPE | grep -v noload | ( read a b c d ; echo $a ) )
+		NEXT4MNT=$( mount -t $MNTTYPE | grep -v noload | ( read a b c d ; echo $c ) )
 	fi
 fi
 
@@ -324,6 +324,7 @@ case "$1" in
 		exit 1
 	fi
 	touch $SNAPDIR/$s 2> /dev/null
+	sync
 	$CHSNAP -X +S $SNAPDIR/$s || exit 1
 	echo snapshot $S was created
 	echo .
@@ -581,7 +582,9 @@ case "$1" in
         ( [ ${test_read}_ms = 0_ms ] && [ ${3}_ms != 0_ms ] ) || exit 0
 	sleep 1
 	if [ $N = 0 ] ; then
-		$0 fsck
+		$0 umount $NEXT4MNT || exit 1
+		$0 fsck $NEXT4DEV
+		$0 mount $NEXT4DEV $NEXT4MNT || exit 1
 	else
 		for n in $( seq 1 $N ) ; do
 			$0 fsck $n 2> /dev/null

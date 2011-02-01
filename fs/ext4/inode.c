@@ -713,8 +713,13 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 	ar.goal = goal;
 	ar.len = target;
 	ar.logical = iblock;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+	/* Enable in-core preallocation only for non-snapshot regular files */
+	if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
+#else
 	if (S_ISREG(inode->i_mode))
 		/* enable in-core preallocation only for regular files */
+#endif
 		ar.flags = EXT4_MB_HINT_DATA;
 
 	current_block = ext4_mb_new_blocks(handle, &ar, err);

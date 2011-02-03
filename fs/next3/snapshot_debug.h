@@ -41,11 +41,16 @@ extern u8 cow_cache_offset;
 			msleep_interruptible(snapshot_enable_test[i]); \
 	} while (0)
 
-#define snapshot_test_delay_per_ticks(i, n)	    \
+/* sleep 1/100 from total delay every 1% of progress (max = 100%) */
+#define snapshot_test_delay_progress(i, from, to, max)			\
 	do {								\
-		if (snapshot_enable_test[i] && (n))			\
-			msleep_interruptible(				\
-				(snapshot_enable_test[i]/(n))+1);	\
+		if (snapshot_enable_test[i] && (max)) {			\
+			unsigned long x = 100UL*(from)/(max);		\
+			unsigned long y = 100UL*(to)/(max);		\
+			long msec = (y - x)*snapshot_enable_test[i]/100;\
+			if (msec > 0)					\
+				msleep_interruptible(msec);		\
+		}							\
 	} while (0)
 
 #define snapshot_debug_l(n, l, f, a...)					\
@@ -85,7 +90,7 @@ static inline void exit_next3_snapshot_debug(void)
 
 #else
 #define snapshot_test_delay(i)
-#define snapshot_test_delay_per_ticks(i, n)
+#define snapshot_test_delay_progress(i, from, to, max)
 #define snapshot_debug(n, f, a...)
 #define snapshot_debug_l(n, l, f, a...)
 #define snapshot_debug_once(n, f, a...)

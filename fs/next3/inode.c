@@ -3626,9 +3626,20 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 		return;
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
-	if (pblocks)
-		/* we're not actually deleting any blocks */
-		parent_bh = NULL;
+	if (pblocks) {
+		if (*pblocks >= 0) {
+			/* we're not actually deleting any blocks */
+			parent_bh = NULL;
+		} else if (depth <= 1) {
+			/* scale progress index to range [0..max_blocks] */
+			next3_fsblk_t blocks = SNAPSHOT_BLOCKS(inode) +
+				(*pblocks)*(inode->i_blocks >>
+					(inode->i_sb->s_blocksize_bits - 9));
+			/* indicate snapshot clean progress via i_size */
+			SNAPSHOT_SET_PROGRESS(inode, blocks);
+			pblocks = NULL;
+		}
+	}
 #endif
 	if (depth--) {
 		struct buffer_head *bh;
@@ -3660,7 +3671,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 					(__le32 *)bh->b_data,
 					(__le32 *)bh->b_data + addr_per_block,
 					depth, pblocks);
-			if (pblocks) {
+			if (pblocks && *pblocks >= 0) {
 				/* test that block is excluded and update
 				   blocks counter */
 				next3_snapshot_test_excluded(handle, inode,
@@ -4215,7 +4226,7 @@ void next3_get_inode_flags(struct next3_inode_info *ei)
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-static blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
+blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
 		struct next3_inode_info *ei)
 {
 	blkcnt_t i_blocks;
@@ -4379,7 +4390,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * in-memory i_size of snapshot files is set to 0 (disabled).
 		 * enabling a snapshot is setting i_size to i_disksize.
 		 */
-		SNAPSHOT_SET_DISABLED(inode);
+		inode->i_size = 0;
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE

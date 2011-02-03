@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-WIP (6-Jan-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-WIP (3-Feb-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -97,7 +97,7 @@ static inline void dquot_free_block(struct inode *inode, qsize_t nr)
 	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_ISIZE(size)			\
 	((size) + SNAPSHOT_BYTES_OFFSET)
-
+/* Snapshot block device size is recorded in i_disksize */
 #define SNAPSHOT_SET_SIZE(inode, size)				\
 	(NEXT3_I(inode)->i_disksize = SNAPSHOT_ISIZE(size))
 #define SNAPSHOT_SIZE(inode)					\
@@ -107,10 +107,39 @@ static inline void dquot_free_block(struct inode *inode, qsize_t nr)
 			(loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_BLOCKS(inode)					\
 	(next3_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
+/* Snapshot shrink/merge/clean progress is exported via i_size */
+#define SNAPSHOT_PROGRESS(inode)				\
+	(next3_fsblk_t)((inode)->i_size >> SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_SET_ENABLED(inode)				\
 	i_size_write((inode), SNAPSHOT_SIZE(inode))
-#define SNAPSHOT_SET_DISABLED(inode)		\
-	i_size_write((inode), 0)
+#define SNAPSHOT_SET_PROGRESS(inode, blocks)			\
+	snapshot_size_extend((inode), (blocks))
+/* Disabled/deleted snapshot i_size is 1 block, to allow read of super block */
+#define SNAPSHOT_SET_DISABLED(inode)				\
+	snapshot_size_truncate((inode), 1)
+/* Removed snapshot i_size and i_disksize are 0, since all blocks were freed */
+#define SNAPSHOT_SET_REMOVED(inode)				\
+	NEXT3_I(inode)->i_disksize = 0;				\
+	snapshot_size_truncate((inode), 0)
+
+static inline void snapshot_size_extend(struct inode *inode, next3_fsblk_t blocks)
+{
+	next3_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
+	next3_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
+
+	/* sleep total of tunable delay unit over 100% progress */
+	snapshot_test_delay_progress(SNAPTEST_DELETE,
+			old_blocks, blocks, max_blocks);
+	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
+}
+
+static inline void snapshot_size_truncate(struct inode *inode, next3_fsblk_t blocks)
+{
+	loff_t i_size = (loff_t)blocks << SNAPSHOT_BLOCK_SIZE_BITS;
+
+	i_size_write(inode, i_size);
+	truncate_inode_pages(&inode->i_data, i_size);
+}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 enum next3_bh_state_bits {

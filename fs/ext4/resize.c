@@ -27,7 +27,9 @@ static int verify_group_input(struct super_block *sb,
 			      struct ext4_new_group_data *input)
 {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+#ifdef CONFIG_EXT4_FS_DEBUG
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
+#endif
 #endif
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_super_block *es = sbi->s_es;

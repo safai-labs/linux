@@ -4088,7 +4088,7 @@ void next3_get_inode_flags(struct next3_inode_info *ei)
 }
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-static blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
+blkcnt_t next3_inode_blocks(struct next3_inode *raw_inode,
 		struct next3_inode_info *ei)
 {
 	blkcnt_t i_blocks;
@@ -4252,7 +4252,7 @@ struct inode *next3_iget(struct super_block *sb, unsigned long ino)
 		 * in-memory i_size of snapshot files is set to 0 (disabled).
 		 * enabling a snapshot is setting i_size to i_disksize.
 		 */
-		SNAPSHOT_SET_DISABLED(inode);
+		inode->i_size = 0;
 	}
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_INODE

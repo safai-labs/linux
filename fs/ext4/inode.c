@@ -5577,8 +5577,8 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
 	} while (cmpxchg(&ei->i_flags, old_fl, new_fl) != old_fl);
 }
 
-static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
-				  struct ext4_inode_info *ei)
+blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
+			struct ext4_inode_info *ei)
 {
 	blkcnt_t i_blocks ;
 	struct inode *inode = &(ei->vfs_inode);
@@ -5717,7 +5717,7 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 		 * in-memory i_size of snapshot files is set to 0 (disabled).
 		 * enabling a snapshot is setting i_size to i_disksize.
 		 */
-		SNAPSHOT_SET_DISABLED(inode);
+		inode->i_size = 0;
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	if (ext4_snapshot_exclude_inode(inode)) {

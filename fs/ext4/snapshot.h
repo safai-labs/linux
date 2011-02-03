@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-2 (6-Mar-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-3 (7-Mar-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -75,7 +75,7 @@
 	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_ISIZE(size)			\
 	((size) + SNAPSHOT_BYTES_OFFSET)
-
+/* Snapshot block device size is recorded in i_disksize */
 #define SNAPSHOT_SET_SIZE(inode, size)				\
 	(EXT4_I(inode)->i_disksize = SNAPSHOT_ISIZE(size))
 #define SNAPSHOT_SIZE(inode)					\
@@ -85,10 +85,41 @@
 			(loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_BLOCKS(inode)					\
 	(ext4_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
+/* Snapshot shrink/merge/clean progress is exported via i_size */
+#define SNAPSHOT_PROGRESS(inode)				\
+	(ext4_fsblk_t)((inode)->i_size >> SNAPSHOT_BLOCK_SIZE_BITS)
 #define SNAPSHOT_SET_ENABLED(inode)				\
 	i_size_write((inode), SNAPSHOT_SIZE(inode))
-#define SNAPSHOT_SET_DISABLED(inode)		\
-	i_size_write((inode), 0)
+#define SNAPSHOT_SET_PROGRESS(inode, blocks)			\
+	snapshot_size_extend((inode), (blocks))
+/* Disabled/deleted snapshot i_size is 1 block, to allow read of super block */
+#define SNAPSHOT_SET_DISABLED(inode)				\
+	snapshot_size_truncate((inode), 1)
+/* Removed snapshot i_size and i_disksize are 0, since all blocks were freed */
+#define SNAPSHOT_SET_REMOVED(inode)				\
+	EXT4_I(inode)->i_disksize = 0;				\
+	snapshot_size_truncate((inode), 0)
+
+static inline void snapshot_size_extend(struct inode *inode, ext4_fsblk_t blocks)
+{
+#ifdef CONFIG_EXT4_FS_DEBUG
+	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
+	ext4_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
+
+	/* sleep total of tunable delay unit over 100% progress */
+	snapshot_test_delay_progress(SNAPTEST_DELETE,
+			old_blocks, blocks, max_blocks);
+#endif
+	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
+}
+
+static inline void snapshot_size_truncate(struct inode *inode, ext4_fsblk_t blocks)
+{
+	loff_t i_size = (loff_t)blocks << SNAPSHOT_BLOCK_SIZE_BITS;
+
+	i_size_write(inode, i_size);
+	truncate_inode_pages(&inode->i_data, i_size);
+}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*

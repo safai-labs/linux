@@ -98,20 +98,23 @@
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 enum ext4_bh_state_bits {
+	BH_Move_On_Write =	/* Data block may need to be moved-on-write */
+		BH_JBDPrivateStart,
+        BH_Partial_Write,	/* Buffer should be uptodate before write */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-	BH_Tracked_Read = 30,	/* Buffer read I/O is being tracked,
+	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
 				 * to serialize write I/O to block device.
 				 * that is, don't write over this block
 				 * until I finished reading it.
 				 */
 #endif
-	BH_Partial_Write = 31,	/* Buffer should be read before write */
 };
 
+BUFFER_FNS(Partial_Write, partial_write)
+BUFFER_FNS(Move_On_Write, move_on_write)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 BUFFER_FNS(Tracked_Read, tracked_read)
 #endif
-BUFFER_FNS(Partial_Write, partial_write)
 
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
@@ -447,6 +450,8 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
  */
 static inline int ext4_snapshot_should_move_data(struct inode *inode)
 {
+	if (EXT4_JOURNAL(inode) == NULL)
+		return 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	if (ext4_snapshot_excluded(inode))
 		return 0;

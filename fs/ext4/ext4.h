@@ -661,6 +661,11 @@ struct ext4_new_group_data {
 	/* Convert extent to initialized after IO complete */
 #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	/* If mapped block is used by snapshot, move it to snapshot
+	   and allocate a new block for new data */
+#define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
+#endif
 
 /*
  * Flags used by ext4_free_blocks

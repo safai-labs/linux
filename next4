@@ -414,8 +414,11 @@ case "$1" in
 	fi
 	if [ -z $s ] ; then
 		# mount next4 filesystem 
+		MNTOPT="-o errors=remount-ro"
+		# uncomment to disable delayed allocation 
+		MNTOPT="$MNTOPT,nodelalloc"
 		if [ ! -z $NEXT4DEV ] && [ -f $NEXT4DEV ] ; then
-			MNTOPT="-o loop"
+			MNTOPT="$MNTOPT,loop"
 		fi
 		# we may be called from mount.next4 so add -i
 		mount -t $MNTTYPE -i $MNTOPT $NEXT4DEV $NEXT4MNT || exit 1
@@ -623,13 +626,9 @@ case "$1" in
 	F=${M}M
 	cd $NEXT4MNT/$TESTDIR > /dev/null
 	NOTRUNC="conv=notrunc"
-	# uncomment the following line to run in-place and partial write tests
-	#INPLACE=$NOTRUNC
-	if [ -z $INPLACE ] ; then
-		TRUNCSIZE=0
-	else
-		TRUNCSIZE=4
-	fi
+	# uncomment the following line to run in-place write tests
+	INPLACE=$NOTRUNC
+	TRUNCSIZE=4
 	echo Appending $F zeros to $F.1
 	# append writes to new allocated blocks
 	dd if=/dev/zero bs=1M count=$M of=$F.1 $NOTRUNC oflag=append status=noxfer || exit 1

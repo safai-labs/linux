@@ -632,17 +632,9 @@ void init_ext4_snapshot_cow_cache(void)
 	if (cow_tid_offset)
 		return;
 
-#ifdef CONFIG_64BIT
-	/* check for 32bit padding to 64bit alignment after b_modified */
+	/* check for 32bit (padding to 64bit alignment) after b_modified */
 	pos = (char *)&jh->b_modified + sizeof(jh->b_modified);
 	end = (char *)&jh->b_frozen_data;
-	if (pos + sizeof(tid_t) <= end)
-		goto found;
-
-#endif
-	/* check for extra jbd2 fields after last jbd field */
-	pos = (char *)&jh->b_cpprev + sizeof(jh->b_cpprev);
-	end = (char *)jh + sizeof(*jh);
 	if (pos + sizeof(tid_t) <= end)
 		goto found;
 

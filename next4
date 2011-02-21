@@ -415,8 +415,8 @@ case "$1" in
 	if [ -z $s ] ; then
 		# mount next4 filesystem 
 		MNTOPT="-o errors=remount-ro"
-		# uncomment to disable delayed allocation 
-		MNTOPT="$MNTOPT,nodelalloc"
+		# uncomment to enable delayed allocation 
+		#MNTOPT="$MNTOPT,nodelalloc"
 		if [ ! -z $NEXT4DEV ] && [ -f $NEXT4DEV ] ; then
 			MNTOPT="$MNTOPT,loop"
 		fi

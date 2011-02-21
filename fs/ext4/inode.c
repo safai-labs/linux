@@ -1907,6 +1907,50 @@ static void ext4_truncate_failed_write(struct inode *inode)
 	truncate_inode_pages(inode->i_mapping, inode->i_size);
 	ext4_truncate(inode);
 }
+ 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+/*
+ * Prepare for snapshot.
+ * Clear mapped flag of buffers and set mow and partial write flag of 
+ * buffers.
+ */
+static void ext4_snapshot_write_begin(struct inode *inode, 
+				struct page *page, unsigned len) {
+	struct buffer_head *bh = NULL;
+	/*
+	 * XXX: We can also check ext4_snapshot_has_active() here and we don't
+	 * need to unmap the buffers is there is no active snapshot, but the
+	 * result must be valid throughout the writepage() operation and to
+	 * guarantee this we have to know that the transaction is not restarted.
+	 * Can we count on that?
+	 */
+	if (!ext4_snapshot_should_move_data(inode)) 
+		return;
+
+	if (!page_has_buffers(page))
+		create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
+	/* snapshots only work when blocksize == pagesize */
+	bh = page_buffers(page);
+	/*
+	 * make sure that get_block() is called even if the buffer is
+	 * mapped, but not if it is already a part of any transaction.
+	 * in data=ordered,the only mode supported by ext4, all dirty
+	 * data buffers are flushed on snapshot take via freeze_fs()
+	 * API.
+	 */
+	if (!buffer_jbd(bh)) {
+		clear_buffer_mapped(bh);
+		/* explicitly request move-on-write */
+		set_buffer_move_on_write(bh);
+		if (len < PAGE_CACHE_SIZE)
+			/* read block before moving it to snapshot */
+			set_buffer_partial_write(bh);
+	}
+}
+#else
+static void ext4_snapshot_write_begin(struct inode *inode, 
+				struct page *page, unsigned len) {}
+#endif
 
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create);
@@ -1950,7 +1994,7 @@ retry:
 		goto out;
 	}
 	*pagep = page;
-	ext4_snapshot_begin(inode, page, len);
+	ext4_snapshot_write_begin(inode, page, len);
 
 	if (ext4_should_dioread_nolock(inode))
 		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
@@ -3568,7 +3612,7 @@ retry:
 		goto out;
 	}
 	*pagep = page;
-	ext4_snapshot_begin(inode, page, len);
+	ext4_snapshot_write_begin(inode, page, len);
 	
 	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);
 	if (ret < 0) {

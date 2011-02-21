@@ -2859,7 +2859,11 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 				  struct buffer_head *bh, int create)
 {
 	struct ext4_map_blocks map;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	handle_t *handle = ext4_journal_current_handle();
+#endif
 	int ret = 0;
+	unsigned flags = 0;
 	sector_t invalid_block = ~((sector_t) 0xffff);
 
 	if (invalid_block < ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es))
@@ -2871,12 +2875,29 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	map.m_lblk = iblock;
 	map.m_len = 1;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (buffer_move_on_write(bh) && buffer_partial_write(bh)) {
+		/* Read existing block data before moving it to snapshot */
+		ret = ext4_partial_write_begin(inode, iblock, bh);
+		if (ret < 0)
+			goto out;
+	}
+	if (buffer_move_on_write(bh))
+		/* Pass move-on-write hint on map_blocks flags */
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+#endif
+
 	/*
 	 * first, we need to know whether the block is allocated already
 	 * preallocated blocks are unmapped but should treated
 	 * the same as allocated blocks.
 	 */
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	ret = ext4_map_blocks(handle, inode, &map, flags);
+#else
 	ret = ext4_map_blocks(NULL, inode, &map, 0);
+#endif
 	if (ret < 0)
 		return ret;
 	if (ret == 0) {
@@ -2886,7 +2907,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 			 * This could happen with snapshot support,
  			 * because in ext4_da_write_begin() BH_Map are cleared.
 			 */
-			goto clear_mow;
+			set_buffer_mapped(bh);
+			goto out;
 #else
 			return 0; /* Not sure this could or should happen */
 #endif
@@ -2902,13 +2924,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 		map_bh(bh, inode->i_sb, invalid_block);
 		set_buffer_new(bh);
 		set_buffer_delay(bh);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-clear_mow:
-		/*We need to clear mow and partial write flag here */
-		clear_buffer_move_on_write(bh);
-		clear_buffer_partial_write(bh);
-#endif
-		return 0;
+		goto out;
 	}
 
 	map_bh(bh, inode->i_sb, map.m_pblk);
@@ -2924,6 +2940,13 @@ clear_mow:
 		set_buffer_new(bh);
 		set_buffer_mapped(bh);
 	}
+
+out:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		/*We need to clear mow and partial write flag here */
+		clear_buffer_move_on_write(bh);
+		clear_buffer_partial_write(bh);
+#endif
 	return 0;
 }
 

@@ -21,6 +21,43 @@
 					IS_COWING(handle) : 0, f, ## a)
 
 /*
+ * Prepare for snapshot.
+ * Clear mapped flag of buffers and set mow and partial write flag of 
+ * buffers.
+ */
+void ext4_snapshot_begin(struct inode *inode, struct page *page, unsigned len) {
+	struct buffer_head *bh = NULL;
+	/*
+	 * XXX: We can also check ext4_snapshot_has_active() here and we don't
+	 * need to unmap the buffers is there is no active snapshot, but the
+	 * result must be valid throughout the writepage() operation and to
+	 * guarantee this we have to know that the transaction is not restarted.
+	 * Can we count on that?
+	 */
+	if (ext4_snapshot_should_move_data(inode)) {
+		if (!page_has_buffers(page))
+			create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
+		/* snapshots only work when blocksize == pagesize */
+		bh = page_buffers(page);
+		/*
+		 * make sure that get_block() is called even if the buffer is
+		 * mapped, but not if it is already a part of any transaction.
+		 * in data=ordered,the only mode supported by ext4, all dirty
+		 * data buffers are flushed on snapshot take via freeze_fs()
+		 * API.
+		 */
+		if (!buffer_jbd(bh)) {
+			clear_buffer_mapped(bh);
+			/* explicitly request move-on-write */
+			set_buffer_move_on_write(bh);
+			if (len < PAGE_CACHE_SIZE)
+				/* read block before moving it to snapshot */
+				set_buffer_partial_write(bh);
+		}
+	}
+}
+
+/*
  * ext4_snapshot_map_blocks() - helper function for
  * ext4_snapshot_test_and_cow().  Test if blocks are mapped in snapshot file.
  * If @block is not mapped and if @cmd is non zero, try to allocate @maxblocks.

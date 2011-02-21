@@ -149,6 +149,14 @@ BUFFER_FNS(Tracked_Read, tracked_read)
 #define SNAPMAP_ISMOVE(cmd)	((cmd) & SNAPMAP_MOVE_BIT)
 #define SNAPMAP_ISSYNC(cmd)	((cmd) & SNAPMAP_SYNC_BIT)
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+extern void ext4_snapshot_begin(struct inode *inode, 
+				struct page *page, unsigned len);
+#else 
+void ext4_snapshot_begin(struct inode *inode, 
+				struct page *page, unsigned len) {}
+#endif
+
 /* helper functions for ext4_snapshot_create() */
 extern int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 				     ext4_snapblk_t block,

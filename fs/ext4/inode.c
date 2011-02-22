@@ -1129,8 +1129,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			/* do not map found block. */
 			
 			partial = chain + depth - 1;
-			if (!(flags & EXT4_GET_BLOCKS_CREATE) 
-				&& (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE))
+			if (!(flags & EXT4_GET_BLOCKS_CREATE))
 				/*
 				 * This is a lookup. Return EXT4_MAP_MOW via 
 				 * map->m_flags to tell ext4_map_blocks() that 

@@ -1125,9 +1125,19 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		/* should move 1 data block to snapshot? */
 		err = ext4_snapshot_get_move_access(handle, inode,
 				first_block, 0);
-		if (err)
-			/* do not map found block */
+		if (err) {
+			/* do not map found block. */
+			
 			partial = chain + depth - 1;
+			if (!(flags & EXT4_GET_BLOCKS_CREATE) 
+				&& (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE))
+				/*
+				 * This is a lookup. Return EXT4_MAP_MOW via 
+				 * map->m_flags to tell ext4_map_blocks() that 
+				 * the found block should be moved to snapshot. 
+				 */
+				map->m_flags |= EXT4_MAP_MOW;
+		}
 		if (err < 0)
 			/* cleanup the whole chain and exit */
 			goto cleanup;
@@ -1158,7 +1168,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 	/*
 	 * Okay, we need to do block allocation.
-	*/
+	 */
 	goal = ext4_find_goal(inode, map->m_lblk, partial);
 
 	/* the number of blocks need to allocate for [d,t]indirect blocks */
@@ -1533,6 +1543,20 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 			return ret;
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	/*
+	 * If mow is needed on the requested block and 
+	 * request comes from delayed-allocation-write path,
+	 * we do mow here. This will avoid an extra lookup 
+ 	 * in delayed-allocation-write path.
+ 	 */
+	if (retval >0 && (map->m_flags & EXT4_MAP_MOW) 
+		&& (flags & EXT4_GET_BLOCKS_DELAY_CREATE)) {
+		/* Clear EXT4_MAP_MOW, it is not needed any more. */
+		map->m_flags &= ~EXT4_MAP_MOW; 
+		flags |= EXT4_GET_BLOCKS_CREATE;
+	}
+#endif
 	/* If it is only a block(s) look up */
 	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0)
 		return retval;
@@ -2903,11 +2927,12 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 				  struct buffer_head *bh, int create)
 {
 	struct ext4_map_blocks map;
+	int ret = 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	handle_t *handle = ext4_journal_current_handle();
+	unsigned flags = EXT4_GET_BLOCKS_DELAY_CREATE;
 #endif
-	int ret = 0;
-	unsigned flags = 0;
+
 	sector_t invalid_block = ~((sector_t) 0xffff);
 
 	if (invalid_block < ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es))

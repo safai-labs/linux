@@ -190,6 +190,14 @@ struct ext4_allocation_request {
 	unsigned int flags;
 };
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+/* 
+ * returned by ext4_ind_map_blocks() via map->m_flags to 
+ * indicate MOW is needed on the requested block.
+ */
+#define EXT4_MAP_MOW		(1 << BH_Move_On_Write)
+#endif
+
 /*
  * Logical to physical block mapping, used by ext4_map_blocks()
  *
@@ -665,6 +673,7 @@ struct ext4_new_group_data {
 	/* If mapped block is used by snapshot, move it to snapshot
 	   and allocate a new block for new data */
 #define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
+#define EXT4_GET_BLOCKS_DELAY_CREATE		0x0200	
 #endif
 
 /*

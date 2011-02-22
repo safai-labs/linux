@@ -1939,7 +1939,8 @@ static void ext4_truncate_failed_write(struct inode *inode)
  * buffers.
  */
 static void ext4_snapshot_write_begin(struct inode *inode, 
-				struct page *page, unsigned len) {
+				struct page *page, unsigned len) 
+{
 	struct buffer_head *bh = NULL;
 	/*
 	 * XXX: We can also check ext4_snapshot_has_active() here and we don't
@@ -1973,7 +1974,9 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 }
 #else
 static void ext4_snapshot_write_begin(struct inode *inode, 
-				struct page *page, unsigned len) {}
+				struct page *page, unsigned len) 
+{
+}
 #endif
 
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,

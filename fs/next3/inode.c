@@ -2167,25 +2167,25 @@ static int set_partial_write(handle_t *handle, struct buffer_head *bh)
 	return 0;
 }
 
-static void set_page_move_data(struct page *page, unsigned from, unsigned to)
+/*
+ * make sure that get_block() is called even for mapped buffers, unless all
+ * buffers were written since last snapshot take, in which case 0 is returned.
+ */
+static int set_buffers_move_data(struct buffer_head *page_bufs,
+		unsigned from, unsigned to)
 {
-	struct buffer_head *page_bufs = page_buffers(page);
+	if (!walk_page_buffers(NULL, page_bufs, from, to,
+				NULL, buffer_first_write))
+		return 0;
 
-	BUG_ON(!page_has_buffers(page));
-	/*
-	 * make sure that get_block() is called even for mapped buffers,
-	 * but not if all buffers were written since last snapshot take.
-	 */
-	if (walk_page_buffers(NULL, page_bufs, from, to,
-				NULL, buffer_first_write)) {
-		/* signal get_block() to move-on-write */
+	/* signal get_block() to move-on-write */
+	walk_page_buffers(NULL, page_bufs, from, to,
+			NULL, set_move_data);
+	if (from > 0 || to < PAGE_CACHE_SIZE)
+		/* signal get_block() to update page before move-on-write */
 		walk_page_buffers(NULL, page_bufs, from, to,
-				NULL, set_move_data);
-		if (from > 0 || to < PAGE_CACHE_SIZE)
-			/* signal get_block() to update page before move-on-write */
-			walk_page_buffers(NULL, page_bufs, from, to,
-					NULL, set_partial_write);
-	}
+				NULL, set_partial_write);
+	return 1;
 }
 
 static int clear_move_data(handle_t *handle, struct buffer_head *bh)
@@ -2195,14 +2195,13 @@ static int clear_move_data(handle_t *handle, struct buffer_head *bh)
 	return 0;
 }
 
-static void clear_page_move_data(struct page *page)
+static void clear_buffers_move_data(struct buffer_head *page_bufs)
 {
 	/*
 	 * partial_write/move_data flags are used to pass the move data block
 	 * request to next3_get_block() and should be cleared at all other times.
 	 */
-	BUG_ON(!page_has_buffers(page));
-	walk_page_buffers(NULL, page_buffers(page), 0, PAGE_CACHE_SIZE,
+	walk_page_buffers(NULL, page_bufs, 0, PAGE_CACHE_SIZE,
 			NULL, clear_move_data);
 }
 
@@ -2212,6 +2211,9 @@ static int next3_write_begin(struct file *file, struct address_space *mapping,
 				struct page **pagep, void **fsdata)
 {
 	struct inode *inode = mapping->host;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	struct buffer_head *page_bufs;
+#endif
 	int ret;
 	handle_t *handle;
 	int retries = 0;
@@ -2246,17 +2248,18 @@ retry:
 	 */
 	if (!page_has_buffers(page))
 		create_empty_buffers(page, inode->i_sb->s_blocksize, 0);
+	page_bufs = page_buffers(page);
 	/*
 	 * Check if blocks need to be moved-on-write. if they do, unmap buffers
 	 * and call block_write_begin() to remap them.
 	 */
 	if (next3_snapshot_should_move_data(inode))
-		set_page_move_data(page, from, to);
+		set_buffers_move_data(page_bufs, from, to);
 #endif
 	ret = block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
 							next3_get_block);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	clear_page_move_data(page);
+	clear_buffers_move_data(page_bufs);
 #endif
 	if (ret)
 		goto write_begin_failed;
@@ -2605,15 +2608,16 @@ static int next3_ordered_writepage(struct page *page,
 				(1 << BH_Dirty)|(1 << BH_Uptodate));
 		page_bufs = page_buffers(page);
 	} else {
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-		/*
-		 * Check if blocks need to be moved-on-write. if they do, unmap buffers
-		 * and fall through to get_block() path.
-		 */
-		if (next3_snapshot_should_move_data(inode))
-			set_page_move_data(page, 0, PAGE_CACHE_SIZE);
-#endif
 		page_bufs = page_buffers(page);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	}
+	/*
+	 * Check if blocks need to be moved-on-write. if they do, unmap buffers
+	 * and fall back to get_block() path.
+	 */
+	if (!next3_snapshot_should_move_data(inode) ||
+		!set_buffers_move_data(page_bufs, 0, PAGE_CACHE_SIZE)) {
+#endif
 		if (!walk_page_buffers(NULL, page_bufs, 0, PAGE_CACHE_SIZE,
 				       NULL, buffer_unmapped)) {
 			/* Provide NULL get_block() to catch bugs if buffers
@@ -2625,6 +2629,9 @@ static int next3_ordered_writepage(struct page *page,
 
 	if (IS_ERR(handle)) {
 		ret = PTR_ERR(handle);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
+		clear_buffers_move_data(page_bufs);
+#endif
 		goto out_fail;
 	}
 
@@ -2633,7 +2640,7 @@ static int next3_ordered_writepage(struct page *page,
 
 	ret = block_write_full_page(page, next3_get_block, wbc);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
-	clear_page_move_data(page);
+	clear_buffers_move_data(page_bufs);
 #endif
 
 	/*

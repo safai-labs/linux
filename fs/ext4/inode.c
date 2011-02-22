@@ -1962,7 +1962,7 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 	 * data buffers are flushed on snapshot take via freeze_fs()
 	 * API.
 	 */
-	if (!buffer_jbd(bh)) {
+	if (!buffer_jbd(bh) && !buffer_delay(bh)) {
 		clear_buffer_mapped(bh);
 		/* explicitly request move-on-write */
 		set_buffer_move_on_write(bh);
@@ -2970,18 +2970,9 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	if (ret < 0)
 		return ret;
 	if (ret == 0) {
-		if (buffer_delay(bh)) {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-			/* 
-			 * This could happen with snapshot support,
- 			 * because in ext4_da_write_begin() BH_Map are cleared.
-			 */
-			set_buffer_mapped(bh);
-			goto out;
-#else
+		if (buffer_delay(bh))
 			return 0; /* Not sure this could or should happen */
-#endif
-		}
+
 		/*
 		 * XXX: __block_write_begin() unmaps passed block, is it OK?
 		 */

@@ -5931,17 +5931,25 @@ static int ext4_do_update_inode(handle_t *handle,
 			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~EXT4_FL_SNAPSHOT_DYN_MASK);
-	} else
+	} else {
 		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+		if (ei->i_extra_isize) {
+			if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
+				raw_inode->i_version_hi =
+					cpu_to_le32(inode->i_version >> 32);
+			raw_inode->i_extra_isize =
+				cpu_to_le16(ei->i_extra_isize);
+		}
+	}
 #else
 	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
-#endif
 	if (ei->i_extra_isize) {
 		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
 			raw_inode->i_version_hi =
 			cpu_to_le32(inode->i_version >> 32);
 		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
 	}
+#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	if (ext4_snapshot_exclude_inode(inode)) {

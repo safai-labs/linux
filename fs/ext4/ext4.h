@@ -2395,10 +2395,28 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
 enum ext4_state_bits {
 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
 	  = BH_JBDPrivateStart,
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	BH_Move_On_Write,	/* Data block may need to be moved-on-write */
+	BH_Partial_Write,	/* Buffer should be uptodate before write */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
+				 * to serialize write I/O to block device.
+				 * that is, don't write over this block
+				 * until I finished reading it.
+				 */
+#endif
+#endif
 };
 
 BUFFER_FNS(Uninit, uninit)
 TAS_BUFFER_FNS(Uninit, uninit)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+BUFFER_FNS(Partial_Write, partial_write)
+BUFFER_FNS(Move_On_Write, move_on_write)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+BUFFER_FNS(Tracked_Read, tracked_read)
+#endif
+#endif
 
 /*
  * Add new method to test wether block and inode bitmaps are properly

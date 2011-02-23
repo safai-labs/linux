@@ -1556,10 +1556,10 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  	 */
 	if (retval >0 && (map->m_flags & EXT4_MAP_MOW) 
 		&& (flags & EXT4_GET_BLOCKS_DELAY_CREATE)) {
-		/* Clear EXT4_MAP_MOW, it is not needed any more. */
-		map->m_flags &= ~EXT4_MAP_MOW; 
 		flags |= EXT4_GET_BLOCKS_CREATE;
 	}
+	/* Clear EXT4_MAP_MOW, it is not needed any more. */
+	map->m_flags &= ~EXT4_MAP_MOW; 
 #endif
 	/* If it is only a block(s) look up */
 	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0)

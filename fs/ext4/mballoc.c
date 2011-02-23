@@ -1160,7 +1160,15 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
 	e4b->bd_group = group;
 	e4b->bd_buddy_page = NULL;
 	e4b->bd_bitmap_page = NULL;
-	e4b->alloc_semp = &grp->alloc_sem;
+	/*
+	 * We only need to take the read lock if other groups share the buddy
+	 * page with this group or if blocks may be added to this (last) group
+	 * by ext4_group_extend().
+	 */
+	if (blocks_per_page > 2 || group == sbi->s_groups_count - 1)
+		e4b->alloc_semp = &grp->alloc_sem;
+	else
+		e4b->alloc_semp = NULL;
 
 	/* Take the read lock on the group alloc
 	 * sem. This would make sure a parallel
@@ -1169,7 +1177,8 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
 	 * till we are done with allocation
 	 */
 repeat_load_buddy:
-	down_read(e4b->alloc_semp);
+	if (e4b->alloc_semp)
+		down_read(e4b->alloc_semp);
 
 	if (unlikely(EXT4_MB_GRP_NEED_INIT(grp))) {
 		/* we need to check for group need init flag
@@ -1177,7 +1186,8 @@ repeat_load_buddy:
 		 * that new blocks didn't get added to the group
 		 * when we are loading the buddy cache
 		 */
-		up_read(e4b->alloc_semp);
+		if (e4b->alloc_semp)
+			up_read(e4b->alloc_semp);
 		/*
 		 * we need full data about the group
 		 * to make a good selection
@@ -1277,7 +1287,8 @@ err:
 	e4b->bd_bitmap = NULL;
 
 	/* Done with the buddy cache */
-	up_read(e4b->alloc_semp);
+	if (e4b->alloc_semp)
+		up_read(e4b->alloc_semp);
 	return ret;
 }
 

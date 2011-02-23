@@ -99,6 +99,13 @@ config EXT4_DEBUG
 	  If you select Y here, then you will be able to turn on debugging
 	  with a command such as "echo 1 > /sys/kernel/debug/ext4/mballoc-debug"
 
+config EXT4_FS_SNAPSHOT_EXTENT_FL
+	bool "snapshot extent files"
+	depends on EXT4_FS_SNAPSHOT
+	default y
+	help
+	  If you say N here, then extent files will not be snapshotted.
+
 config EXT4_FS_SNAPSHOT_HOOKS_JBD
 	bool "snapshot hooks - inside JBD hooks"
 	depends on EXT4_FS_SNAPSHOT

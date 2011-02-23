@@ -1525,7 +1525,12 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	down_read((&EXT4_I(inode)->i_data_sem));
 #endif
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		retval = ext4_ext_map_blocks(handle, inode, map,
+				flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE);
+#else
 		retval = ext4_ext_map_blocks(handle, inode, map, 0);
+#endif
 	} else {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 		retval = ext4_ind_map_blocks(handle, inode, map,

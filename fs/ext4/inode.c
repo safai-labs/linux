@@ -713,9 +713,20 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 	ar.goal = goal;
 	ar.len = target;
 	ar.logical = iblock;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	/* Enable in-core preallocation only for non-snapshot regular files */
-	if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+	if (IS_COWING(handle)) {
+		/*
+		 * This hint is used to avoid circular locking dependency:
+		 * inode->i_data_sem => grp->alloc_sem => 
+		 *   active_snapshot->i_data_sem/1 => grp->alloc_sem
+		 *
+		 * By avoiding to allocate from last block group, taking
+		 * down_read(&grp->alloc_sem) can be avoided in
+		 * ext4_mb_load_buddy().
+		 */
+		ar.flags = EXT4_MB_HINT_COWING;
+	} else if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
+		/* Enable preallocation only for non-snapshot regular files */
 #else
 	if (S_ISREG(inode->i_mode))
 		/* enable in-core preallocation only for regular files */

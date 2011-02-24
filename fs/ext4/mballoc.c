@@ -2001,6 +2001,13 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
 		    ((group % flex_size) == 0))
 			return 0;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+		/* Avoid using the last bg for COW blocks */
+		if ((ac->ac_flags & EXT4_MB_HINT_COWING) &&
+		    group == EXT4_SB(ac->ac_sb)->s_groups_count - 1)
+			return 0;
+
+#endif
 		return 1;
 	case 1:
 		if ((free / fragments) >= ac->ac_g_ex.fe_len)

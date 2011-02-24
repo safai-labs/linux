@@ -167,6 +167,10 @@ typedef unsigned int ext4_group_t;
 #define EXT4_MB_DELALLOC_RESERVED	0x0400
 /* We are doing stream allocation */
 #define EXT4_MB_STREAM_ALLOC		0x0800
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+/* allocate blocks for active snapshot */
+#define EXT4_MB_HINT_COWING		0x01000
+#endif
 
 
 struct ext4_allocation_request {

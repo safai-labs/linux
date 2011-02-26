@@ -79,6 +79,7 @@ static void ext4_write_super(struct super_block *sb);
 static int ext4_freeze(struct super_block *sb);
 static struct dentry *ext4_mount(struct file_system_type *fs_type, int flags,
 		       const char *dev_name, void *data);
+static int ext4_feature_set_ok(struct super_block *sb, int readonly);
 static void ext4_destroy_lazyinit_thread(void);
 static void ext4_unregister_li_request(struct super_block *sb);
 
@@ -2204,6 +2205,13 @@ static void ext4_orphan_cleanup(struct super_block *sb,
 	if (bdev_read_only(sb->s_bdev)) {
 		ext4_msg(sb, KERN_ERR, "write access "
 			"unavailable, skipping orphan cleanup");
+		return;
+	}
+
+	/* Check if feature set allows readwrite operations */
+	if (!ext4_feature_set_ok(sb, 0)) {
+		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup on readonly-"
+			       "compatible fs");
 		return;
 	}
 

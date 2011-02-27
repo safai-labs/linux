@@ -106,6 +106,7 @@ static void ext4_snapshot_reset_bitmap_cache(struct super_block *sb)
 	for (i = 0; i < EXT4_SB(sb)->s_groups_count; i++) {
 		grp = ext4_get_group_info(sb, i);
 		grp->bg_cow_bitmap = 0;
+		cond_resched();
 	}
 }
 #else
@@ -1400,6 +1401,7 @@ static int ext4_snapshot_shrink_range(handle_t *handle,
 		/* 0 < new range <= old range */
 		BUG_ON(!err || err > count);
 		count = err;
+		cond_resched();
 
 		/*
 		 * shrink mode state transitions:
@@ -1631,6 +1633,7 @@ static int ext4_snapshot_merge(struct inode *start, struct inode *end,
 
 			block += err;
 			count -= err;
+			cond_resched();
 		}
 
 		err = ext4_journal_stop(handle);
@@ -1915,6 +1918,7 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	for (i = 0; i < max_groups; i++) {
 		exclude_bitmap = ext4_exclude_inode_getblk(handle, inode, i,
 				create);
+		cond_resched();
 		if (create && i >= sbi->s_groups_count)
 			/* only allocating indirect blocks with getblk above */
 			continue;

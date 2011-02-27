@@ -112,6 +112,7 @@ static int next3_snapshot_reset_bitmap_cache(struct super_block *sb, int init)
 		gi->bg_cow_bitmap = 0;
 		if (init)
 			gi->bg_exclude_bitmap = 0;
+		cond_resched();
 	}
 	return 0;
 }
@@ -1386,6 +1387,7 @@ static int next3_snapshot_shrink_range(handle_t *handle,
 		/* 0 < new range <= old range */
 		BUG_ON(!err || err > count);
 		count = err;
+		cond_resched();
 
 		/*
 		 * shrink mode state transitions:
@@ -1618,6 +1620,7 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 
 			block += err;
 			count -= err;
+			cond_resched();
 		}
 
 		err = next3_journal_stop(handle);
@@ -1909,6 +1912,7 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	for (grp = 0; grp < max_groups; grp++, gi++) {
 		exclude_bitmap = next3_exclude_inode_getblk(handle, inode, grp,
 				create);
+		cond_resched();
 		if (create && grp >= sbi->s_groups_count)
 			/* only allocating indirect blocks with getblk above */
 			continue;

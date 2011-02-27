@@ -172,8 +172,18 @@ int ext4_truncate_restart_trans(handle_t *handle, struct inode *inode,
 	 */
 	BUG_ON(EXT4_JOURNAL(inode) == NULL);
 	jbd_debug(2, "restarting handle %p\n", handle);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
+	/*
+	 * Snapshot shrink/merge/clean do not take i_data_sem, so we cannot
+	 * release it here. Luckily, snapshot files are not writable,
+	 * so deadlock with ext4_map_blocks on writepage is impossible.
+	 * Snapshot files also don't have preallocations.
+	 */
+	if (ext4_snapshot_file(inode))
+		return ext4_journal_restart(handle, nblocks);
+#endif
 	up_write(&EXT4_I(inode)->i_data_sem);
-	ret = ext4_journal_restart(handle, blocks_for_truncate(inode));
+	ret = ext4_journal_restart(handle, nblocks);
 	down_write(&EXT4_I(inode)->i_data_sem);
 	ext4_discard_preallocations(inode);
 

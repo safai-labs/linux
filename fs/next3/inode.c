@@ -186,6 +186,11 @@ static int truncate_restart_transaction(handle_t *handle, struct inode *inode)
 	int ret;
 
 	jbd_debug(2, "restarting handle %p\n", handle);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
+	/* Snapshot shrink/merge/clean do not take truncate_mutex */
+	if (!mutex_is_locked(&NEXT3_I(inode)->truncate_mutex))
+		return next3_journal_restart(handle, blocks_for_truncate(inode));
+#endif
 	/*
 	 * Drop truncate_mutex to avoid deadlock with next3_get_blocks_handle
 	 * At this moment, get_block can be called only for blocks inside

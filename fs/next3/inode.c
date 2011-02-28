@@ -2107,10 +2107,10 @@ static int next3_write_begin(struct file *file, struct address_space *mapping,
 				loff_t pos, unsigned len, unsigned flags,
 				struct page **pagep, void **fsdata)
 {
-	struct inode *inode = mapping->host;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DATA
 	struct buffer_head *page_bufs;
 #endif
+	struct inode *inode = mapping->host;
 	int ret;
 	handle_t *handle;
 	int retries = 0;

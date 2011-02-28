@@ -1605,6 +1605,13 @@ static void next3_orphan_cleanup (struct super_block * sb,
 		return;
 	}
 
+	/* Check if feature set allows readwrite operations */
+	if (NEXT3_HAS_RO_COMPAT_FEATURE(sb, ~NEXT3_FEATURE_RO_COMPAT_SUPP)) {
+		next3_msg(sb, KERN_INFO, "Skipping orphan cleanup on readonly-"
+			       "compatible fs");
+		return;
+	}
+
 	if (NEXT3_SB(sb)->s_mount_state & NEXT3_ERROR_FS) {
 		if (es->s_last_orphan)
 			jbd_debug(1, "Errors on filesystem, "

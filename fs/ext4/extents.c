@@ -43,6 +43,7 @@
 #include <linux/fiemap.h>
 #include "ext4_jbd2.h"
 #include "ext4_extents.h"
+#include "snapshot.h"
 
 static int ext4_ext_truncate_extend_restart(handle_t *handle,
 					    struct inode *inode,
@@ -3275,7 +3276,13 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	struct ext4_ext_path *path = NULL;
 	struct ext4_extent_header *eh;
 	struct ext4_extent newex, *ex;
-	ext4_fsblk_t newblock;
+	ext4_fsblk_t newblock = 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	ext4_fsblk_t oldblock = 0;
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	struct buffer_head *sbh = NULL;
+#endif
 	int err = 0, depth, ret, cache_type;
 	unsigned int allocated = 0;
 	struct ext4_allocation_request ar;
@@ -3304,7 +3311,11 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 			/* number of remaining blocks in the extent */
 			allocated = ext4_ext_get_actual_len(&newex) -
 				(map->m_lblk - le32_to_cpu(newex.ee_block));
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+			goto found;
+#else
 			goto out;
+#endif
 		} else {
 			BUG();
 		}
@@ -3359,7 +3370,11 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 				ext4_ext_put_in_cache(inode, ee_block,
 							ee_len, ee_start,
 							EXT4_EXT_CACHE_EXTENT);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+				goto found;
+#else
 				goto out;
+#endif
 			}
 			ret = ext4_ext_handle_uninitialized_extents(handle,
 					inode, map, path, flags, allocated,
@@ -3380,6 +3395,55 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
 		goto out2;
 	}
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	/*
+	 * MOW is needed for write-operations.
+	 * For write-operaions, ext4_map_blocks() does as follows.
+	 * 
+	 * no delallocate case:
+	 * 1. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_MOVE_ON_WRITE
+	 *    to lookup if the requested block is allocated and if MOW is
+	 *    needed.
+	 *
+	 * 2. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_CREATE.
+	 * 
+	 * delallocate case:
+	 * 1. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_DELAY_CREATE
+	 *	  and EXT4_GET_BLOCKS_MOVE_ON_WRITE to lookup if the requested 
+	 *    block is allocated and if MOW is needed. If MOW is not needed,
+	 *    return.
+	 *
+	 * 2. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_CREATE.
+	 *
+	 * MOW is done in the 2nd step, so we do lookup just in 1st step.
+	 */
+found:
+	if (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE &&
+		!flags & EXT4_GET_BLOCKS_CREATE) {
+		BUG_ON(!ext4_snapshot_should_move_data(inode));
+		/*
+		 * Should move 1 block to snapshot?
+		 *
+		 * XXX With delayed-move-write support,
+		 * multi-blocks should be moved each time.
+		 */
+		err = ext4_snapshot_get_move_access(handle, inode, newblock, 0);
+		if (err) {
+			/* Do not map found block. */
+			map->m_flags |= EXT4_MAP_MOW;
+			err = 0;
+			goto out2;
+		}
+
+		if (err < 0)
+			goto out2;
+		goto out;
+	}
+	
+	oldblock = newblock;
+#endif
+
 	/*
 	 * Okay, we need to do block allocation.
 	 */
@@ -3460,6 +3524,50 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	if (err)
 		goto out2;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	if (SNAPMAP_ISCOW(flags)) {
+		/*
+		 * COWing block or creating COW bitmap.
+		 * we now have exclusive access to the COW destination block
+		 * and we are about to create the snapshot block mapping
+		 * and make it public.
+		 * grab the buffer cache entry and mark it new
+		 * to indicate a pending COW operation.
+		 * the refcount for the buffer cache will be released
+		 * when the COW operation is either completed or canceled.
+		 */
+		sbh = sb_getblk(inode->i_sb, le32_to_cpu(newblock));
+		if (!sbh) {
+			err = -EIO;
+			goto out2;
+		}
+		ext4_snapshot_start_pending_cow(sbh);
+	}
+
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (map->m_flags & EXT4_MAP_MOW) {
+		/* 
+		 * Move oldblock to snapshot. 
+		 * XXX delayed-mow needs moving multi blocks a time.
+		 */
+		err = ext4_snapshot_get_move_access(handle, inode,
+				oldblock, 1);
+	
+		if (err < 1) {
+			/* Moving failed. */
+			ext4_discard_preallocations(inode);
+			ext4_free_blocks(handle, inode, 0, ext4_ext_pblock(&newex),
+				 	ext4_ext_get_actual_len(&newex), 0);
+			err = err ? err : -EIO;
+			goto out2;
+		}
+		
+		/* Move to snapshot success. */
+	}
+#endif
+
 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
 	if (err) {
 		/* free data blocks we just allocated */
@@ -3503,6 +3611,13 @@ out:
 	map->m_pblk = newblock;
 	map->m_len = allocated;
 out2:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
+	/* cancel pending COW operation on failure to alloc snapshot block */
+	if (err < 0 && sbh)
+		ext4_snapshot_end_pending_cow(sbh);
+	brelse(sbh);
+#endif
+
 	if (path) {
 		ext4_ext_drop_refs(path);
 		kfree(path);

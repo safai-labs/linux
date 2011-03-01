@@ -15,7 +15,7 @@
 #include <linux/statfs.h>
 #include "snapshot.h"
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
 /*
  * General snapshot locking semantics:
  *
@@ -2293,15 +2293,5 @@ prev_snapshot:
 	}
 #endif
 	return err;
-}
-#else
-int ext4_snapshot_load(struct super_block *sb, struct ext4_super_block *es,
-		int read_only)
-{
-	return 0;
-}
-
-void ext4_snapshot_destroy(struct super_block *sb)
-{
 }
 #endif

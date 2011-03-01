@@ -577,6 +577,7 @@ extern int ext4_snapshot_take(struct inode *inode);
 
 #endif
 #else /* CONFIG_EXT4_FS_SNAPSHOT */
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot undefined"
 /* Snapshot NOP macros */
 #define ext4_snapshot_load(sb, es, ro) (0)
 #define ext4_snapshot_destroy(sb)

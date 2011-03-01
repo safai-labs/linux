@@ -75,7 +75,12 @@ static int ext4_ext_get_access(handle_t *handle, struct inode *inode,
 {
 	if (path->p_bh) {
 		/* path points to block */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+		return ext4_journal_get_write_access_inode(handle,
+					inode, path->p_bh);
+#else
 		return ext4_journal_get_write_access(handle, path->p_bh);
+#endif
 	}
 	/* path points to leaf/index in inode body */
 	/* we use in-core data, no need to protect them */

@@ -422,7 +422,7 @@ mext_insert_extents(handle_t *handle, struct inode *orig_inode,
 	if (depth) {
 		/* Register to journal */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
-		ret = ext4_journal_get_write_access(handle,
+		ret = ext4_journal_get_write_access_inode(handle,
 					orig_inode, orig_path->p_bh);
 #else
 		ret = ext4_journal_get_write_access(handle, orig_path->p_bh);

@@ -3767,19 +3767,27 @@ found:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (map->m_flags & EXT4_MAP_MOW) {
-		/* 
-		 * Move oldblock to snapshot. 
+		/*
+		 * Move oldblock to snapshot.
 		 * XXX delayed-mow needs moving multi blocks a time.
 		 */
 		err = ext4_snapshot_get_move_access(handle, inode,
 				oldblock, 1);
-		if (err >= 1) {	
+		if (err >= 1) {
 			/* 
 			 * Move to snapshot success.
+			 *
+			 * Parallel reads and DIO reads should be considered here,
+			 * because we split extents here, and replace the block.
+			 *
+			 * The page containing the request block stays
+			 * in pagecache, so parallel reads works well.
+			 *
+			 * DIO reads needs further considerations.
+			 *
 			 */
 			(void)ext4_split_extents(handle, inode,
-						map, path, flags);
-
+					map, path, flags);
 			depth = ext_depth(inode);
 			err = ext4_ext_get_access(handle, inode,
 						path + depth);

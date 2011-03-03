@@ -1788,6 +1788,7 @@ static struct buffer_head *ext4_exclude_inode_bread(handle_t *handle,
  * ext4_exclude_inode_getblk - read address of exclude bitmap block
  * @handle:	JBD handle (NULL is !@create)
  * @inode:	exclude inode
+ * @ind_bh:	buffer head of indirect block mapping exclude bitmap blocks
  * @grp:	block group
  * @create:	if true, try to allocate missing blocks
   *
@@ -1797,24 +1798,27 @@ static struct buffer_head *ext4_exclude_inode_bread(handle_t *handle,
  *
  * Returns exclude bitmap block address (little endian) or 0 if not allocated.
  */
-static __le32 ext4_exclude_inode_getblk(handle_t *handle,
-		struct inode *inode, int grp, int create)
+static __le32 ext4_exclude_inode_getblk(handle_t *handle, struct inode *inode,
+		struct buffer_head **ind_bh, int grp, int create)
 {
 	int ind_offset = grp % SNAPSHOT_ADDR_PER_BLOCK;
-	struct buffer_head *bh, *ind_bh = NULL;
+	struct buffer_head *bh;
 	__le32 exclude_bitmap = 0;
 	int err = 0;
 
-	/* read exclude inode indirect block */
-	ind_bh = ext4_exclude_inode_bread(handle, inode, grp, create);
-	if (!ind_bh)
-		return 0;
+	if (ind_offset == 0) {
+		brelse(*ind_bh);
+		/* read exclude inode indirect block */
+		*ind_bh = ext4_exclude_inode_bread(handle, inode, grp, create);
+		if (!*ind_bh)
+			return 0;
+	}
 
 	if (grp >= EXT4_SB(inode->i_sb)->s_groups_count)
 		/* past last block group - just allocating indirect blocks */
 		goto out;
 
-	exclude_bitmap = ((__le32 *)ind_bh->b_data)[ind_offset];
+	exclude_bitmap = ((__le32 *)(*ind_bh)->b_data)[ind_offset];
 	if (exclude_bitmap)
 		goto out;
 	if (!create)
@@ -1831,7 +1835,8 @@ static __le32 ext4_exclude_inode_getblk(handle_t *handle,
 	if (!bh)
 		goto alloc_out;
 	brelse(bh);
-	exclude_bitmap = ((__le32 *)ind_bh->b_data)[ind_offset];
+	/* indirect block buffer was updated by ext4_getblk() */
+	exclude_bitmap = ((__le32 *)(*ind_bh)->b_data)[ind_offset];
 alloc_out:
 	if (exclude_bitmap)
 		snapshot_debug(2, "allocated exclude bitmap #%d block "
@@ -1842,7 +1847,6 @@ alloc_out:
 				"bitmap #%d block (err = %d)\n",
 				grp, err);
 out:
-	brelse(ind_bh);
 	return exclude_bitmap;
 }
 
@@ -1864,6 +1868,7 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	handle_t *handle = NULL;
 	struct inode *inode;
+	struct buffer_head *ind_bh = NULL;
 	__le32 exclude_bitmap = 0;
 	int i, max_groups = sbi->s_groups_count;
 	int err = 0, ret;
@@ -1916,8 +1921,8 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	 */
 	err = -EIO;
 	for (i = 0; i < max_groups; i++) {
-		exclude_bitmap = ext4_exclude_inode_getblk(handle, inode, i,
-				create);
+		exclude_bitmap = ext4_exclude_inode_getblk(handle, inode,
+				&ind_bh, i, create);
 		cond_resched();
 		if (create && i >= sbi->s_groups_count)
 			/* only allocating indirect blocks with getblk above */
@@ -1944,6 +1949,7 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	EXT4_I(inode)->i_disksize = i_size;
 	err = ext4_mark_inode_dirty(handle, inode);
 out:
+	brelse(ind_bh);
 	if (handle) {
 		ret = ext4_journal_stop(handle);
 		if (!err)

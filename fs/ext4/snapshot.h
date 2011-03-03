@@ -20,7 +20,8 @@
 #include "ext4_jbd2.h"
 #include "snapshot_debug.h"
 
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc3 (31-Jan-2010)"
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc5 (27-Feb-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -96,27 +97,6 @@
 #define SNAPSHOT_SET_DISABLED(inode)		\
 	i_size_write((inode), 0)
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-enum ext4_bh_state_bits {
-	BH_Move_On_Write =	/* Data block may need to be moved-on-write */
-		BH_JBDPrivateStart,
-        BH_Partial_Write,	/* Buffer should be uptodate before write */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
-				 * to serialize write I/O to block device.
-				 * that is, don't write over this block
-				 * until I finished reading it.
-				 */
-#endif
-};
-
-BUFFER_FNS(Partial_Write, partial_write)
-BUFFER_FNS(Move_On_Write, move_on_write)
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-BUFFER_FNS(Tracked_Read, tracked_read)
-#endif
-
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
  * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
@@ -450,6 +430,8 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
  */
 static inline int ext4_snapshot_should_move_data(struct inode *inode)
 {
+	if (!ext4_snapshot_feature(inode->i_sb))
+		return 0;
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
@@ -596,4 +578,15 @@ extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 extern int ext4_snapshot_take(struct inode *inode);
 
 #endif
+#else /* CONFIG_EXT4_FS_SNAPSHOT */
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot undefined"
+/* Snapshot NOP macros */
+#define ext4_snapshot_load(sb, es, ro) (0)
+#define ext4_snapshot_destroy(sb)
+#define init_ext4_snapshot()
+#define exit_ext4_snapshot()
+
+#define ext4_snapshot_should_move_data(inode) (0)
+
+#endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

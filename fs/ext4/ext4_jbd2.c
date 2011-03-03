@@ -190,7 +190,7 @@ out:
 
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
-#ifdef CONFIG_JBD_DEBUG
+#ifdef CONFIG_JBD2_DEBUG
 static void ext4_journal_cow_stats(int n, ext4_handle_t *handle)
 {
 	if (!trace_cow_enabled())

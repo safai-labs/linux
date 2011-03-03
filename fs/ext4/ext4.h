@@ -52,6 +52,7 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+#define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
@@ -167,6 +168,10 @@ typedef unsigned int ext4_group_t;
 #define EXT4_MB_DELALLOC_RESERVED	0x0400
 /* We are doing stream allocation */
 #define EXT4_MB_STREAM_ALLOC		0x0800
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+/* allocate blocks for active snapshot */
+#define EXT4_MB_HINT_COWING		0x01000
+#endif
 
 
 struct ext4_allocation_request {
@@ -1535,6 +1540,12 @@ EXT4_INODE_BIT_FNS(state, state_flags)
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
+#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
+#define EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
+#define EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
+#define EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
+#endif
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
@@ -2220,12 +2231,6 @@ do {								\
 #else
 #define EXT4_FREEBLOCKS_WATERMARK 0
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
-#define EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
-#endif
 
 static inline void ext4_update_i_disksize(struct inode *inode, loff_t newsize)
 {
@@ -2395,10 +2400,28 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
 enum ext4_state_bits {
 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
 	  = BH_JBDPrivateStart,
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	BH_Move_On_Write,	/* Data block may need to be moved-on-write */
+	BH_Partial_Write,	/* Buffer should be uptodate before write */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
+				 * to serialize write I/O to block device.
+				 * that is, don't write over this block
+				 * until I finished reading it.
+				 */
+#endif
+#endif
 };
 
 BUFFER_FNS(Uninit, uninit)
 TAS_BUFFER_FNS(Uninit, uninit)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+BUFFER_FNS(Move_On_Write, move_on_write)
+BUFFER_FNS(Partial_Write, partial_write)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
+BUFFER_FNS(Tracked_Read, tracked_read)
+#endif
+#endif
 
 /*
  * Add new method to test wether block and inode bitmaps are properly
@@ -2418,6 +2441,17 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
 }
 
 #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
+
+/* Is ext4 configured for snapshots support? */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+static inline int ext4_snapshot_feature(struct super_block *sb)
+{
+	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+}
+#else
+#define ext4_snapshot_feature(sb) (0)
+#endif
 
 #endif	/* __KERNEL__ */
 

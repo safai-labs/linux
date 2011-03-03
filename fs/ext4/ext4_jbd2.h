@@ -203,7 +203,7 @@ struct ext4_handle_s {
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 
-#ifdef CONFIG_JBD_DEBUG
+#ifdef CONFIG_JBD2_DEBUG
 	/* Statistics counters: */
 	unsigned int h_cow_moved; /* blocks moved to snapshot */
 	unsigned int h_cow_copied; /* blocks copied to snapshot */
@@ -228,16 +228,14 @@ typedef struct ext4_handle_s		ext4_handle_t;	/* Ext4 COW handle */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 /*
  * macros for ext4 to update transaction COW statistics.
- * when ext4 is compiled as a module with CONFIG_JBD_DEBUG, if the symbol
- * journal_handle_size doesn't exist or doesn't match the sizeof(handle_t),
- * then the kernel was compiled wthout CONFIG_JBD_DEBUG or without the ext4
- * patch and the h_cow_* fields are not allocated in handle objects.
+ * when ext4 is compiled as a module with CONFIG_JBD2_DEBUG,
+ * if sizeof(ext4_handle_t) doesn't match the sizeof(handle_t),
+ * then the kernel was compiled without CONFIG_JBD2_DEBUG or without the
+ * trace_cow patch and the h_cow_* fields are not allocated in handle objects.
  */
-#ifdef CONFIG_JBD_DEBUG
-extern const u8 journal_handle_size;
-
+#ifdef CONFIG_JBD2_DEBUG
 #define trace_cow_enabled()	\
-	(journal_handle_size == sizeof(handle_t))
+	(sizeof(ext4_handle_t) == sizeof(handle_t))
 
 #define trace_cow_add(handle, name, num)			\
 	do {							\
@@ -568,12 +566,15 @@ static inline int ext4_should_journal_data(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 1;
-#ifndef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 0;
+#endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
 		return 1;
 	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
 		return 1;
-#endif
 	return 0;
 }
 
@@ -583,9 +584,10 @@ static inline int ext4_should_order_data(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
-#ifndef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
-		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 1;
 #endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
 		return 1;
@@ -598,10 +600,13 @@ static inline int ext4_should_writeback_data(struct inode *inode)
 		return 0;
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 1;
-#ifndef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* snapshots enforce ordered data */
 		return 0;
 #endif
+	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
+		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
 		return 1;
 	return 0;
@@ -622,6 +627,11 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (ext4_snapshot_feature(inode->i_sb))
+		/* XXX: should snapshots support dioread_nolock? */
+		return 0;
+#endif
 	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
 		return 0;
 	if (ext4_should_journal_data(inode))

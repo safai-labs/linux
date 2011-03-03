@@ -135,6 +135,16 @@ config EXT4_FS_SNAPSHOT_HOOKS_DATA
 	  We use this hook to call the snapshot API snapshot_get_move_access(),
 	  to optionally move the block to the snapshot file.
 
+config EXT4_FS_SNAPSHOT_HOOKS_DIO
+	bool "snapshot hooks - direct I/O"
+	depends on EXT4_FS_SNAPSHOT_HOOKS_DATA
+	default y
+	help
+	  With indirect mapped files, direct I/O write is not allowed to
+	  initialize holes, so stale data won't be exposed.
+	  With snapshots, direct I/O write is not allowed to do move-on-write,
+	  for the exact same reason.
+
 config EXT4_FS_SNAPSHOT_FILE
 	bool "snapshot file"
 	depends on EXT4_FS_SNAPSHOT
@@ -277,7 +287,8 @@ config EXT4_FS_SNAPSHOT_JOURNAL_CACHE
 	default y
 	help
 	  Cache last COW transaction id in buffer's journal_head.
-	  The cache suppresses COW tests until the transaction in committed. By default, the running transaction is committed every 5 seconds
+	  The cache suppresses COW tests until the transaction in committed.
+	  By default, the running transaction is committed every 5 seconds
 	  which implies an average COW cache expiry of 2.5 seconds.
 	  Before taking a new snapshot, the journal is flushed to disk
 	  and the current transaction in committed, so the COW cache is

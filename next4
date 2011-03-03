@@ -628,10 +628,12 @@ case "$1" in
 	NOTRUNC="conv=notrunc"
 	# uncomment the following line to run in-place write tests
 	INPLACE=$NOTRUNC
+	# uncomment the following line to run direct I/O write tests
+	DIRECT="oflag=direct"
 	TRUNCSIZE=4
-	echo Appending $F zeros to $F.1
+	echo Appending $F zeros to $F.1 $DIRECT
 	# append writes to new allocated blocks
-	dd if=/dev/zero bs=1M count=$M of=$F.1 $NOTRUNC oflag=append status=noxfer || exit 1
+	dd if=/dev/zero bs=1M count=$M of=$F.1 $NOTRUNC oflag=append $DIRECT status=noxfer || exit 1
 	echo Writing $F random data to $n files
 	for i in $( seq 1 $n ) ; do
 		# 1st rewrite moves existing blocks to snapshot and allocates new blocks
@@ -639,7 +641,7 @@ case "$1" in
 			dd if=/dev/urandom bs=1M count=$M of=$F.$i $INPLACE status=noxfer || exit 1
 		# subsequent rewrites doesn't move blocks to snapshot
 		fallocate -mrs -l 1M $F.1 2>/dev/null || \
-			dd if=/dev/urandom bs=1M count=$M of=$F.1 $INPLACE status=noxfer || exit 1
+			dd if=/dev/urandom bs=1M count=$M of=$F.1 $INPLACE $DIRECT status=noxfer || exit 1
 	done
 	for i in $( seq 1 $n ) ; do
 		md5sum $F.$i || exit 1

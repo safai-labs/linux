@@ -79,6 +79,7 @@ static void ext4_write_super(struct super_block *sb);
 static int ext4_freeze(struct super_block *sb);
 static struct dentry *ext4_mount(struct file_system_type *fs_type, int flags,
 		       const char *dev_name, void *data);
+static int ext4_feature_set_ok(struct super_block *sb, int readonly);
 static void ext4_destroy_lazyinit_thread(void);
 static void ext4_unregister_li_request(struct super_block *sb);
 
@@ -825,8 +826,8 @@ static void ext4_put_super(struct super_block *sb)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	ext4_snapshot_destroy(sb);
-#endif
 
+#endif
 	if (sb->s_dirt)
 		ext4_commit_super(sb, 1);
 
@@ -2207,6 +2208,13 @@ static void ext4_orphan_cleanup(struct super_block *sb,
 		return;
 	}
 
+	/* Check if feature set allows readwrite operations */
+	if (!ext4_feature_set_ok(sb, 0)) {
+		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup on readonly-"
+			       "compatible fs");
+		return;
+	}
+
 	if (EXT4_SB(sb)->s_mount_state & EXT4_ERROR_FS) {
 		if (es->s_last_orphan)
 			jbd_debug(1, "Errors on filesystem, "
@@ -3278,13 +3286,35 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	/* Block size must be equal to page size */
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)
-		&& blocksize != SNAPSHOT_BLOCK_SIZE) {
-#else
+	/* Enforce snapshots requirements: */
+	if (ext4_snapshot_feature(sb)) {
+		if (blocksize != PAGE_SIZE) {
+			ext4_msg(sb, KERN_ERR,
+				"snapshots require that filesystem blocksize "
+				"(%d) be equal to system page size (%lu)",
+				blocksize, PAGE_SIZE);
+			goto failed_mount;
+		}
+		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
+					EXT4_FEATURE_INCOMPAT_EXTENTS|
+					EXT4_FEATURE_INCOMPAT_64BIT)) {
+			ext4_msg(sb, KERN_ERR,
+				"extents and 64bit features cannot be "
+				"mixed with snapshot feature");
+			goto failed_mount;
+		}
+		if (!EXT4_HAS_COMPAT_FEATURE(sb,
+					EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
+			ext4_msg(sb, KERN_ERR,
+				"exclude_inode feature is required "
+				"for snapshots");
+			goto failed_mount;
+		}
+	}
+
+#endif
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
-#endif
 		ext4_msg(sb, KERN_ERR,
 		       "Unsupported filesystem blocksize %d", blocksize);
 		goto failed_mount;
@@ -3316,13 +3346,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HUGE_FILE |
-				 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-#else
 	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	if (ext4_snapshot_feature(sb))
+		/* Snapshot files are huge files */
+		has_huge_files = 1;
 #endif
 	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits,
 						      has_huge_files);
@@ -3642,23 +3671,28 @@ no_journal:
 		printk(KERN_ERR "EXT4-fs: failed to create DIO workqueue\n");
 		goto failed_mount_wq;
 	}
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-
-	/* Ext4 unsupported features */
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)
-		 && (!EXT4_SB(sb)->s_journal || test_opt(sb, DATA_FLAGS) !=
-		     EXT4_MOUNT_ORDERED_DATA) && (!test_opt(sb, QUOTA))) {
-		printk(KERN_ERR "EXT4-fs: %s mode is not supported\n",
-			journal_mode_string(sb));
-		goto failed_mount3;
-	}
-	if (sbi->s_jquota_fmt) {
-		printk(KERN_ERR "EXT4-fs: journaled quota options are not"
-			" supported.\n");
-		goto failed_mount3;
-	}
+	/* Ext4 unsupported mount options */
+	if (ext4_snapshot_feature(sb)) {
+		if (!EXT4_SB(sb)->s_journal ||
+			test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA) {
+			ext4_msg(sb, KERN_ERR,
+				"%s mode is not supported with snapshots",
+				journal_mode_string(sb));
+			goto failed_mount4;
+		}
+#ifdef CONFIG_QUOTA
+		if (sbi->s_jquota_fmt) {
+			ext4_msg(sb, KERN_ERR,
+				"journaled quota is not supported with "
+				"snapshots");
+			goto failed_mount4;
+		}
 #endif
+	}
 
+#endif
 	/*
 	 * The jbd2_journal_load will have done any necessary log recovery,
 	 * so we can safely mount the rest of the filesystem now.
@@ -3898,22 +3932,27 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		return NULL;
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-	if ((journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
+	
+	if (ext4_snapshot_feature(sb) &&
+			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
 			EXT4_MIN_JOURNAL_BLOCKS) {
-		printk(KERN_ERR "EXT4-fs: journal is too small (%lld < %u).\n",
+		ext4_msg(sb, KERN_ERR,
+			"journal is too small (%lld < %u) for snapshots",
 			journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb),
 			EXT4_MIN_JOURNAL_BLOCKS);
 		iput(journal_inode);
 		return NULL;
 	}
 
-	if ((journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
-			EXT4_BIG_JOURNAL_BLOCKS)
+	if (ext4_snapshot_feature(sb) &&
+			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
+			EXT4_BIG_JOURNAL_BLOCKS) {
 		snapshot_debug(1, "warning: journal is not big enough "
 			"(%lld < %u) - this might affect concurrent "
 			"filesystem writers performance!\n",
 			journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb),
 			EXT4_BIG_JOURNAL_BLOCKS);
+	}
 
 #endif
 	journal = jbd2_journal_init_inode(journal_inode);

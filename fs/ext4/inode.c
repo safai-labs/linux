@@ -172,8 +172,18 @@ int ext4_truncate_restart_trans(handle_t *handle, struct inode *inode,
 	 */
 	BUG_ON(EXT4_JOURNAL(inode) == NULL);
 	jbd_debug(2, "restarting handle %p\n", handle);
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
+	/*
+	 * Snapshot shrink/merge/clean do not take i_data_sem, so we cannot
+	 * release it here. Luckily, snapshot files are not writable,
+	 * so deadlock with ext4_map_blocks on writepage is impossible.
+	 * Snapshot files also don't have preallocations.
+	 */
+	if (ext4_snapshot_file(inode))
+		return ext4_journal_restart(handle, nblocks);
+#endif
 	up_write(&EXT4_I(inode)->i_data_sem);
-	ret = ext4_journal_restart(handle, blocks_for_truncate(inode));
+	ret = ext4_journal_restart(handle, nblocks);
 	down_write(&EXT4_I(inode)->i_data_sem);
 	ext4_discard_preallocations(inode);
 
@@ -713,9 +723,20 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 	ar.goal = goal;
 	ar.len = target;
 	ar.logical = iblock;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	/* Enable in-core preallocation only for non-snapshot regular files */
-	if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
+	if (IS_COWING(handle)) {
+		/*
+		 * This hint is used to avoid circular locking dependency:
+		 * inode->i_data_sem => grp->alloc_sem => 
+		 *   active_snapshot->i_data_sem/1 => grp->alloc_sem
+		 *
+		 * By avoiding to allocate from last block group, taking
+		 * down_read(&grp->alloc_sem) can be avoided in
+		 * ext4_mb_load_buddy().
+		 */
+		ar.flags = EXT4_MB_HINT_COWING;
+	} else if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
+		/* Enable preallocation only for non-snapshot regular files */
 #else
 	if (S_ISREG(inode->i_mode))
 		/* enable in-core preallocation only for regular files */
@@ -1125,21 +1146,20 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		/* should move 1 data block to snapshot? */
 		err = ext4_snapshot_get_move_access(handle, inode,
 				first_block, 0);
-		if (err) {
-			/* do not map found block. */
-			
+		if (err)
+			/* do not map found block */
 			partial = chain + depth - 1;
-			if (!(flags & EXT4_GET_BLOCKS_CREATE))
-				/*
-				 * This is a lookup. Return EXT4_MAP_MOW via 
-				 * map->m_flags to tell ext4_map_blocks() that 
-				 * the found block should be moved to snapshot. 
-				 */
-				map->m_flags |= EXT4_MAP_MOW;
-		}
 		if (err < 0)
 			/* cleanup the whole chain and exit */
 			goto cleanup;
+		if (err > 0 && !(flags & EXT4_GET_BLOCKS_CREATE)) {
+			/*
+			 * This is a lookup. Return EXT4_MAP_MOW via 
+			 * map->m_flags to tell ext4_map_blocks() that 
+			 * the found block should be moved to snapshot. 
+			 */
+			map->m_flags |= EXT4_MAP_MOW;
+		}
 	}
 
 #endif
@@ -1548,15 +1568,26 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/*
-	 * If mow is needed on the requested block and 
-	 * request comes from delayed-allocation-write path,
-	 * we do mow here. This will avoid an extra lookup 
- 	 * in delayed-allocation-write path.
- 	 */
-	if (retval >0 && (map->m_flags & EXT4_MAP_MOW) 
-		&& (flags & EXT4_GET_BLOCKS_DELAY_CREATE)) {
-		flags |= EXT4_GET_BLOCKS_CREATE;
+	if (retval > 0 && (map->m_flags & EXT4_MAP_MOW)) {
+		/*
+		 * If mow is needed on the requested block and 
+		 * request comes from delayed-allocation-write path,
+		 * we do mow here. This will avoid an extra lookup 
+		 * in delayed-allocation-write path.
+		 */
+		if (flags & EXT4_GET_BLOCKS_DELAY_CREATE)
+			flags |= EXT4_GET_BLOCKS_CREATE;
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DIO
+		/*
+		 * If mow is needed on the requested block and 
+		 * request comes from async-direct-io-write path,
+		 * we return an unmapped buffer to fall back to buffered I/O.
+		 */
+		if (flags & EXT4_GET_BLOCKS_PRE_IO) {
+			map->m_flags &= ~EXT4_MAP_MAPPED; 
+			retval = 0;
+		}
+#endif
 	}
 	/* Clear EXT4_MAP_MOW, it is not needed any more. */
 	map->m_flags &= ~EXT4_MAP_MOW; 
@@ -3941,6 +3972,31 @@ static int ext4_releasepage(struct page *page, gfp_t wait)
 		return try_to_free_buffers(page);
 }
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DIO
+/*
+ * ext4_get_block_dio used when preparing for a DIO write
+ * to indirect mapped files with snapshots.
+ */
+int ext4_get_block_dio(struct inode *inode, sector_t iblock,
+		   struct buffer_head *bh, int create)
+{
+	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
+
+	/*
+	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
+	 * but we know this is a write, so we need to check if block
+	 * needs to be moved to snapshot and fall back to buffered I/O.
+	 * ext4_map_blocks() will return an unmapped buffer if block
+	 * is not allocated or if it needs to be moved to snapshot.
+	 */
+	if (ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE|
+			EXT4_GET_BLOCKS_PRE_IO;
+
+	return _ext4_get_block(inode, iblock, bh, flags);
+}
+
+#endif
 /*
  * O_DIRECT for ext3 (or indirect map) based files
  *
@@ -3965,15 +4021,6 @@ static ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
 	size_t count = iov_length(iov, nr_segs);
 	int retries = 0;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	/*
-	 * snapshot support for direct I/O is not implemented,
-	 * so direct I/O is disabled when there are active snapshots.
-	 */
-	if (ext4_snapshot_has_active(inode->i_sb))
-		return -EOPNOTSUPP;
-
-#endif
 	if (rw == WRITE) {
 		loff_t final_size = offset + count;
 
@@ -4005,6 +4052,9 @@ retry:
 		ret = blockdev_direct_IO(rw, iocb, inode,
 				 inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_HOOKS_DIO
+				 (rw == WRITE) ? ext4_get_block_dio :
+#endif
 				 ext4_get_block, NULL);
 
 		if (unlikely((rw & WRITE) && ret < 0)) {
@@ -5936,17 +5986,25 @@ static int ext4_do_update_inode(handle_t *handle,
 			cpu_to_le32(ei->i_next_snapshot_ino);
 		/* dynamic snapshot flags are not stored on-disk */
 		raw_inode->i_flags &= cpu_to_le32(~EXT4_FL_SNAPSHOT_DYN_MASK);
-	} else
+	} else {
 		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+		if (ei->i_extra_isize) {
+			if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
+				raw_inode->i_version_hi =
+					cpu_to_le32(inode->i_version >> 32);
+			raw_inode->i_extra_isize =
+				cpu_to_le16(ei->i_extra_isize);
+		}
+	}
 #else
 	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
-#endif
 	if (ei->i_extra_isize) {
 		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
 			raw_inode->i_version_hi =
 			cpu_to_le32(inode->i_version >> 32);
 		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
 	}
+#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	if (ext4_snapshot_exclude_inode(inode)) {

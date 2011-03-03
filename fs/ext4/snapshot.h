@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-rc7 (3-Mar-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-2 (3-Mar-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses

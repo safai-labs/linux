@@ -2032,13 +2032,8 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 			set_buffer_partial_write(bh);
 	}
 }
-#else
-static void ext4_snapshot_write_begin(struct inode *inode, 
-				struct page *page, unsigned len) 
-{
-}
-#endif
 
+#endif
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create);
 static int ext4_write_begin(struct file *file, struct address_space *mapping,
@@ -2081,7 +2076,10 @@ retry:
 		goto out;
 	}
 	*pagep = page;
-	ext4_snapshot_write_begin(inode, page, len);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (ext4_snapshot_feature(inode->i_sb))
+		ext4_snapshot_write_begin(inode, page, len);
+#endif
 
 	if (ext4_should_dioread_nolock(inode))
 		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
@@ -3066,9 +3064,9 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 
 out:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-		/*We need to clear mow and partial write flag here */
-		clear_buffer_move_on_write(bh);
-		clear_buffer_partial_write(bh);
+	/*We need to clear mow and partial write flag here */
+	clear_buffer_move_on_write(bh);
+	clear_buffer_partial_write(bh);
 #endif
 	return 0;
 }
@@ -3691,8 +3689,11 @@ retry:
 		goto out;
 	}
 	*pagep = page;
-	ext4_snapshot_write_begin(inode, page, len);
-	
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (ext4_snapshot_feature(inode->i_sb))
+		ext4_snapshot_write_begin(inode, page, len);
+#endif
+
 	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);
 	if (ret < 0) {
 		unlock_page(page);

@@ -3638,8 +3638,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	 * MOW is done in the 2nd step, so we do lookup just in 1st step.
 	 */
 found:
-	if (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE &&
-		!flags & EXT4_GET_BLOCKS_CREATE) {
+	if (newblock && (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE)) {
 		BUG_ON(!ext4_snapshot_should_move_data(inode));
 		/*
 		 * Should move 1 block to snapshot?
@@ -3648,19 +3647,22 @@ found:
 		 * multi-blocks should be moved each time.
 		 */
 		err = ext4_snapshot_get_move_access(handle, inode, newblock, 0);
-		if (err) {
+		if (err > 0)
 			/* Do not map found block. */
-			map->m_flags |= EXT4_MAP_MOW;
-			err = 0;
-			goto out2;
-		}
+			if (!(flags & EXT4_GET_BLOCKS_CREATE)) {
+				map->m_flags |= EXT4_MAP_MOW;
+				err = 0;
+				goto out2;
+			}
 
+		oldblock = newblock;
 		if (err < 0)
 			goto out2;
-		goto out;
 	}
+
+	if (!(flags & EXT4_GET_BLOCKS_CREATE))
+		goto out;
 	
-	oldblock = newblock;
 #endif
 
 	/*
@@ -3766,7 +3768,7 @@ found:
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (map->m_flags & EXT4_MAP_MOW) {
+	if (oldblock) {
 		/*
 		 * Move oldblock to snapshot.
 		 * XXX delayed-mow needs moving multi blocks a time.

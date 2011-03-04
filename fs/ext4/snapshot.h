@@ -162,7 +162,7 @@ extern int ext4_snapshot_test_and_cow(const char *where,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
 extern int ext4_snapshot_test_and_move(const char *where,
 		handle_t *handle, struct inode *inode,
-		ext4_fsblk_t block, int maxblocks, int move);
+		ext4_fsblk_t block, int *maxblocks, int move);
 
 /*
  * test if blocks should be moved to snapshot
@@ -262,7 +262,8 @@ static inline int ext4_snapshot_get_create_access(handle_t *handle,
 static inline int ext4_snapshot_get_move_access(handle_t *handle,
 		struct inode *inode, ext4_fsblk_t block, int move)
 {
-	return ext4_snapshot_move(handle, inode, block, 1, move);
+	int count = 1;
+	return ext4_snapshot_move(handle, inode, block, &count, move);
 }
 
 #endif

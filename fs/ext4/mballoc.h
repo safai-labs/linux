@@ -225,4 +225,8 @@ static inline ext4_fsblk_t ext4_grp_offs_to_block(struct super_block *sb,
 {
 	return ext4_group_first_block_no(sb, fex->fe_group) + fex->fe_start;
 }
+
+extern int mb_test_bit(int bit, void *addr);
+extern int mb_find_next_zero_bit(void *addr, int max, int start);
+
 #endif

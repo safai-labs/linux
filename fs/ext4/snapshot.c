@@ -15,6 +15,7 @@
 #include <linux/quotaops.h>
 #include "snapshot.h"
 #include "ext4.h"
+#include "mballoc.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 #define snapshot_debug_hl(n, f, a...) snapshot_debug_l(n, handle ? \
@@ -789,7 +790,7 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;
 	ext4_fsblk_t block = bh->b_blocknr, blk = 0;
-	int err = 0, clear = 0;
+	int err = 0, clear = 0, count = 1;
 
 	if (!active_snapshot)
 		/* no active snapshot - no need to COW */
@@ -844,7 +845,7 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 	/* get the COW bitmap and test if blocks are in use by snapshot */
 	err = ext4_snapshot_test_cow_bitmap(handle, active_snapshot,
-			block, 1, clear < 0 ? inode : NULL);
+			block, &count, clear < 0 ? inode : NULL);
 	if (err < 0)
 		goto out;
 #else

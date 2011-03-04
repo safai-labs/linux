@@ -372,7 +372,7 @@ static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
 	return addr;
 }
 
-static inline int mb_test_bit(int bit, void *addr)
+int mb_test_bit(int bit, void *addr)
 {
 	/*
 	 * ext4_test_bit on architecture like powerpc
@@ -394,7 +394,7 @@ static inline void mb_clear_bit(int bit, void *addr)
 	ext4_clear_bit(bit, addr);
 }
 
-static inline int mb_find_next_zero_bit(void *addr, int max, int start)
+int mb_find_next_zero_bit(void *addr, int max, int start)
 {
 	int fix = 0, ret, tmpmax;
 	addr = mb_correct_addr_and_bit(&fix, addr);

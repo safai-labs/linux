@@ -268,7 +268,9 @@ case "$1" in
 		exit 0
 	fi
 	$MKFS -b 4096 -j -J big -O has_snapshot,exclude_inode $NEXT4DEV || exit 1
-	$TUNEFS -e remount-ro $NEXT4DEV
+	#uncomment the following line to disable ext4 features.
+	TUNEOPT="-O extents,uninit_bg,dir_index"
+	$TUNEFS $TUNEOPT -e remount-ro $NEXT4DEV
 	echo next4 filesystem created on $NEXT4DEV
 	echo .
 	;;

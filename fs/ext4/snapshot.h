@@ -268,22 +268,22 @@ static inline int ext4_snapshot_get_move_access(handle_t *handle,
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 /*
- * get_delete_access() - move count blocks to snapshot
+ * get_delete_access() - move blocks to snapshot or approve to free them
  * @handle:	JBD handle
  * @inode:	owner of blocks
  * @block:	address of start @block
- * @count:	no. of blocks to move
+ * @pcount:	pointer to no. of blocks about to move or approve
  *
  * Called from ext4_free_blocks_sb_inode() before deleting blocks with
  * truncate_mutex held
  *
  * Return values:
- * > 0 - no. of blocks that were moved to snapshot and may not be deleted
- * = 0 - @block may be deleted
+ * > 0 - blocks were moved to snapshot and may not be freed
+ * = 0 - blocks may be freed
  * < 0 - error
  */
 static inline int ext4_snapshot_get_delete_access(handle_t *handle,
-		struct inode *inode, ext4_fsblk_t block, int count)
+		struct inode *inode, ext4_fsblk_t block, int *count)
 {
 	return ext4_snapshot_move(handle, inode, block, count, 1);
 }

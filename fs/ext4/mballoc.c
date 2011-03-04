@@ -4600,6 +4600,9 @@ void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
 	struct ext4_buddy e4b;
 	int err = 0;
 	int ret;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	int pcount;
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	int  exclude_bitmap_dirty = 0;
@@ -4691,8 +4694,9 @@ do_more:
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	pcount = count;
 	ret = ext4_snapshot_get_delete_access(handle, inode,
-					      block, count);
+					      block, &pcount);
 	if (ret < 0) {
 		ext4_journal_abort_handle(where, line, __func__,
 					  NULL, handle, ret);
@@ -4701,8 +4705,8 @@ do_more:
 	}
 	if (ret > 0) {
 		/* 'ret' blocks were moved to snapshot - skip them */
-		block += ret;
-		count -= ret;
+		block += pcount;
+		count -= pcount;
 		count += overflow;
 		cond_resched();
 		if (count > 0)
@@ -4711,9 +4715,8 @@ do_more:
 		ext4_mark_super_dirty(sb);
 		goto error_return;
 	}
-#warning "very ineffecient way of implementation of ext4_free_blocks"
-	overflow += count - 1;
-	count = 1;
+	overflow += count - pcount;
+	count = pcount;
 #endif
 
 	BUFFER_TRACE(bitmap_bh, "getting write access");

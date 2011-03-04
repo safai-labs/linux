@@ -432,19 +432,19 @@ out:
  * that the active snapshot was taken and is therefore "in use" by the snapshot.
  *
  * Return values:
- * > 0 - no. of blocks that are in use by snapshot
- * = 0 - @block is not in use by snapshot
+ * > 0 - blocks are in use by snapshot
+ * = 0 - @blocks are not in use by snapshot
  * < 0 - error
  */
 static int
 ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
-		ext4_fsblk_t block, int maxblocks, struct inode *excluded)
+		ext4_fsblk_t block, int *maxblocks, struct inode *excluded)
 {
 	struct buffer_head *cow_bh;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	ext4_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
-	int inuse;
+	int inuse, ret;
 
 	if (block >= snapshot_blocks)
 		/*
@@ -461,19 +461,30 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * if the bit is set in the COW bitmap,
 	 * then the block is in use by snapshot
 	 */
-	for (inuse = 0; inuse < maxblocks && bit+inuse <
-			 SNAPSHOT_BLOCKS_PER_GROUP; inuse++) {
-		if (!ext4_test_bit(bit+inuse, cow_bh->b_data))
-			break;
+
+	if (mb_test_bit(bit, cow_bh->b_data)) {
+		inuse = mb_find_next_zero_bit(cow_bh->b_data, 
+					      *maxblocks, bit) - bit;
+		*maxblocks = inuse;
+		ret = 1;
+	}
+	else {
+		for (inuse = 1; inuse < *maxblocks && bit+inuse <
+			     SNAPSHOT_BLOCKS_PER_GROUP; inuse++) {
+			if(mb_test_bit(bit+inuse, cow_bh->b_data))
+				break;
+		}
+		*maxblocks = inuse;
+		ret = 0;
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (inuse && excluded) {
 		int i, err;
-
+		
 		/* don't COW excluded inode blocks */
 		if (!EXT4_HAS_COMPAT_FEATURE(excluded->i_sb,
-			EXT4_FEATURE_COMPAT_EXCLUDE_INODE))
+					     EXT4_FEATURE_COMPAT_EXCLUDE_INODE))
 			/* no exclude inode/bitmap */
 			return 0;
 		/*
@@ -497,7 +508,7 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	}
 
 #endif
-	return inuse;
+	return ret;
 }
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
@@ -956,17 +967,17 @@ out:
  * @move:	if false, only test if @block needs to be moved
  *
  * Return values:
- * > 0 - no. of blocks that were (or needs to be) moved to snapshot
- * = 0 - @block doesn't need to be moved
+ * > 0 - blocks  were (or needs to be) moved to snapshot
+ * = 0 - blocks dont need to be moved
  * < 0 - error
  */
 int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
-	struct inode *inode, ext4_fsblk_t block, int maxblocks, int move)
+	struct inode *inode, ext4_fsblk_t block, int *maxblocks, int move)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	ext4_fsblk_t blk = 0;
-	int err = 0, count = maxblocks;
+	int err = 0, count = *maxblocks;
 	int excluded = 0;
 
 	if (!active_snapshot)
@@ -992,10 +1003,9 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 	/* get the COW bitmap and test if blocks are in use by snapshot */
 	err = ext4_snapshot_test_cow_bitmap(handle, active_snapshot,
-			block, count, excluded ? inode : NULL);
+			block, &count, excluded ? inode : NULL);
 	if (err < 0)
 		goto out;
-	count = err;
 #else
 	if (excluded)
 		goto out;
@@ -1045,6 +1055,7 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 	if (err <= 0)
 		goto out;
 	count = err;
+	*maxblocks = count;
 	/*
 	 * User should no longer be charged for these blocks.
 	 * Snapshot file owner was charged for these blocks

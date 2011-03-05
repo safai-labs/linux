@@ -372,7 +372,7 @@ static inline void *mb_correct_addr_and_bit(int *bit, void *addr)
 	return addr;
 }
 
-int mb_test_bit(int bit, void *addr)
+static inline int mb_test_bit(int bit, void *addr)
 {
 	/*
 	 * ext4_test_bit on architecture like powerpc
@@ -394,7 +394,7 @@ static inline void mb_clear_bit(int bit, void *addr)
 	ext4_clear_bit(bit, addr);
 }
 
-int mb_find_next_zero_bit(void *addr, int max, int start)
+static inline int mb_find_next_zero_bit(void *addr, int max, int start)
 {
 	int fix = 0, ret, tmpmax;
 	addr = mb_correct_addr_and_bit(&fix, addr);
@@ -419,6 +419,29 @@ static inline int mb_find_next_bit(void *addr, int max, int start)
 		return max;
 	return ret;
 }
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+int mb_test_bit_range(int bit, void *addr,int *pcount)
+{
+	int inuse, ret;
+	if (mb_test_bit(bit, addr)) {
+		inuse = mb_find_next_zero_bit(addr, 
+					      *pcount, bit) - bit;
+		*pcount = inuse;
+		ret = 1;
+	}
+	else {
+		for (inuse = 1; inuse < *pcount && bit+inuse <
+			     SNAPSHOT_BLOCKS_PER_GROUP; inuse++) {
+			if(mb_test_bit(bit+inuse, addr))
+				break;
+		}
+		*pcount = inuse;
+		ret = 0;
+	}
+	return ret;
+}
+#endif
 
 static void *mb_find_buddy(struct ext4_buddy *e4b, int order, int *max)
 {
@@ -4601,7 +4624,7 @@ void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
 	int err = 0;
 	int ret;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
-	int pcount;
+	int maxblocks;
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
@@ -4694,9 +4717,9 @@ do_more:
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
-	pcount = count;
+	maxblocks = count;
 	ret = ext4_snapshot_get_delete_access(handle, inode,
-					      block, &pcount);
+					      block, &maxblocks);
 	if (ret < 0) {
 		ext4_journal_abort_handle(where, line, __func__,
 					  NULL, handle, ret);
@@ -4705,8 +4728,8 @@ do_more:
 	}
 	if (ret > 0) {
 		/* 'ret' blocks were moved to snapshot - skip them */
-		block += pcount;
-		count -= pcount;
+		block += maxblocks;
+		count -= maxblocks;
 		count += overflow;
 		cond_resched();
 		if (count > 0)
@@ -4715,8 +4738,8 @@ do_more:
 		ext4_mark_super_dirty(sb);
 		goto error_return;
 	}
-	overflow += count - pcount;
-	count = pcount;
+	overflow += count - maxblocks;
+	count = maxblocks;
 #endif
 
 	BUFFER_TRACE(bitmap_bh, "getting write access");

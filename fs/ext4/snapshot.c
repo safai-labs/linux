@@ -463,21 +463,8 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * then the block is in use by snapshot
 	 */
 
-	if (mb_test_bit(bit, cow_bh->b_data)) {
-		inuse = mb_find_next_zero_bit(cow_bh->b_data, 
-					      *maxblocks, bit) - bit;
-		*maxblocks = inuse;
-		ret = 1;
-	}
-	else {
-		for (inuse = 1; inuse < *maxblocks && bit+inuse <
-			     SNAPSHOT_BLOCKS_PER_GROUP; inuse++) {
-			if(mb_test_bit(bit+inuse, cow_bh->b_data))
-				break;
-		}
-		*maxblocks = inuse;
-		ret = 0;
-	}
+	ret = mb_test_bit_range(bit, cow_bh->b_data, maxblocks);
+	inuse = *maxblocks;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (inuse && excluded) {

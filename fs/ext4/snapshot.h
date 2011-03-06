@@ -571,49 +571,49 @@ extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 
-#ifdef CONFIG_NEXT3_FS_DEBUG
-extern void __next3_trace_bh_count(const char *fn, struct buffer_head *bh);
+#ifdef CONFIG_EXT4_FS_DEBUG
+extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
 
-#define next3_trace_bh_count(bh) __next3_trace_bh_count(__func__, bh)
-#define sb_bread(sb, blk) next3_sb_bread(__func__, sb, blk)
-#define sb_getblk(sb, blk) next3_sb_getblk(__func__, sb, blk)
-#define sb_find_get_block(sb, blk) next3_sb_find_get_block(__func__, sb, blk)
+#define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)
+#define sb_bread(sb, blk) ext4_sb_bread(__func__, sb, blk)
+#define sb_getblk(sb, blk) ext4_sb_getblk(__func__, sb, blk)
+#define sb_find_get_block(sb, blk) ext4_sb_find_get_block(__func__, sb, blk)
 
 static inline struct buffer_head *
-next3_sb_bread(const char *fn, struct super_block *sb, sector_t block)
+ext4_sb_bread(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
 	
 	bh = __bread(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
-		__next3_trace_bh_count(fn, bh);
+		__ext4_trace_bh_count(fn, bh);
 	return bh;
 }
 
 static inline struct buffer_head *
-next3_sb_getblk(const char *fn, struct super_block *sb, sector_t block)
+ext4_sb_getblk(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
 	
 	bh = __getblk(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
-		__next3_trace_bh_count(fn, bh);
+		__ext4_trace_bh_count(fn, bh);
 	return bh;
 }
 
 static inline struct buffer_head *
-next3_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
+ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
 
 	bh = __find_get_block(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
-		__next3_trace_bh_count(fn, bh);
+		__ext4_trace_bh_count(fn, bh);
 	return bh;
 }
 
 #else
-#define next3_trace_bh_count(bh)
+#define ext4_trace_bh_count(bh)
 #endif
 
 #endif

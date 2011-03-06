@@ -3499,9 +3499,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	ext4_fsblk_t oldblock = 0;
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	struct buffer_head *sbh = NULL;
-#endif
 	int err = 0, depth, ret, cache_type;
 	unsigned int allocated = 0;
 	struct ext4_allocation_request ar;
@@ -3745,28 +3742,6 @@ found:
 	if (err)
 		goto out2;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
-	if (SNAPMAP_ISCOW(flags)) {
-		/*
-		 * COWing block or creating COW bitmap.
-		 * we now have exclusive access to the COW destination block
-		 * and we are about to create the snapshot block mapping
-		 * and make it public.
-		 * grab the buffer cache entry and mark it new
-		 * to indicate a pending COW operation.
-		 * the refcount for the buffer cache will be released
-		 * when the COW operation is either completed or canceled.
-		 */
-		sbh = sb_getblk(inode->i_sb, le32_to_cpu(newblock));
-		if (!sbh) {
-			err = -EIO;
-			goto out2;
-		}
-		ext4_snapshot_start_pending_cow(sbh);
-	}
-
-#endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (oldblock) {
 		/*
@@ -3851,13 +3826,6 @@ out:
 	map->m_pblk = newblock;
 	map->m_len = allocated;
 out2:
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
-	/* cancel pending COW operation on failure to alloc snapshot block */
-	if (err < 0 && sbh)
-		ext4_snapshot_end_pending_cow(sbh);
-	brelse(sbh);
-#endif
-
 	if (path) {
 		ext4_ext_drop_refs(path);
 		kfree(path);

@@ -157,17 +157,17 @@ extern int ext4_snapshot_test_and_cow(const char *where,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
 extern int ext4_snapshot_test_and_move(const char *where,
 		handle_t *handle, struct inode *inode,
-		ext4_fsblk_t block, int maxblocks, int move);
+		ext4_fsblk_t block, int *maxblocks, int move);
 
 /*
  * test if blocks should be moved to snapshot
  * and if they should, try to move them to the active snapshot
  */
-#define ext4_snapshot_move(handle, inode, block, num, move)	\
+#define ext4_snapshot_move(handle, inode, block, pcount, move)	\
 	ext4_snapshot_test_and_move(__func__, handle, inode,	\
-			block, num, move)
+			block, pcount, move)
 #else
-#define ext4_snapshot_move(handle, inode, block, num, move) (num)
+#define ext4_snapshot_move(handle, inode, block, pcount, move) (0)
 #endif
 
 /*
@@ -242,12 +242,11 @@ static inline int ext4_snapshot_get_create_access(handle_t *handle,
  * @block:	address of @block
  * @move:	if false, only test if @block needs to be moved
  *
- * Called from ext4_get_blocks_handle() before overwriting a data block,
- * when buffer_move() is true.  Specifically, only data blocks of regular files,
- * whose data is not being journaled are moved on full page write.
- * Journaled data blocks are COWed on get_write_access().
+ * Called from ext4_get_block() before overwriting a data block, when the
+ * buffer_move_on_write() flag is set.  Specifically, only data blocks of
+ * regular files are moved. Directory blocks are COWed on get_write_access().
  * Snapshots and excluded files blocks are never moved-on-write.
- * If @move is true, then truncate_mutex is held.
+ * If @move is true, then down_write(&i_data_sem) is held.
  *
  * Return values:
  * = 1 - @block was moved or may not be overwritten
@@ -257,30 +256,31 @@ static inline int ext4_snapshot_get_create_access(handle_t *handle,
 static inline int ext4_snapshot_get_move_access(handle_t *handle,
 		struct inode *inode, ext4_fsblk_t block, int move)
 {
-	return ext4_snapshot_move(handle, inode, block, 1, move);
+	int count = 1;
+	return ext4_snapshot_move(handle, inode, block, &count, move);
 }
 
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 /*
- * get_delete_access() - move count blocks to snapshot
+ * get_delete_access() - move blocks to snapshot or approve to free them
  * @handle:	JBD handle
  * @inode:	owner of blocks
  * @block:	address of start @block
- * @count:	no. of blocks to move
+ * @pcount:	pointer to no. of blocks about to move or approve
  *
  * Called from ext4_free_blocks_sb_inode() before deleting blocks with
  * truncate_mutex held
  *
  * Return values:
- * > 0 - no. of blocks that were moved to snapshot and may not be deleted
- * = 0 - @block may be deleted
+ * > 0 - blocks were moved to snapshot and may not be freed
+ * = 0 - blocks may be freed
  * < 0 - error
  */
 static inline int ext4_snapshot_get_delete_access(handle_t *handle,
-		struct inode *inode, ext4_fsblk_t block, int count)
+		struct inode *inode, ext4_fsblk_t block, int *pcount)
 {
-	return ext4_snapshot_move(handle, inode, block, count, 1);
+	return ext4_snapshot_move(handle, inode, block, pcount, 1);
 }
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP

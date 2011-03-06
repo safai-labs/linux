@@ -420,6 +420,26 @@ static inline int mb_find_next_bit(void *addr, int max, int start)
 	return ret;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW 
+/*
+ * Find the largest range of set or clear bits.
+ * Return 1 for set bits and 0 for clear bits.
+ * Set *pcount to number of bits in range.
+ */
+int ext4_mb_test_bit_range(int bit, void *addr, int *pcount)
+{
+	int i, ret;
+
+	ret = mb_test_bit(bit, addr);
+	if (ret)
+		i = mb_find_next_zero_bit(addr, bit + *pcount, bit); 
+	else
+		i = mb_find_next_bit(addr, bit + *pcount, bit); 
+	*pcount = i - bit;
+	return ret ? 1 : 0;
+}
+
+#endif
 static void *mb_find_buddy(struct ext4_buddy *e4b, int order, int *max)
 {
 	char *bb;
@@ -4617,6 +4637,9 @@ void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
 	struct ext4_buddy e4b;
 	int err = 0;
 	int ret;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	int maxblocks;
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 	int  exclude_bitmap_dirty = 0;
@@ -4708,8 +4731,9 @@ do_more:
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
+	maxblocks = count;
 	ret = ext4_snapshot_get_delete_access(handle, inode,
-					      block, count);
+					      block, &maxblocks);
 	if (ret < 0) {
 		ext4_journal_abort_handle(where, line, __func__,
 					  NULL, handle, ret);
@@ -4718,8 +4742,8 @@ do_more:
 	}
 	if (ret > 0) {
 		/* 'ret' blocks were moved to snapshot - skip them */
-		block += ret;
-		count -= ret;
+		block += maxblocks;
+		count -= maxblocks;
 		count += overflow;
 		cond_resched();
 		if (count > 0)
@@ -4728,9 +4752,8 @@ do_more:
 		ext4_mark_super_dirty(sb);
 		goto error_return;
 	}
-#warning "very ineffecient way of implementation of ext4_free_blocks"
-	overflow += count - 1;
-	count = 1;
+	overflow += count - maxblocks;
+	count = maxblocks;
 #endif
 
 	BUFFER_TRACE(bitmap_bh, "getting write access");

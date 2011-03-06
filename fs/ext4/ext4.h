@@ -1947,6 +1947,9 @@ extern void __ext4_free_blocks(const char *where, unsigned int line,
 extern int ext4_mb_add_groupinfo(struct super_block *sb,
 		ext4_group_t i, struct ext4_group_desc *desc);
 extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW 
+extern int ext4_mb_test_bit_range(int bit, void *addr,int *pcount);
+#endif
 
 /* inode.c */
 struct buffer_head *ext4_getblk(handle_t *, struct inode *,

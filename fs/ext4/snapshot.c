@@ -15,6 +15,7 @@
 #include <linux/quotaops.h>
 #include "snapshot.h"
 #include "ext4.h"
+#include "mballoc.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 #define snapshot_debug_hl(n, f, a...) snapshot_debug_l(n, handle ? \
@@ -428,19 +429,19 @@ out:
  * that the active snapshot was taken and is therefore "in use" by the snapshot.
  *
  * Return values:
- * > 0 - no. of blocks that are in use by snapshot
- * = 0 - @block is not in use by snapshot
+ * > 0 - blocks are in use by snapshot
+ * = 0 - @blocks are not in use by snapshot
  * < 0 - error
  */
 static int
 ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
-		ext4_fsblk_t block, int maxblocks, struct inode *excluded)
+		ext4_fsblk_t block, int *maxblocks, struct inode *excluded)
 {
 	struct buffer_head *cow_bh;
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	ext4_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
-	int inuse, err = 0;
+	int ret;
 
 	if (block >= snapshot_blocks)
 		/*
@@ -457,15 +458,12 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	 * if the bit is set in the COW bitmap,
 	 * then the block is in use by snapshot
 	 */
-	for (inuse = 0; inuse < maxblocks && bit+inuse <
-			 SNAPSHOT_BLOCKS_PER_GROUP; inuse++) {
-		if (!ext4_test_bit(bit+inuse, cow_bh->b_data))
-			break;
-	}
+
+	ret = ext4_mb_test_bit_range(bit, cow_bh->b_data, maxblocks);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (inuse && excluded) {
-		int i;
+	if (ret && excluded) {
+		int i, inuse = *maxblocks;
 
 		/*
 		 * We should never get here because excluded file blocks should
@@ -482,14 +480,13 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 			excluded->i_ino, bit, bit+inuse-1, block_group);
 		for (i = 0; i < inuse; i++)
 			ext4_clear_bit(bit+i, cow_bh->b_data);
-		inuse = 0;
-		err = ext4_jbd2_file_inode(handle, snapshot);
+		ret = ext4_jbd2_file_inode(handle, snapshot);
 		mark_buffer_dirty(cow_bh);
 	}
 
 #endif
 	brelse(cow_bh);
-	return err ? err : inuse;
+	return ret;
 }
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
@@ -576,7 +573,8 @@ out:
 static void
 __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 		struct super_block *sb, struct inode *inode,
-		struct buffer_head *bh, ext4_fsblk_t block, int cmd)
+		struct buffer_head *bh, ext4_fsblk_t block,
+		int count, int cmd)
 {
 	unsigned long inode_group = 0;
 	ext4_grpblk_t inode_offset = 0;
@@ -587,20 +585,20 @@ __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 		inode_offset = (inode->i_ino - 1) %
 			EXT4_INODES_PER_GROUP(sb);
 	}
-	snapshot_debug_hl(4, "%s(i:%d/%ld, b:%lld/%lld)"
-			" h_ref=%d, cmd=%d\n",
+	snapshot_debug_hl(4, "%s(i:%d/%ld, b:%lld/%lld) "
+			"count=%d, h_ref=%d, cmd=%d\n",
 			where, inode_offset, inode_group,
 			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
 			SNAPSHOT_BLOCK_GROUP(block),
-			handle->h_ref, cmd);
+			count, handle->h_ref, cmd);
 }
 
-#define ext4_snapshot_trace_cow(where, handle, sb, inode, bh, block, cmd) \
+#define ext4_snapshot_trace_cow(where, handle, sb, inode, bh, blk, cnt, cmd) \
 	if (snapshot_enable_debug >= 4)					\
 		__ext4_snapshot_trace_cow(where, handle, sb, inode,	\
-				bh, block, cmd)
+				bh, block, count, cmd)
 #else
-#define ext4_snapshot_trace_cow(where, handle, sb, inode, bh, block, cmd)
+#define ext4_snapshot_trace_cow(where, handle, sb, inode, bh, blk, cnt, cmd)
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE
 /*
@@ -770,13 +768,13 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;
 	ext4_fsblk_t block = bh->b_blocknr, blk = 0;
-	int err = 0, clear = 0;
+	int err = 0, clear = 0, count = 1;
 
 	if (!active_snapshot)
 		/* no active snapshot - no need to COW */
 		return 0;
 
-	ext4_snapshot_trace_cow(where, handle, sb, inode, bh, block, cow);
+	ext4_snapshot_trace_cow(where, handle, sb, inode, bh, block, 1, cow);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 	if (inode && ext4_snapshot_exclude_inode(inode)) {
@@ -825,7 +823,7 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 	/* get the COW bitmap and test if blocks are in use by snapshot */
 	err = ext4_snapshot_test_cow_bitmap(handle, active_snapshot,
-			block, 1, clear < 0 ? inode : NULL);
+			block, &count, clear < 0 ? inode : NULL);
 	if (err < 0)
 		goto out;
 #else
@@ -948,24 +946,25 @@ out:
  * @move:	if false, only test if @block needs to be moved
  *
  * Return values:
- * > 0 - no. of blocks that were (or needs to be) moved to snapshot
- * = 0 - @block doesn't need to be moved
+ * > 0 - blocks  were (or needs to be) moved to snapshot
+ * = 0 - blocks dont need to be moved
  * < 0 - error
  */
 int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
-	struct inode *inode, ext4_fsblk_t block, int maxblocks, int move)
+	struct inode *inode, ext4_fsblk_t block, int *maxblocks, int move)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	ext4_fsblk_t blk = 0;
-	int err = 0, count = maxblocks;
+	int err = 0, count = *maxblocks;
 	int excluded = 0;
 
 	if (!active_snapshot)
 		/* no active snapshot - no need to move */
 		return 0;
 
-	ext4_snapshot_trace_cow(where, handle, sb, inode, NULL, block, move);
+	ext4_snapshot_trace_cow(where, handle, sb, inode, NULL, block, count,
+				move);
 
 	BUG_ON(IS_COWING(handle) || inode == active_snapshot);
 
@@ -984,17 +983,16 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 	/* get the COW bitmap and test if blocks are in use by snapshot */
 	err = ext4_snapshot_test_cow_bitmap(handle, active_snapshot,
-			block, count, excluded ? inode : NULL);
+			block, &count, excluded ? inode : NULL);
 	if (err < 0)
 		goto out;
-	count = err;
 #else
 	if (excluded)
 		goto out;
 #endif
 	if (!err) {
 		/* block not in COW bitmap - no need to move */
-		trace_cow_inc(handle, ok_bitmap);
+		trace_cow_add(handle, ok_bitmap, count);
 		goto out;
 	}
 
@@ -1007,20 +1005,21 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 		 * moved to snapshot, unless the snapshot is marked with the
 		 * UNRM flag for large snapshot creation test.
 		 */
-		trace_cow_inc(handle, ok_bitmap);
+		trace_cow_add(handle, ok_bitmap, count);
 		err = 0;
 		goto out;
 	}
 #endif
 
 	/* count blocks are in use by snapshot - check if @block is mapped */
-	err = ext4_snapshot_map_blocks(handle, active_snapshot, block, 1, &blk,
-					SNAPMAP_READ);
+	err = ext4_snapshot_map_blocks(handle, active_snapshot, block, count,
+					&blk, SNAPMAP_READ);
 	if (err < 0)
 		goto out;
 	if (err > 0) {
-		/* block already mapped in snapshot - no need to move */
-		trace_cow_inc(handle, ok_mapped);
+		/* blocks already mapped in snapshot - no need to move */
+		count = err;
+		trace_cow_add(handle, ok_mapped, count);
 		err = 0;
 		goto out;
 	}
@@ -1054,6 +1053,7 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 out:
 	/* END moving */
 	ext4_snapshot_cow_end(where, handle, block, err);
+	*maxblocks = count;
 	return err;
 }
 

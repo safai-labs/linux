@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-2 (3-Mar-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-2 (6-Mar-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -342,7 +342,6 @@ extern void ext4_snapshot_destroy(struct super_block *sb);
 
 static inline int init_ext4_snapshot(void)
 {
-	init_ext4_snapshot_debug();
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE
 	init_ext4_snapshot_cow_cache();
 #endif
@@ -351,7 +350,6 @@ static inline int init_ext4_snapshot(void)
 
 static inline void exit_ext4_snapshot(void)
 {
-	exit_ext4_snapshot_debug();
 }
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK

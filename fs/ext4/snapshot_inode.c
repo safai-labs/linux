@@ -473,7 +473,7 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 		struct inode **prev_snapshot)
 {
 	struct ext4_inode_info *ei = EXT4_I(inode);
-	unsigned int flags = ei->i_flags;
+	unsigned int flags = ei->i_state_flags;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 	struct list_head *prev = ei->i_snaplist.prev;
 #endif

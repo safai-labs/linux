@@ -1261,9 +1261,8 @@ static int ext4_snapshot_remove(struct inode *inode)
 	if (!igrab(inode))
 		return -EIO;
 
-	if (ext4_test_inode_state(inode, EXT4_STATE_ENABLED) &
-	    ext4_test_inode_state(inode, EXT4_STATE_INUSE) &
-	    ext4_test_inode_state(inode, EXT4_STATE_ACTIVE)) {
+	if (ext4_test_inode_state(inode, EXT4_STATE_ENABLED |
+				  EXT4_STATE_INUSE | EXT4_STATE_ACTIVE))
 		snapshot_debug(4, "deferred delete of %s snapshot (%u)\n",
 			       (ext4_test_inode_state(inode,
 						      EXT4_STATE_ACTIVE)) ?
@@ -1540,8 +1539,8 @@ static int ext4_snapshot_shrink(struct inode *start, struct inode *end,
 		if (&ei->vfs_inode == end)
 			break;
 		if (ei->i_flags & EXT4_SNAPFILE_DELETED_FL &&
-			!(ei->i_flags &
-			(EXT4_SNAPFILE_SHRUNK_FL|EXT4_STATE_ACTIVE))) {
+		    !(ext4_test_inode_flag(inode, EXT4_SNAPFILE_SHRUNK_FL) &&
+		      ext4_test_inode_state(inode, EXT4_STATE_ACTIVE))) {
 			/* mark snapshot shrunk */
 			err = ext4_reserve_inode_write(handle, &ei->vfs_inode,
 							&iloc);
@@ -1698,7 +1697,7 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 			/* deleted snapshot needs shrinking */
 			(*need_shrink)++;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
-		if (!(ext4_test_inode_state(inode, EXT4_STATE_INUSE)))
+		if (!ext4_test_inode_state(inode, EXT4_STATE_INUSE))
 			/* temporarily unused deleted
 			 * snapshot needs merging */
 			(*need_merge)++;
@@ -2189,10 +2188,9 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 	int err = 0;
 
 	BUG_ON(read_only && cleanup);
-	if (active_snapshot) {
-		ext4_set_inode_state(active_snapshot, EXT4_STATE_ACTIVE);
-		ext4_set_inode_state(active_snapshot, EXT4_STATE_LIST);
-	}
+	if (active_snapshot)
+		ext4_set_inode_state(active_snapshot,
+				     EXT4_STATE_ACTIVE | EXT4_STATE_LIST);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
 	/* iterate safe from oldest snapshot backwards */

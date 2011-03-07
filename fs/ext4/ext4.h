@@ -441,17 +441,10 @@ struct flex_groups {
 #define EXT4_EA_INODE_FL	        0x00200000 /* Inode used for large EA */
 #define EXT4_EOFBLOCKS_FL		0x00400000 /* Blocks allocated beyond EOF */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_SNAPFILE_LIST_FL		0x00000100 /* snapshot is on list (S) */
-#define EXT4_SNAPFILE_ENABLED_FL	0x00000200 /* snapshot is enabled (n) */
-#define EXT4_SNAPFILE_ACTIVE_FL	0x00000400 /* snapshot is active  (a) */
-#define EXT4_SNAPFILE_INUSE_FL		0x00000800 /* snapshot is in-use  (p) */
 /* snapshot persistent flags */
 #define EXT4_SNAPFILE_FL		0x01000000 /* snapshot file (x) */
 #define EXT4_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted (s) */
 #define EXT4_SNAPFILE_SHRUNK_FL	0x08000000 /* snapshot was shrunk (h) */
-/* more snapshot non-persistent flags */
-#define EXT4_SNAPFILE_OPEN_FL		0x10000000 /* snapshot is mounted (o) */
-#define EXT4_SNAPFILE_TAGGED_FL	0x20000000 /* snapshot is tagged  (t) */
 /* end of snapshot flags */
 #endif
 #define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */

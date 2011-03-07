@@ -25,7 +25,9 @@ for dir in /sbin ./bin ; do
 if [ -f $dir/fsck.next3 ] ; then
 	FSCK=$dir/fsck.next3
 fi
-if [ -f $dir/mkfs.next3 ] ; then
+if [ -f $dir/mkfs.next4 ] ; then
+	MKFS=$dir/mkfs.next4
+elif [ -f $dir/mkfs.next3 ] ; then
 	MKFS=$dir/mkfs.next3
 fi
 if [ -f $dir/tunefs.next3 ] ; then

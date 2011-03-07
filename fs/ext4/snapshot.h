@@ -380,7 +380,7 @@ static inline int ext4_snapshot_file(struct inode *inode)
 /* tests if @inode is on the on-disk snapshot list */
 static inline int ext4_snapshot_list(struct inode *inode)
 {
-	return EXT4_I(inode)->i_flags & EXT4_SNAPFILE_LIST_FL;
+	return ext4_test_inode_state(inode, EXT4_STATE_LIST);
 }
 #endif
 
@@ -569,7 +569,7 @@ extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 /*
  * Snapshot control functions
  */
-extern void ext4_snapshot_get_flags(struct ext4_inode_info *ei,
+extern void ext4_snapshot_get_flags(struct inode *inode,
 				     struct file *filp);
 extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 				    unsigned int flags);

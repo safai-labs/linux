@@ -140,7 +140,7 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 	const char *cow_bitmap;
 
 	BUG_ON(shrink &&
-		(!(EXT4_I(inode)->i_flags & EXT4_SNAPFILE_DELETED_FL) ||
+	       (!(ext4_test_inode_flag(inode, EXT4_SNAPFILE_DELETED_FL)) ||
 		ext4_snapshot_is_active(inode)));
 
 	depth = ext4_block_to_path(inode, iblock, offsets,
@@ -479,12 +479,10 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
-	if (!(flags & EXT4_SNAPFILE_LIST_FL)) 
+	if (!(flags & EXT4_STATE_LIST))
 	  	/* snapshot not on the list - read/write access denied */
 		return -EPERM;
-	
 #endif
-
 	/*
 	 * Snapshot image read through access: (!cmd && !handle)
 	 * indicates this is ext4_snapshot_readpage()
@@ -493,7 +491,7 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 	*prev_snapshot = NULL;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 	if (ext4_snapshot_is_active(inode) ||
-			(flags & EXT4_SNAPFILE_ACTIVE_FL))
+			(flags & EXT4_STATE_ACTIVE))
 		/* read through from active snapshot to block device */
 		return 0;
 

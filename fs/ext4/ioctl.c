@@ -34,10 +34,19 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case EXT4_IOC_GETFLAGS:
 		ext4_get_inode_flags(ei);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
-		ext4_snapshot_get_flags(ei, filp);
+		ext4_snapshot_get_flags(inode, filp);
 #endif
 		flags = ei->i_flags & EXT4_FL_USER_VISIBLE;
 		return put_user(flags, (int __user *) arg);
+
+	case EXT4_IOC_GETSTATEFLAGS:
+		ext4_get_inode_flags(ei);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
+		ext4_snapshot_get_flags(inode, filp);
+#endif
+		flags = ei->i_state_flags & EXT4_FL_USER_VISIBLE;
+		return put_user(flags, (int __user *) arg);
+
 	case EXT4_IOC_SETFLAGS: {
 		handle_t *handle = NULL;
 		int err, migrate = 0;
@@ -68,7 +77,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
 		/* update snapshot 'open' flag under i_mutex */
-		ext4_snapshot_get_flags(ei, filp);
+		ext4_snapshot_get_flags(inode, filp);
 #endif
 		oldflags = ei->i_flags;
 
@@ -182,8 +191,8 @@ flags_err:
 		if (err)
 			goto flags_out;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
-		if (!(oldflags & EXT4_SNAPFILE_LIST_FL) &&
-				(flags & EXT4_SNAPFILE_LIST_FL))
+		if (!(oldflags & EXT4_STATE_LIST)  &&
+				(flags & EXT4_STATE_LIST))
 			/* setting list flag - take snapshot */
 			err = ext4_snapshot_take(inode);
 #endif
@@ -191,9 +200,9 @@ flags_err:
 			err = ext4_ext_migrate(inode);
 flags_out:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
-		if (snapflags & EXT4_SNAPFILE_LIST_FL) {
+		if (snapflags & EXT4_STATE_LIST) {
 			/* if clearing list flag, cleanup snapshot list */
-			int ret, cleanup = !(flags & EXT4_SNAPFILE_LIST_FL);
+			int ret, cleanup = !(flags & EXT4_STATE_LIST);
 
 			/* update/cleanup snapshots list even if take failed */
 			ret = ext4_snapshot_update(inode->i_sb, cleanup, 0);

@@ -708,6 +708,7 @@ struct ext4_new_group_data {
  /* note ioctl 10 reserved for an early version of the FIEMAP ioctl */
  /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
 #define EXT4_IOC_ALLOC_DA_BLKS		_IO('f', 12)
+#define EXT4_IOC_GETSTATEFLAGS		_IOR('f', 13, long)
 #define EXT4_IOC_MOVE_EXT		_IOWR('f', 15, struct move_extent)
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
@@ -1443,6 +1444,14 @@ enum {
 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+	EXT4_STATE_LIST,		/* snapshot is on list (S) */
+	EXT4_STATE_ENABLED,	/* snapshot is enabled (n) */
+	EXT4_STATE_ACTIVE,	/* snapshot is active  (a) */
+	EXT4_STATE_INUSE,	/* snapshot is in-use  (p) */
+	EXT4_STATE_OPEN,		/* snapshot is mounted (o) */
+	EXT4_STATE_TAGGED,	/* snapshot is tagged  (t) */
+#endif
 };
 
 #define EXT4_INODE_BIT_FNS(name, field)					\

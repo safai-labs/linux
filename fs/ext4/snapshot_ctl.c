@@ -73,15 +73,15 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 
 	/* point of no return - replace old with new snapshot */
 	if (old) {
-		EXT4_I(old)->i_flags &= ~EXT4_SNAPFILE_ACTIVE_FL;
+		ext4_clear_inode_state(old, EXT4_STATE_ACTIVE);
 		snapshot_debug(1, "snapshot (%u) deactivated\n",
 			       old->i_generation);
 		/* remove old active snapshot reference */
 		iput(old);
 	}
 	if (inode) {
-		EXT4_I(inode)->i_flags |=
-			EXT4_SNAPFILE_ACTIVE_FL|EXT4_SNAPFILE_LIST_FL;
+		ext4_set_inode_state(inode, EXT4_STATE_ACTIVE);
+		ext4_set_inode_state(inode, EXT4_STATE_LIST);
 		snapshot_debug(1, "snapshot (%u) activated\n",
 			       inode->i_generation);
 	}
@@ -178,17 +178,17 @@ static int ext4_snapshot_exclude(handle_t *handle, struct inode *inode);
  * ext4_snapshot_get_flags() check snapshot state
  * Called from ext4_ioctl() under i_mutex
  */
-void ext4_snapshot_get_flags(struct ext4_inode_info *ei, struct file *filp)
+void ext4_snapshot_get_flags(struct inode *inode, struct file *filp)
 {
 	int open_count = atomic_read(&filp->f_path.dentry->d_count);
 	/*
 	 * 1 count for ioctl (lsattr)
 	 * greater count means the snapshot is open by user (mounted?)
 	 */
-	if ((ei->i_flags & EXT4_SNAPFILE_LIST_FL) && open_count > 1)
-		ei->i_flags |= EXT4_SNAPFILE_OPEN_FL;
+	if (ext4_test_inode_state(inode, EXT4_STATE_LIST) && open_count > 1)
+		ext4_set_inode_state(inode, EXT4_STATE_LIST);
 	else
-		ei->i_flags &= ~EXT4_SNAPFILE_OPEN_FL;
+		ext4_clear_inode_state(inode, EXT4_STATE_OPEN);
 }
 
 /*
@@ -203,8 +203,8 @@ int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 
 	if (S_ISDIR(inode->i_mode)) {
 		/* only the snapfile flag may be set for directories */
-		EXT4_I(inode)->i_flags &= ~EXT4_SNAPFILE_FL;
-		EXT4_I(inode)->i_flags |= flags & EXT4_SNAPFILE_FL;
+		ext4_clear_inode_flag(inode, EXT4_SNAPFILE_FL);
+		ext4_set_inode_flag(inode, EXT4_SNAPFILE_FL);
 		goto non_snapshot;
 	}
 
@@ -238,9 +238,9 @@ int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 		goto out;
 #endif
 
-	if ((flags ^ oldflags) & EXT4_SNAPFILE_ENABLED_FL) {
+	if ((flags ^ oldflags) & EXT4_STATE_ENABLED) {
 		/* enabled/disabled the snapshot during transaction */
-		if (flags & EXT4_SNAPFILE_ENABLED_FL)
+		if (flags & EXT4_STATE_ENABLED)
 			err = ext4_snapshot_enable(inode);
 		else
 			err = ext4_snapshot_disable(inode);
@@ -248,9 +248,9 @@ int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	if (err)
 		goto out;
 
-	if ((flags ^ oldflags) & EXT4_SNAPFILE_LIST_FL) {
+	if ((flags ^ oldflags) & EXT4_STATE_LIST) {
 		/* add/delete to snapshots list during transaction */
-		if (flags & EXT4_SNAPFILE_LIST_FL)
+		if (flags & EXT4_STATE_LIST)
 			err = ext4_snapshot_create(inode);
 		else
 			err = ext4_snapshot_delete(inode);
@@ -1091,7 +1091,7 @@ static int ext4_snapshot_clean(handle_t *handle, struct inode *inode,
 		return -EINVAL;
 	}
 
-	if (ei->i_flags & EXT4_SNAPFILE_ACTIVE_FL) {
+	if (ext4_test_inode_state(inode, EXT4_STATE_ACTIVE)) {
 		snapshot_debug(1, "clean of active snapshot (%u) "
 			       "is not allowed.\n",
 			       inode->i_generation);
@@ -1151,8 +1151,6 @@ static int ext4_snapshot_exclude(handle_t *handle, struct inode *inode)
  */
 static int ext4_snapshot_enable(struct inode *inode)
 {
-	struct ext4_inode_info *ei = EXT4_I(inode);
-
 	if (!ext4_snapshot_list(inode)) {
 		snapshot_debug(1, "ext4_snapshot_enable() called with "
 			       "snapshot file (ino=%lu) not on list\n",
@@ -1160,7 +1158,7 @@ static int ext4_snapshot_enable(struct inode *inode)
 		return -EINVAL;
 	}
 
-	if (ei->i_flags & EXT4_SNAPFILE_DELETED_FL) {
+	if (ext4_test_inode_flag(inode, EXT4_SNAPFILE_DELETED_FL)) {
 		snapshot_debug(1, "enable of deleted snapshot (%u) "
 				"is not permitted\n",
 				inode->i_generation);
@@ -1171,7 +1169,7 @@ static int ext4_snapshot_enable(struct inode *inode)
 	 * set i_size to block device size to enable loop device mount
 	 */
 	SNAPSHOT_SET_ENABLED(inode);
-	ei->i_flags |= EXT4_SNAPFILE_ENABLED_FL;
+	ext4_set_inode_state(inode, EXT4_STATE_ENABLED);
 
 	/* Don't need i_size_read because we hold i_mutex */
 	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
@@ -1186,8 +1184,6 @@ static int ext4_snapshot_enable(struct inode *inode)
  */
 static int ext4_snapshot_disable(struct inode *inode)
 {
-	struct ext4_inode_info *ei = EXT4_I(inode);
-
 	if (!ext4_snapshot_list(inode)) {
 		snapshot_debug(1, "ext4_snapshot_disable() called with "
 			       "snapshot file (ino=%lu) not on list\n",
@@ -1195,10 +1191,10 @@ static int ext4_snapshot_disable(struct inode *inode)
 		return -EINVAL;
 	}
 
-	if (ei->i_flags & EXT4_SNAPFILE_OPEN_FL) {
+	if (ext4_test_inode_state(inode, EXT4_STATE_OPEN)) {
 		snapshot_debug(1, "disable of mounted snapshot (%u) "
-				"is not permitted\n",
-				inode->i_generation);
+			       "is not permitted\n",
+			       inode->i_generation);
 		return -EPERM;
 	}
 
@@ -1206,14 +1202,14 @@ static int ext4_snapshot_disable(struct inode *inode)
 	 * set i_size to zero to disable loop device mount
 	 */
 	SNAPSHOT_SET_DISABLED(inode);
-	ei->i_flags &= ~EXT4_SNAPFILE_ENABLED_FL;
+	ext4_clear_inode_state(inode, EXT4_STATE_ENABLED);
 
 	/* invalidate page cache */
 	truncate_inode_pages(&inode->i_data, SNAPSHOT_BYTES_OFFSET);
 
 	/* Don't need i_size_read because we hold i_mutex */
 	snapshot_debug(4, "setting snapshot (%u) i_size to (%lld)\n",
-			inode->i_generation, inode->i_size);
+		       inode->i_generation, inode->i_size);
 	snapshot_debug(1, "snapshot (%u) disabled\n", inode->i_generation);
 	return 0;
 }
@@ -1224,8 +1220,6 @@ static int ext4_snapshot_disable(struct inode *inode)
  */
 static int ext4_snapshot_delete(struct inode *inode)
 {
-	struct ext4_inode_info *ei = EXT4_I(inode);
-
 	if (!ext4_snapshot_list(inode)) {
 		snapshot_debug(1, "ext4_snapshot_delete() called with "
 			       "snapshot file (ino=%lu) not on list\n",
@@ -1233,17 +1227,17 @@ static int ext4_snapshot_delete(struct inode *inode)
 		return -EINVAL;
 	}
 
-	if (ei->i_flags & EXT4_SNAPFILE_ENABLED_FL) {
+	if (ext4_test_inode_flag(inode, EXT4_STATE_ENABLED)) {
 		snapshot_debug(1, "delete of enabled snapshot (%u) "
-				"is not permitted\n",
-				inode->i_generation);
+			       "is not permitted\n",
+			       inode->i_generation);
 		return -EPERM;
 	}
 
 	/* mark deleted for later cleanup to finish the job */
-	ei->i_flags |= EXT4_SNAPFILE_DELETED_FL;
+	ext4_set_inode_flag(inode, EXT4_SNAPFILE_DELETED_FL);
 	snapshot_debug(1, "snapshot (%u) marked for deletion\n",
-			inode->i_generation);
+		       inode->i_generation);
 	return 0;
 }
 
@@ -1267,12 +1261,15 @@ static int ext4_snapshot_remove(struct inode *inode)
 	if (!igrab(inode))
 		return -EIO;
 
-	if (ei->i_flags & (EXT4_SNAPFILE_ENABLED_FL | EXT4_SNAPFILE_INUSE_FL
-			   | EXT4_SNAPFILE_ACTIVE_FL)) {
+	if (ext4_test_inode_state(inode, EXT4_STATE_ENABLED) &
+	    ext4_test_inode_state(inode, EXT4_STATE_INUSE) &
+	    ext4_test_inode_state(inode, EXT4_STATE_ACTIVE)) {
 		snapshot_debug(4, "deferred delete of %s snapshot (%u)\n",
-				(ei->i_flags & EXT4_SNAPFILE_ACTIVE_FL) ?
-				"active" :
-				((ei->i_flags & EXT4_SNAPFILE_ENABLED_FL) ?
+			       (ext4_test_inode_state(inode,
+						      EXT4_STATE_ACTIVE)) ?
+			       "active" :
+			       (ext4_test_inode_state(inode,
+						      EXT4_STATE_ENABLED) ?
 				"enabled" : "referenced"),
 			       inode->i_generation);
 		goto out_err;
@@ -1305,9 +1302,9 @@ static int ext4_snapshot_remove(struct inode *inode)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
 	err = ext4_inode_list_del(handle, inode, &NEXT_SNAPSHOT(inode),
-			&sbi->s_es->s_snapshot_list,
-			&EXT4_SB(inode->i_sb)->s_snapshot_list,
-			"snapshot");
+				  &sbi->s_es->s_snapshot_list,
+				  &EXT4_SB(inode->i_sb)->s_snapshot_list,
+				  "snapshot");
 	if (err)
 		goto out_handle;
 	/* remove snapshot list reference - taken on snapshot_create() */
@@ -1535,6 +1532,8 @@ static int ext4_snapshot_shrink(struct inode *start, struct inode *end,
 	list_for_each_prev(l, &EXT4_I(start)->i_snaplist) {
 		struct ext4_inode_info *ei;
 		struct ext4_iloc iloc;
+		struct inode *inode = &ei->vfs_inode;
+
 		if (l == &sbi->s_snapshot_list)
 			break;
 		ei = list_entry(l, struct ext4_inode_info, i_snaplist);
@@ -1542,11 +1541,11 @@ static int ext4_snapshot_shrink(struct inode *start, struct inode *end,
 			break;
 		if (ei->i_flags & EXT4_SNAPFILE_DELETED_FL &&
 			!(ei->i_flags &
-			(EXT4_SNAPFILE_SHRUNK_FL|EXT4_SNAPFILE_ACTIVE_FL))) {
+			(EXT4_SNAPFILE_SHRUNK_FL|EXT4_STATE_ACTIVE))) {
 			/* mark snapshot shrunk */
 			err = ext4_reserve_inode_write(handle, &ei->vfs_inode,
 							&iloc);
-			ei->i_flags |= EXT4_SNAPFILE_SHRUNK_FL;
+			ext4_set_inode_flag(inode, EXT4_SNAPFILE_SHRUNK_FL);
 			if (!err)
 				ext4_mark_iloc_dirty(handle, &ei->vfs_inode,
 						      &iloc);
@@ -1605,7 +1604,7 @@ static int ext4_snapshot_merge(struct inode *start, struct inode *end,
 		int count = SNAPSHOT_BLOCKS(start);
 
 		if (n == &sbi->s_snapshot_list || inode == end ||
-			!(ei->i_flags & EXT4_SNAPFILE_SHRUNK_FL))
+		    !(ext4_test_inode_flag(inode, EXT4_SNAPFILE_SHRUNK_FL)))
 			break;
 
 		/* start large transaction that will be extended/restarted */
@@ -1699,7 +1698,7 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 			/* deleted snapshot needs shrinking */
 			(*need_shrink)++;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
-		if (!(EXT4_I(inode)->i_flags & EXT4_SNAPFILE_INUSE_FL))
+		if (!(ext4_test_inode_state(inode, EXT4_STATE_INUSE)))
 			/* temporarily unused deleted
 			 * snapshot needs merging */
 			(*need_merge)++;
@@ -2190,9 +2189,10 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 	int err = 0;
 
 	BUG_ON(read_only && cleanup);
-	if (active_snapshot)
-		EXT4_I(active_snapshot)->i_flags |=
-			EXT4_SNAPFILE_ACTIVE_FL|EXT4_SNAPFILE_LIST_FL;
+	if (active_snapshot) {
+		ext4_set_inode_state(active_snapshot, EXT4_STATE_ACTIVE);
+		ext4_set_inode_state(active_snapshot, EXT4_STATE_LIST);
+	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
 	/* iterate safe from oldest snapshot backwards */
@@ -2206,7 +2206,7 @@ update_snapshot:
 	prev = ei->i_snaplist.prev;
 
 	/* all snapshots on the list have the LIST flag */
-	ei->i_flags |= EXT4_SNAPFILE_LIST_FL;
+	ext4_set_inode_state(inode, EXT4_STATE_LIST);
 	/* set the 'No_Dump' flag on all snapshots */
 	ei->i_flags |= EXT4_NODUMP_FL;
 
@@ -2220,7 +2220,7 @@ update_snapshot:
 		goto prev_snapshot;
 	}
 
-	deleted = ei->i_flags & EXT4_SNAPFILE_DELETED_FL;
+	deleted = ext4_test_inode_flag(inode, EXT4_SNAPFILE_DELETED_FL);
 	if (!deleted && read_only)
 		/* auto enable snapshots on readonly mount */
 		ext4_snapshot_enable(inode);
@@ -2230,18 +2230,18 @@ update_snapshot:
 	 * only the active snapshot can have the ACTIVE flag
 	 */
 	if (inode == active_snapshot) {
-		ei->i_flags |= EXT4_SNAPFILE_ACTIVE_FL;
+		ext4_set_inode_state(inode, EXT4_STATE_ACTIVE);
 		found_active = 1;
 		deleted = 0;
 	} else
-		ei->i_flags &= ~EXT4_SNAPFILE_ACTIVE_FL;
+	  ext4_clear_inode_state(inode, EXT4_STATE_ACTIVE);
 
 	if (found_enabled)
 		/* snapshot is in use by an older enabled snapshot */
-		ei->i_flags |= EXT4_SNAPFILE_INUSE_FL;
+	  ext4_set_inode_state(inode, EXT4_STATE_INUSE);
 	else
 		/* snapshot is not in use by older enabled snapshots */
-		ei->i_flags &= ~EXT4_SNAPFILE_INUSE_FL;
+	  ext4_clear_inode_state(inode, EXT4_STATE_INUSE);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 	if (cleanup)
@@ -2258,7 +2258,7 @@ update_snapshot:
 			/* newer snapshots are potentially used by
 			 * this snapshot (when it is enabled) */
 			used_by = inode;
-		if (ei->i_flags & EXT4_SNAPFILE_ENABLED_FL)
+		if (ext4_test_inode_state(inode, EXT4_STATE_ENABLED))
 			found_enabled = 1;
 	}
 
@@ -2275,7 +2275,8 @@ prev_snapshot:
 		return 0;
 
 	/* if all snapshots are deleted - deactivate active snapshot */
-	deleted = EXT4_I(active_snapshot)->i_flags & EXT4_SNAPFILE_DELETED_FL;
+	deleted = ext4_test_inode_flag(active_snapshot,
+				       EXT4_SNAPFILE_DELETED_FL);
 	if (deleted && igrab(active_snapshot)) {
 		/* lock journal updates before deactivating snapshot */
 		sb->s_op->freeze_fs(sb);

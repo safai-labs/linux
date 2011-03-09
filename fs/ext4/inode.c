@@ -5703,18 +5703,6 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	if (ext4_snapshot_file(inode)) {
 		ei->i_next_snapshot_ino =
 			le32_to_cpu(raw_inode->i_disk_version);
-
-		/*
-		 * Dynamic snapshot flags are not stored on-disk, so
-		 * at this point, we only know that this inode has the
-		 * 'snapfile' flag, but we don't know if it is on the list.
-		 * snapshot_load() loads the on-disk snapshot list to memory
-		 * and snapshot_update() flags the snapshots on the list.
-		 * 'detached' snapshot files will not be accessible to user.
-		 * 'detached' snapshot files are a by-product of detaching the
-		 * on-disk snapshot list head with tune2fs -O ^has_snapshot.
-		 */
-		ei->i_flags &= ~EXT4_FL_SNAPSHOT_DYN_MASK;
 		/*
 		 * snapshot volume size is stored in i_disksize.
 		 * in-memory i_size of snapshot files is set to 0 (disabled).
@@ -6024,8 +6012,6 @@ static int ext4_do_update_inode(handle_t *handle,
 		 */
 		raw_inode->i_disk_version =
 			cpu_to_le32(ei->i_next_snapshot_ino);
-		/* dynamic snapshot flags are not stored on-disk */
-		raw_inode->i_flags &= cpu_to_le32(~EXT4_FL_SNAPSHOT_DYN_MASK);
 	} else {
 		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
 		if (ei->i_extra_isize) {

@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-3 (7-Mar-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-4 (9-Mar-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -355,8 +355,7 @@ extern void init_ext4_snapshot_cow_cache(void);
 /*
  * Snapshot control functions
  */
-extern void ext4_snapshot_get_flags(struct ext4_inode_info *ei,
-				     struct file *filp);
+extern void ext4_snapshot_get_flags(struct inode *inode, struct file *filp);
 extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 				    unsigned int flags);
 extern int ext4_snapshot_take(struct inode *inode);
@@ -403,13 +402,13 @@ static inline int ext4_snapshot_file(struct inode *inode)
 	if (!S_ISREG(inode->i_mode))
 		/* a snapshots directory */
 		return 0;
-	return EXT4_I(inode)->i_flags & EXT4_SNAPFILE_FL;
+	return ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE);
 }
 
 /* tests if @inode is on the on-disk snapshot list */
 static inline int ext4_snapshot_list(struct inode *inode)
 {
-	return EXT4_I(inode)->i_flags & EXT4_SNAPFILE_LIST_FL;
+	return ext4_test_inode_state(inode, EXT4_SNAPSTATE_LIST);
 }
 #endif
 

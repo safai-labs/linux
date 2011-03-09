@@ -442,50 +442,20 @@ struct flex_groups {
 #define EXT4_EA_INODE_FL	        0x00200000 /* Inode used for large EA */
 #define EXT4_EOFBLOCKS_FL		0x00400000 /* Blocks allocated beyond EOF */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_SNAPFILE_LIST_FL		0x00000100 /* snapshot is on list (S) */
-#define EXT4_SNAPFILE_ENABLED_FL	0x00000200 /* snapshot is enabled (n) */
-#define EXT4_SNAPFILE_ACTIVE_FL	0x00000400 /* snapshot is active  (a) */
-#define EXT4_SNAPFILE_INUSE_FL		0x00000800 /* snapshot is in-use  (p) */
 /* snapshot persistent flags */
-#define EXT4_SNAPFILE_FL		0x01000000 /* snapshot file (x) */
-#define EXT4_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted (s) */
-#define EXT4_SNAPFILE_SHRUNK_FL	0x08000000 /* snapshot was shrunk (h) */
-/* more snapshot non-persistent flags */
-#define EXT4_SNAPFILE_OPEN_FL		0x10000000 /* snapshot is mounted (o) */
-#define EXT4_SNAPFILE_TAGGED_FL	0x20000000 /* snapshot is tagged  (t) */
+#define EXT4_SNAPFILE_FL		0x01000000 /* snapshot file */
+#define EXT4_SNAPFILE_DELETED_FL	0x04000000 /* snapshot is deleted */
+#define EXT4_SNAPFILE_SHRUNK_FL		0x08000000 /* snapshot was shrunk */
 /* end of snapshot flags */
 #endif
 #define EXT4_RESERVED_FL		0x80000000 /* reserved for ext4 lib */
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-/* snapshot flags reserved for user */
-#define EXT4_FL_SNAPSHOT_USER_MASK		\
-	 EXT4_SNAPFILE_TAGGED_FL
-
-/* snapshot flags modifiable by chattr */
-#define EXT4_FL_SNAPSHOT_RW_MASK		\
-	(EXT4_FL_SNAPSHOT_USER_MASK|EXT4_SNAPFILE_FL| \
-	 EXT4_SNAPFILE_LIST_FL|EXT4_SNAPFILE_ENABLED_FL)
-
-/* snapshot persistent read-only flags */
-#define EXT4_FL_SNAPSHOT_RO_MASK		\
-	 (EXT4_SNAPFILE_DELETED_FL|EXT4_SNAPFILE_SHRUNK_FL)
-
-/* non-persistent snapshot status flags */
-#define EXT4_FL_SNAPSHOT_DYN_MASK		\
-	(EXT4_SNAPFILE_LIST_FL|EXT4_SNAPFILE_ENABLED_FL| \
-	 EXT4_SNAPFILE_ACTIVE_FL|EXT4_SNAPFILE_INUSE_FL| \
-	 EXT4_SNAPFILE_OPEN_FL|EXT4_SNAPFILE_TAGGED_FL)
-
-/* snapshot flags visible to lsattr */
-#define EXT4_FL_SNAPSHOT_MASK			\
-	(EXT4_FL_SNAPSHOT_DYN_MASK|EXT4_SNAPFILE_FL| \
-	 EXT4_FL_SNAPSHOT_RO_MASK)
 
 /* User visible flags */
-#define EXT4_FL_USER_VISIBLE	(EXT4_FL_SNAPSHOT_MASK|0x004BDFFF)
+#define EXT4_FL_USER_VISIBLE		0x014BDFFF
 /* User modifiable flags */
-#define EXT4_FL_USER_MODIFIABLE	(EXT4_FL_SNAPSHOT_RW_MASK|0x004B80FF)
+#define EXT4_FL_USER_MODIFIABLE		0x014B80FF
 
 /* Flags that should be inherited by new inodes from their parent. */
 #define EXT4_FL_INHERITED (EXT4_SECRM_FL | EXT4_UNRM_FL | EXT4_COMPR_FL |\
@@ -709,6 +679,10 @@ struct ext4_new_group_data {
  /* note ioctl 10 reserved for an early version of the FIEMAP ioctl */
  /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
 #define EXT4_IOC_ALLOC_DA_BLKS		_IO('f', 12)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
+#define EXT4_IOC_GETSNAPFLAGS		_IOR('f', 13, long)
+#define EXT4_IOC_SETSNAPFLAGS		_IOW('f', 14, long)
+#endif
 #define EXT4_IOC_MOVE_EXT		_IOWR('f', 15, struct move_extent)
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
@@ -1445,8 +1419,33 @@ enum {
 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#define EXT4_SNAPSTATE_FIRST		EXT4_SNAPSTATE_LIST
+	EXT4_SNAPSTATE_LIST,		/* snapshot is on list (S) */
+	EXT4_SNAPSTATE_ENABLED,		/* snapshot is enabled (n) */
+	EXT4_SNAPSTATE_ACTIVE,		/* snapshot is active  (a) */
+	EXT4_SNAPSTATE_INUSE,		/* snapshot is in-use  (p) */
+	EXT4_SNAPSTATE_DELETED,		/* snapshot is deleted (s) */
+	EXT4_SNAPSTATE_SHRUNK,		/* snapshot was shrunk (h) */
+	EXT4_SNAPSTATE_OPEN,		/* snapshot is mounted (o) */
+	EXT4_SNAPSTATE_TAGGED,		/* snapshot is tagged  (t) */
+#define EXT4_SNAPSTATE_LAST		EXT4_SNAPSTATE_TAGGED
+#endif
 };
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+/* macros to convert inode state flags to/from GETSNAPFLAGS ioctl */
+#define EXT4_SNAPSTATE_SHIFT		EXT4_SNAPSTATE_FIRST
+#define EXT4_SNAPFLAGS_MASK		\
+	((1U << (EXT4_SNAPSTATE_LAST - EXT4_SNAPSTATE_FIRST)) - 1)
+#define EXT4_SNAPSTATE_MASK		\
+	(EXT4_SNAPFLAGS_MASK << EXT4_SNAPSTATE_SHIFT)
+#define EXT4_SNAPSTATE(flags)		\
+	(((flags) & EXT4_SNAPFLAGS_MASK) << EXT4_SNAPSTATE_SHIFT)
+#define EXT4_SNAPFLAGS(state)		\
+	(((state) & EXT4_SNAPSTATE_MASK) >> EXT4_SNAPSTATE_SHIFT)
+
+#endif
 #define EXT4_INODE_BIT_FNS(name, field)					\
 static inline int ext4_test_inode_##name(struct inode *inode, int bit)	\
 {									\

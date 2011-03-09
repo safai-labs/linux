@@ -447,11 +447,19 @@ out:
  * Proof of no race with snapshot take:
  * ------------------------------------
  * Snapshot B take is composed of the following steps:
+ * ext4_snapshot_create():
  * - Add snapshot B to head of list (active_snapshot is A).
  * - Allocate and copy snapshot B initial blocks.
+ * ext4_snapshot_take():
+ * - Freeze FS
  * - Clear snapshot A 'active' flag.
- * - Set snapshot B 'list' and 'active' flags.
+ * - Set snapshot B 'list'+'active' flags.
  * - Set snapshot B as active snapshot (active_snapshot=B).
+ * - Unfreeze FS
+ *
+ * Note that we do not need to rely on correct order of instructions within
+ * each of the functions above, but we can assume that Freeze FS will provide
+ * a strong barrier between adding B to list and the ops inside snapshot_take.
  *
  * When reading from snapshot A during snapshot B take, we have 2 cases:
  * 1. is_active(A) is tested before setting active_snapshot=B -
@@ -459,12 +467,12 @@ out:
  * 2. is_active(A) is tested after setting active_snapshot=B -
  *    read through from A to B.
  *
- * When reading from snapshot B during snapshot B take, we have 3 cases:
- * 1. B->flags and B->prev are read before adding B to list -
+ * When reading from snapshot B during snapshot B take, we have 2 cases:
+ * 1. B->flags and B->prev are read before adding B to list
+ *    AND/OR before setting the 'list'+'active' flags -
  *    access to B denied.
- * 2. B->flags is read before setting the 'list' and 'active' flags -
- *    normal file access to B.
- * 3. B->flags is read after setting the 'list' and 'active' flags -
+ * 2. is_active(B) is tested after setting active_snapshot=B
+ *    AND/OR after setting the 'list'+'active' flags -
  *    read through from B to block device.
  */
 #endif
@@ -479,23 +487,19 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
-	if (!(flags & EXT4_SNAPSTATE_LIST))
+	if (!(flags & 1UL<<EXT4_SNAPSTATE_LIST))
 	  	/* snapshot not on the list - read/write access denied */
 		return -EPERM;
 #endif
-	/*
-	 * Snapshot image read through access: (!cmd && !handle)
-	 * indicates this is ext4_snapshot_readpage()
-	 * calling ext4_snapshot_get_block()
-	 */
+
 	*prev_snapshot = NULL;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 	if (ext4_snapshot_is_active(inode) ||
-			(flags & EXT4_SNAPSTATE_ACTIVE))
+			(flags & 1UL<<EXT4_SNAPSTATE_ACTIVE))
 		/* read through from active snapshot to block device */
 		return 0;
 
-	if (list_empty(prev))
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
+	if (prev == &ei->i_snaplist)
 		/* not on snapshots list? */
 		return -EIO;
 
@@ -512,7 +516,8 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 		return -EIO;
 
 	return 0;
-
+#else
+	return -EPERM;
 #endif
 }
 

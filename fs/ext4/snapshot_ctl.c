@@ -80,8 +80,13 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 		iput(old);
 	}
 	if (inode) {
-		ext4_set_inode_state(inode, EXT4_SNAPSTATE_ACTIVE);
-		ext4_set_inode_state(inode, EXT4_SNAPSTATE_LIST);
+		/*
+		 * ACTIVE && !LIST is an illegal state, so set these
+		 * 2 flags together.
+		 * XXX: is that expression atomic?
+		 */
+		EXT4_I(inode)->i_state_flags |=
+			(1UL<<EXT4_SNAPSTATE_ACTIVE | 1UL<<EXT4_SNAPSTATE_LIST);
 		snapshot_debug(1, "snapshot (%u) activated\n",
 			       inode->i_generation);
 	}
@@ -186,7 +191,7 @@ void ext4_snapshot_get_flags(struct inode *inode, struct file *filp)
 	if (ext4_snapshot_list(inode) && open_count > 1)
 		ext4_set_inode_state(inode, EXT4_SNAPSTATE_OPEN);
 	else
-		ext4_clear_inode_state(inode, EXT4_SNAPSTATE_OPEN)
+		ext4_clear_inode_state(inode, EXT4_SNAPSTATE_OPEN);
 	/* copy persistent flags to dynamic state flags */
 	if (ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_DELETED))
 		ext4_set_inode_state(inode, EXT4_SNAPSTATE_DELETED);
@@ -195,7 +200,7 @@ void ext4_snapshot_get_flags(struct inode *inode, struct file *filp)
 	if (ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK))
 		ext4_set_inode_state(inode, EXT4_SNAPSTATE_SHRUNK);
 	else
-		ext4_clear_inode_state(inode, EXT4_SNAPSTATE_SHRUNK)
+		ext4_clear_inode_state(inode, EXT4_SNAPSTATE_SHRUNK);
 }
 
 /*
@@ -208,9 +213,9 @@ int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	unsigned int oldflags = EXT4_I(inode)->i_state_flags;
 	int err = 0;
 
-	if ((flags ^ oldflags) & EXT4_SNAPSTATE_ENABLED) {
+	if ((flags ^ oldflags) & 1UL<<EXT4_SNAPSTATE_ENABLED) {
 		/* enabled/disabled the snapshot during transaction */
-		if (flags & EXT4_SNAPSTATE_ENABLED)
+		if (flags & 1UL<<EXT4_SNAPSTATE_ENABLED)
 			err = ext4_snapshot_enable(inode);
 		else
 			err = ext4_snapshot_disable(inode);
@@ -218,9 +223,9 @@ int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 	if (err)
 		goto out;
 
-	if ((flags ^ oldflags) & EXT4_SNAPSTATE_LIST) {
+	if ((flags ^ oldflags) & 1UL<<EXT4_SNAPSTATE_LIST) {
 		/* add/delete to snapshots list during transaction */
-		if (flags & EXT4_SNAPSTATE_LIST)
+		if (flags & 1UL<<EXT4_SNAPSTATE_LIST)
 			err = ext4_snapshot_create(inode);
 		else
 			err = ext4_snapshot_delete(inode);
@@ -1274,7 +1279,7 @@ static int ext4_snapshot_remove(struct inode *inode)
 	 * snapshot that should not be recycled.  There is no need to mark the
 	 * inode dirty, because the 'dynamic' status flags are not persistent.
 	 */
-	ext4_clear_inode_state(inode, EXT4_SNAPSTATE_MASK);
+	EXT4_I(inode)->i_state_flags &= ~EXT4_SNAPSTATE_MASK;
 
 out_handle:
 	ret = ext4_journal_stop(handle);
@@ -2145,8 +2150,12 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 
 	BUG_ON(read_only && cleanup);
 	if (active_snapshot) {
-		ext4_set_inode_state(active_snapshot, EXT4_SNAPSTATE_ACTIVE);
-		ext4_set_inode_state(active_snapshot, EXT4_SNAPSTATE_LIST);
+		/*
+		 * ACTIVE && !LIST is an illegal state, so set these
+		 * 2 flags together.
+		 */
+		EXT4_I(active_snapshot)->i_state_flags |=
+			(1UL<<EXT4_SNAPSTATE_ACTIVE | 1UL<<EXT4_SNAPSTATE_LIST);
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

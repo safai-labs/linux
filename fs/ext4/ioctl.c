@@ -242,14 +242,14 @@ snapflags_err:
 		if (err)
 			goto snapflags_out;
 
-		if (!(oldflags & EXT4_SNAPSTATE_LIST)  &&
-				(flags & EXT4_SNAPSTATE_LIST))
+		if (!(oldflags & 1UL<<EXT4_SNAPSTATE_LIST)  &&
+				(flags & 1UL<<EXT4_SNAPSTATE_LIST))
 			/* setting list flag - take snapshot */
 			err = ext4_snapshot_take(inode);
 snapflags_out:
-		if ((oldflags|flags) & EXT4_SNAPSTATE_LIST) {
+		if ((oldflags|flags) & 1UL<<EXT4_SNAPSTATE_LIST) {
 			/* if clearing list flag, cleanup snapshot list */
-			int ret, cleanup = !(flags & EXT4_SNAPSTATE_LIST);
+			int ret, cleanup = !(flags & 1UL<<EXT4_SNAPSTATE_LIST);
 
 			/* update/cleanup snapshots list even if take failed */
 			ret = ext4_snapshot_update(inode->i_sb, cleanup, 0);

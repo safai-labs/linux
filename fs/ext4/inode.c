@@ -1152,6 +1152,11 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			err = ext4_snapshot_get_move_access(handle, inode,
 							    first_block, 
 							    &maxblocks, 0);
+			if (err < 0) {
+				/* cleanup the whole chain and exit */
+				partial = chain + depth - 1;
+				goto cleanup;
+			}
 			if (err > 0) {
 				/*
 				 * Return EXT4_MAP_MOW via map->m_flags
@@ -1160,30 +1165,29 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 				 */
 				map->m_flags |= EXT4_MAP_MOW;
 				map->m_pblk = first_block;
-				map->m_len = maxblocks;
 			}
+			/*
+			 * Set max. blocks to map to max. blocks, which
+			 * ext4_snapshot_get_move_access() allows us to handle
+			 * (move or not move) in one ext4_map_blocks() call.
+			 */
+			map->m_len = maxblocks;
 		} else if (map->m_flags & EXT4_MAP_MOW &&
 				map->m_pblk == first_block) {
 			/*
 			 * Second call from ext4_map_blocks():
-			 * If mapped block hasn't change, we can use the
+			 * If mapped block hasn't change, we can rely the
 			 * cached result from the first call.
 			 */
-			maxblocks = map->m_len;
 			err = 1;
 		}
-		if (!err && blocks_to_boundary >= maxblocks)
-			blocks_to_boundary = maxblocks - 1;
 	}
 	if (err)
-		/* do not map found block */
+		/* do not map found block - it should be moved to snapshot */
 		partial = chain + depth - 1;
 	else
-		/* do not move block to snapshot */
+		/* map->m_len blocks do not need to be moved to snapshot */
 		map->m_flags &= ~EXT4_MAP_MOW; 
-	if (err < 0)
-		/* cleanup the whole chain and exit */
-		goto cleanup;
 
 #endif
 	/* Simplest case - block found, no allocation needed */

@@ -3295,6 +3295,14 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 				blocksize, PAGE_SIZE);
 			goto failed_mount;
 		}
+		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
+					EXT4_FEATURE_INCOMPAT_64BIT)) {
+			ext4_msg(sb, KERN_ERR,
+				"64bit feature can not be "
+				"mixed with snapshots");
+			goto failed_mount;
+
+		}
 		if (!EXT4_HAS_COMPAT_FEATURE(sb,
 					EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
 			ext4_msg(sb, KERN_ERR,

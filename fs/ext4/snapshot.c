@@ -227,7 +227,7 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	 * because before allocating/freeing any other blocks a task
 	 * must first get_undo_access() and get here.
 	 */
-#warning committed_data is obsolete and locks should be replaced with group_lock
+#warning fixme: committed_data is obsolete and locks should be replaced with group_lock
 	jbd_lock_bh_journal_head(bitmap_bh);
 	jbd_lock_bh_state(bitmap_bh);
 	jh = bh2jh(bitmap_bh);
@@ -293,7 +293,7 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	struct buffer_head *cow_bh;
 	ext4_fsblk_t bitmap_blk;
 	ext4_fsblk_t cow_bitmap_blk;
-	int err = 0;
+	int cmd, err = 0;
 
 	desc = ext4_get_group_desc(sb, block_group, NULL);
 	if (!desc)
@@ -361,9 +361,24 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (cow_bh)
 		goto out;
 
+	if (!EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG))
+		cmd = SNAPMAP_BITMAP;
+	else
+#warning fixme: init COW bitmap with flex_bg may use too many buffer credits
+		/*
+		 * XXX: flex_bg break the rule that the block bitmap is the
+		 * first block to be COWed in a group (it may be another
+		 * group's block bitmap), so we cannot use the SNAPMAP_BITMAP
+		 * cmd to bypass the journaling of metadata, which may result
+		 * in running out of buffer credits too soon (i.e. OOPS).
+		 * we need to init all COW bitmaps of a flex group, before
+		 * COWing any other blocks in that flex group.
+		 */
+		cmd = SNAPMAP_COW;
+
 	/* allocate snapshot block for COW bitmap */
 	cow_bh = ext4_getblk(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
-				SNAPMAP_BITMAP, &err);
+				cmd, &err);
 	if (!cow_bh)
 		goto out;
 	if (!err) {

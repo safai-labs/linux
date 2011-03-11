@@ -1236,12 +1236,20 @@ static int ext4_ext_search_left(struct inode *inode,
 		return 0;
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (*logical < (le32_to_cpu(ex->ee_block) + ee_len)) {
+		*logical -= 1;
+		*phys = ext4_ext_pblock(ex) + *logical;
+		return 0;
+	}
+#else
 	if (unlikely(*logical < (le32_to_cpu(ex->ee_block) + ee_len))) {
 		EXT4_ERROR_INODE(inode,
 				 "logical %d < ee_block %d + ee_len %d!",
 				 *logical, le32_to_cpu(ex->ee_block), ee_len);
 		return -EIO;
 	}
+#endif
 
 	*logical = le32_to_cpu(ex->ee_block) + ee_len - 1;
 	*phys = ext4_ext_pblock(ex) + ee_len - 1;
@@ -1304,12 +1312,20 @@ static int ext4_ext_search_right(struct inode *inode,
 		return 0;
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (*logical < (le32_to_cpu(ex->ee_block) + ee_len)) {
+		*logical += 1;
+		*phys = ext4_ext_pblock(ex) + *logical;
+		return 0;
+	}
+#else
 	if (unlikely(*logical < (le32_to_cpu(ex->ee_block) + ee_len))) {
 		EXT4_ERROR_INODE(inode,
 				 "logical %d < ee_block %d + ee_len %d!",
 				 *logical, le32_to_cpu(ex->ee_block), ee_len);
 		return -EIO;
 	}
+#endif
 
 	if (ex != EXT_LAST_EXTENT(path[depth].p_hdr)) {
 		/* next allocated block in this leaf */
@@ -2882,6 +2898,8 @@ static int ext4_split_extents(handle_t *handle,
 	ee_len = ext4_ext_get_actual_len(ex);
 	allocated = ee_len - (map->m_lblk - ee_block);
 	newblock = map->m_lblk - ee_block + ext4_ext_pblock(ex);
+	printk("split extent: [%llu, %d] at %llu\n", ext4_ext_pblock(ex),
+			ee_len, newblock);
 	
 	uninitialized = ext4_ext_is_uninitialized(ex); 
 
@@ -2931,6 +2949,8 @@ static int ext4_split_extents(handle_t *handle,
 		ex3->ee_len = cpu_to_le16(allocated - map->m_len);
 		if (uninitialized)
 			ext4_ext_mark_uninitialized(ex3);
+		printk("after split extent3: [%llu, %d]\n", ext4_ext_pblock(ex3),
+				ext4_ext_get_actual_len(ex3));
 		err = ext4_ext_insert_extent(handle, inode, path, ex3, flags);
 		if (err == -ENOSPC && may_zeroout) {
 			err =  ext4_ext_zeroout(inode, &orig_ex);
@@ -3614,25 +3634,15 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/*
-	 * MOW is needed for write-operations.
-	 * For write-operaions, ext4_map_blocks() does as follows.
-	 * 
-	 * no delallocate case:
-	 * 1. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_MOVE_ON_WRITE
-	 *    to lookup if the requested block is allocated and if MOW is
-	 *    needed.
+	 * two cases:
+	 * 1. the request block is found.
+	 *    a. If EXT4_GET_BLOCKS_CREATE is not set, we will test 
+	 *       if MOW is needed.
+	 *    b. If EXT4_GET_BLOCKS_CREATE is set. MOW will be done 
+	 *       if MOW is needed.
 	 *
-	 * 2. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_CREATE.
-	 * 
-	 * delallocate case:
-	 * 1. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_DELAY_CREATE
-	 *	  and EXT4_GET_BLOCKS_MOVE_ON_WRITE to lookup if the requested
-	 *    block is allocated and if MOW is needed. If MOW is not needed,
-	 *    return.
-	 *
-	 * 2. calls ext4_ext_map_blocks() with EXT4_GET_BLOCKS_CREATE.
-	 *
-	 * MOW is done in the 2nd step, so we do lookup just in 1st step.
+	 * 2. the request block is not found, EXT4_GET_BLOCKS_CREATE
+	 *    must be set and MOW must be not needed.
 	 */
 found:
 	if (newblock && (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE)) {
@@ -3644,22 +3654,33 @@ found:
 		 * multi-blocks should be moved each time.
 		 */
 		err = ext4_snapshot_get_move_access(handle, inode, newblock, 0);
-		if (err > 0)
-			/* Do not map found block. */
+		if (err > 0) {
 			if (!(flags & EXT4_GET_BLOCKS_CREATE)) {
+				/* Do not map found block. */
 				map->m_flags |= EXT4_MAP_MOW;
 				err = 0;
 				goto out2;
+			} else {
+				oldblock = newblock;
 			}
-
-		oldblock = newblock;
-		if (err < 0)
+		} else if (err < 0)
 			goto out2;
-	}
 
-	if (!(flags & EXT4_GET_BLOCKS_CREATE))
-		goto out;
+		if ((path == NULL) && (flags & EXT4_GET_BLOCKS_CREATE)) {
+			/* find extent for this block */
+			path = ext4_ext_find_extent(inode, map->m_lblk, NULL);
+			if (IS_ERR(path)) {
+				err = PTR_ERR(path);
+				path = NULL;
+				goto out2;
+			}
+			depth = ext_depth(inode);
+			ex = path[depth].p_ext;
+		}
+	}
 	
+	if (!(flags & EXT4_GET_BLOCKS_CREATE))
+		goto out;	
 #endif
 
 	/*
@@ -3667,6 +3688,11 @@ found:
 	 */
 
 	/* find neighbour allocated blocks */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	/*
+	 * TODO MOW case needs further consideration. 
+	 */
+#endif
 	ar.lleft = map->m_lblk;
 	err = ext4_ext_search_left(inode, path, &ar.lleft, &ar.pleft);
 	if (err)
@@ -3692,7 +3718,23 @@ found:
 	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
 	newex.ee_block = cpu_to_le32(map->m_lblk);
 	newex.ee_len = cpu_to_le16(map->m_len);
+
+	/* Overlap checking is not needed for MOW case. */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (oldblock) {
+		/*
+		 * Overlap happens for MOW.
+		 */
+		unsigned short left_len;
+		left_len = le32_to_cpu(ex->ee_block) +
+		    ext4_ext_get_actual_len(ex) - map->m_lblk;
+		map->m_len = left_len < map->m_len ? left_len : map->m_len;
+		err = 0;
+	} else
+		err = ext4_ext_check_overlap(inode, &newex, path);
+#else
 	err = ext4_ext_check_overlap(inode, &newex, path);
+#endif
 	if (err)
 		allocated = ext4_ext_get_actual_len(&newex);
 	else
@@ -3711,8 +3753,6 @@ found:
 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
 	if (!newblock)
 		goto out2;
-	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
-		  ar.goal, newblock, allocated);
 
 	/* try to insert new extent into found leaf and return */
 	ext4_ext_store_pblock(&newex, newblock);
@@ -3750,40 +3790,38 @@ found:
 		 */
 		err = ext4_snapshot_get_move_access(handle, inode,
 				oldblock, 1);
-		if (err >= 1) {
+		if (err < 1) {
+			/* MOW fails. */
+			err = err ? : -EIO;	
+		} else {
 			/* 
 			 * Move to snapshot success.
-			 *
-			 * Parallel reads and DIO reads should be considered here,
-			 * because we split extents here, and replace the block.
-			 *
-			 * The page containing the request block stays
-			 * in pagecache, so parallel reads works well.
-			 *
-			 * DIO reads needs further considerations.
-			 *
 			 */
+
+			/* Pass EXT4_GET_BLOCKS_PRE_IO to split extent. */
 			(void)ext4_split_extents(handle, inode,
-					map, path, flags);
+					map, path, flags | EXT4_GET_BLOCKS_PRE_IO);
 			depth = ext_depth(inode);
 			err = ext4_ext_get_access(handle, inode,
 						path + depth);
 			if (!err) {
 				ex = path[depth].p_ext;
 				if (le32_to_cpu(ex->ee_block) == map->m_lblk &&
-					ext4_ext_get_actual_len(ex) == map->m_len) {
+					ext4_ext_get_actual_len(ex) ==
+					map->m_len) {
 					ext4_ext_store_pblock(ex, newblock);
 					err = ext4_ext_dirty(handle, inode,
 						path + depth);
-				}
+				} else 
+					BUG();
 			}
 		}
 		
 	} else
-
-#endif
-
+		err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
+#else
 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
+#endif
 	if (err) {
 		/* free data blocks we just allocated */
 		/* not a good idea to call discard here directly,
@@ -3830,6 +3868,8 @@ out2:
 		ext4_ext_drop_refs(path);
 		kfree(path);
 	}
+	
+	ext_debug("ext4_ext_map_block: return \n");
 	return err ? err : allocated;
 }
 

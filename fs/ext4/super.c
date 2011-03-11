@@ -3334,11 +3334,17 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 			goto failed_mount;
 		}
 		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 					EXT4_FEATURE_INCOMPAT_EXTENTS|
+#endif
 					EXT4_FEATURE_INCOMPAT_64BIT)) {
 			ext4_msg(sb, KERN_ERR,
-				"extents and 64bit features cannot be "
-				"mixed with snapshot feature");
+				"the snapshot feature cannot be mixed with "
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+				"64bit feature");
+#else
+				"extents and 64bit features");
+#endif
 			goto failed_mount;
 		}
 		if (!EXT4_HAS_COMPAT_FEATURE(sb,

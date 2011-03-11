@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-4 (9-Mar-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-5 (11-Mar-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -468,9 +468,11 @@ static inline int ext4_snapshot_should_move_data(struct inode *inode)
 	if (ext4_snapshot_excluded(inode))
 		return 0;
 #endif
-	/* when a data block is journaled, it is already COWed as metadata */
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
 		return 0;
+#endif
+	/* when a data block is journaled, it is already COWed as metadata */
 	if (ext4_should_journal_data(inode))
 		return 0;
 	return 1;

@@ -97,7 +97,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				err = -ENOTDIR;
 				goto flags_out;
 			}
-			if (!S_ISDIR(inode->i_mode))
+			if (!capable(CAP_SYS_RESOURCE))
 				goto flags_out;
 		}
 

@@ -1313,9 +1313,12 @@ got_it:
 cleanup:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operation on failure to alloc snapshot block */
-	if (err < 0 && sbh)
-		ext4_snapshot_end_pending_cow(sbh);
-	brelse(sbh);
+	if(SNAPMAP_ISCOW(cmd))
+	{
+		if (err < 0 && sbh )
+			ext4_snapshot_end_pending_cow(sbh);
+		brelse(sbh);
+	}
 #endif
 	while (partial > chain) {
 		BUFFER_TRACE(partial->bh, "call brelse");

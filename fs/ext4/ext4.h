@@ -672,6 +672,18 @@ struct ext4_new_group_data {
 #define EXT4_GET_BLOCKS_CONVERT			0x0010
 #define EXT4_GET_BLOCKS_IO_CREATE_EXT		(EXT4_GET_BLOCKS_PRE_IO|\
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
+/*
+ * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
+ * @flags argument. The higher bits are used for mapping snapshot blocks.
+ */
+	/* handle COW race conditions */
+#define EXT4_GET_BLOCKS_COW	0x20
+	/* allocate only indirect blocks */
+#define EXT4_GET_BLOCKS_MOVE	0x40
+	/* bypass journal and sync allocated indirect blocks directly to disk */
+#define EXT4_GET_BLOCKS_SYNC	0x80
+#endif
 	/* Convert extent to initialized after IO complete */
 #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)

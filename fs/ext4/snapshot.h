@@ -20,8 +20,6 @@
 #include "ext4_jbd2.h"
 #include "snapshot_debug.h"
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-2 (6-Mar-2010)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -90,27 +88,25 @@
 #define SNAPSHOT_SET_DISABLED(inode)		\
 	i_size_write((inode), 0)
 
+//#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#if 0
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-2 (6-Mar-2010)"
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
  * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
  * @flags argument. The higher bits are used for mapping snapshot blocks.
  */
-/* handle COW race conditions */
-#define SNAPMAP_COW_BIT		0x20
-/* allocate only indirect blocks */
-#define SNAPMAP_MOVE_BIT	0x40
-/* bypass journal and sync allocated indirect blocks directly to disk */
-#define SNAPMAP_SYNC_BIT	0x80
 /* original meaning - only check if blocks are mapped */
 #define SNAPMAP_READ	0
 /* original meaning - allocate missing blocks and indirect blocks */
 #define SNAPMAP_WRITE	EXT4_GET_BLOCKS_CREATE
 /* creating COWed block */
-#define SNAPMAP_COW	(SNAPMAP_WRITE|SNAPMAP_COW_BIT)
+#define SNAPMAP_COW	(SNAPMAP_WRITE|EXT4_GET_BLOCKS_COW)
 /* moving blocks to snapshot */
-#define SNAPMAP_MOVE	(SNAPMAP_WRITE|SNAPMAP_MOVE_BIT)
+#define SNAPMAP_MOVE	(SNAPMAP_WRITE|EXT4_GET_BLOCKS_MOVE)
  /* creating COW bitmap - handle COW races and bypass journal */
-#define SNAPMAP_BITMAP	(SNAPMAP_COW|SNAPMAP_SYNC_BIT)
+#define SNAPMAP_BITMAP	(SNAPMAP_COW|EXT4_GET_BLOCKS_SYNC)
 
 /* original @create flag test - only check map or create map? */
 #define SNAPMAP_ISREAD(cmd)	((cmd) == SNAPMAP_READ)
@@ -118,9 +114,11 @@
 #define SNAPMAP_ISCREATE(cmd)	((cmd) != SNAPMAP_READ)
 /* test special cases when mapping snapshot blocks */
 #define SNAPMAP_ISSPECIAL(cmd)	((cmd) & ~SNAPMAP_WRITE)
-#define SNAPMAP_ISCOW(cmd)	((cmd) & SNAPMAP_COW_BIT)
-#define SNAPMAP_ISMOVE(cmd)	((cmd) & SNAPMAP_MOVE_BIT)
-#define SNAPMAP_ISSYNC(cmd)	((cmd) & SNAPMAP_SYNC_BIT)
+#define SNAPMAP_ISCOW(cmd)	((cmd) & EXT4_GET_BLOCKS_COW)
+#define SNAPMAP_ISMOVE(cmd)	((cmd) & EXT4_GET_BLOCKS_MOVE)
+#define SNAPMAP_ISSYNC(cmd)	((cmd) & EXT4_GET_BLOCKS_SYNC)
+
+#define IS_COWING(handle) ((ext4_handle_t *)(handle))->h_cowing
 
 /* snapshot.c */
 
@@ -620,12 +618,32 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 #else /* CONFIG_EXT4_FS_SNAPSHOT */
 #define EXT4_SNAPSHOT_VERSION "ext4 snapshot undefined"
 /* Snapshot NOP macros */
+
+#define SNAPMAP_ISCOW(cmd)	(0)
+#define SNAPMAP_ISMOVE(cmd)     (0)
+#define SNAPMAP_ISSYNC(cmd)	(0)
+#define IS_COWING(handle) (0)
+
 #define ext4_snapshot_load(sb, es, ro) (0)
 #define ext4_snapshot_destroy(sb)
-#define init_ext4_snapshot()
+#define init_ext4_snapshot() (0)
 #define exit_ext4_snapshot()
-
+#define ext4_snapshot_active(sbi) (0)
+#define ext4_snapshot_file(inode) (0)
 #define ext4_snapshot_should_move_data(inode) (0)
+#define ext4_snapshot_test_excluded(handle, inode, block_to_free, count) (0)
+#define ext4_snapshot_list(inode) (0)
+#define ext4_snapshot_exclude_inode(inode) (0)
+#define ext4_snapshot_get_flags(ei, filp) (0)
+#define ext4_snapshot_set_flags(handle, inode, flags) (0)
+#define ext4_snapshot_take(inode) (0)
+#define ext4_snapshot_update(inode_i_sb, cleanup, zero) (0)
+#define ext4_snapshot_has_active(sb) (0)
+#define ext4_snapshot_get_undo_access(handle, bh) (0)
+#define ext4_snapshot_get_write_access(handle, inode, bh) (0)
+#define ext4_snapshot_get_create_access(handle, bh) (0)
+#define ext4_snapshot_excluded(ac_inode) (0)
+#define ext4_snapshot_get_delete_access(handle, inode, block, maxblocks) (0)
 
 #endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

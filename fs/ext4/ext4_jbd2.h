@@ -222,9 +222,6 @@ struct ext4_handle_s {
 typedef struct ext4_handle_s		ext4_handle_t;	/* Ext4 COW handle */
 #endif
 
-#define IS_COWING(handle) \
-	((ext4_handle_t *)(handle))->h_cowing
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 /*
  * macros for ext4 to update transaction COW statistics.

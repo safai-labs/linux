@@ -35,11 +35,10 @@
  * Snapshot inode direct blocks are reserved for snapshot meta blocks.
  * Snapshot inode single indirect blocks are not used.
  * Snapshot image starts at the first double indirect block, so all blocks in
- * a snapshot image block group are mapped by the same double indirect block:
+ * Snapshot image block group blocks are mapped by a single DIND block:
  * 4k: 32k blocks_per_group = 32 IND (4k) blocks = 32 groups per DIND
  * 8k: 64k blocks_per_group = 32 IND (8k) blocks = 64 groups per DIND
  * 16k: 128k blocks_per_group = 32 IND (16k) blocks = 128 groups per DIND
- * TODO: correct macros for PAGE_SIZE != 4k
  */
 #define SNAPSHOT_BLOCK_SIZE		PAGE_SIZE
 #define SNAPSHOT_BLOCK_SIZE_BITS	PAGE_SHIFT
@@ -48,35 +47,35 @@
 #define SNAPSHOT_DIR_BLOCKS		EXT4_NDIR_BLOCKS
 #define SNAPSHOT_IND_BLOCKS		SNAPSHOT_ADDR_PER_BLOCK
 
-#define SNAPSHOT_BLOCKS_PER_GROUP_BITS	15
-#define SNAPSHOT_BLOCKS_PER_GROUP					\
-	(1<<SNAPSHOT_BLOCKS_PER_GROUP_BITS) /* 32K */
-#define SNAPSHOT_BLOCK_GROUP(block)		\
+#define SNAPSHOT_BLOCKS_PER_GROUP_BITS	(SNAPSHOT_BLOCK_SIZE_BITS + 3)
+#define SNAPSHOT_BLOCKS_PER_GROUP				\
+	(1<<SNAPSHOT_BLOCKS_PER_GROUP_BITS) /* 8*PAGE_SIZE */
+#define SNAPSHOT_BLOCK_GROUP(block)				\
 	((block)>>SNAPSHOT_BLOCKS_PER_GROUP_BITS)
-#define SNAPSHOT_BLOCK_GROUP_OFFSET(block)	\
+#define SNAPSHOT_BLOCK_GROUP_OFFSET(block)			\
 	((block)&(SNAPSHOT_BLOCKS_PER_GROUP-1))
-#define SNAPSHOT_BLOCK_TUPLE(block)		\
-	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block), \
+#define SNAPSHOT_BLOCK_TUPLE(block)				\
+	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block), 	\
 	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP(block)
-#define SNAPSHOT_IND_PER_BLOCK_GROUP_BITS				\
+#define SNAPSHOT_IND_PER_BLOCK_GROUP_BITS			\
 	(SNAPSHOT_BLOCKS_PER_GROUP_BITS-SNAPSHOT_ADDR_PER_BLOCK_BITS)
-#define SNAPSHOT_IND_PER_BLOCK_GROUP			\
+#define SNAPSHOT_IND_PER_BLOCK_GROUP				\
 	(1<<SNAPSHOT_IND_PER_BLOCK_GROUP_BITS) /* 32 */
-#define SNAPSHOT_DIND_BLOCK_GROUPS_BITS					\
+#define SNAPSHOT_DIND_BLOCK_GROUPS_BITS				\
 	(SNAPSHOT_ADDR_PER_BLOCK_BITS-SNAPSHOT_IND_PER_BLOCK_GROUP_BITS)
-#define SNAPSHOT_DIND_BLOCK_GROUPS			\
-	(1<<SNAPSHOT_DIND_BLOCK_GROUPS_BITS) /* 32 */
+#define SNAPSHOT_DIND_BLOCK_GROUPS				\
+	(1<<SNAPSHOT_DIND_BLOCK_GROUPS_BITS)
 
-#define SNAPSHOT_BLOCK_OFFSET				\
+#define SNAPSHOT_BLOCK_OFFSET					\
 	(SNAPSHOT_DIR_BLOCKS+SNAPSHOT_IND_BLOCKS)
 #define SNAPSHOT_BLOCK(iblock)					\
 	((ext4_snapblk_t)(iblock) - SNAPSHOT_BLOCK_OFFSET)
-#define SNAPSHOT_IBLOCK(block)						\
+#define SNAPSHOT_IBLOCK(block)					\
 	(ext4_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
 
 #define SNAPSHOT_BYTES_OFFSET					\
 	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
-#define SNAPSHOT_ISIZE(size)			\
+#define SNAPSHOT_ISIZE(size)					\
 	((size) + SNAPSHOT_BYTES_OFFSET)
 /* Snapshot block device size is recorded in i_disksize */
 #define SNAPSHOT_SET_SIZE(inode, size)				\

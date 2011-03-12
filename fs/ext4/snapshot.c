@@ -452,7 +452,6 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		ext4_fsblk_t block, int *maxblocks, struct inode *excluded)
 {
 	struct buffer_head *cow_bh;
-#warning fixme: SNAPSHOT_BLOCK_GROUP macro is wrong for PAGE_SIZE != 4K
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	ext4_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);

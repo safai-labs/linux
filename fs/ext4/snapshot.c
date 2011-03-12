@@ -413,8 +413,7 @@ out:
 		snapshot_debug(3, "COW bitmap #%u of snapshot (%u) "
 				"mapped to block [%lld/%lld]\n",
 				block_group, snapshot->i_generation,
-				SNAPSHOT_BLOCK_GROUP_OFFSET(cow_bitmap_blk),
-				SNAPSHOT_BLOCK_GROUP(cow_bitmap_blk));
+				SNAPSHOT_BLOCK_TUPLE(cow_bitmap_blk));
 	} else {
 		/* uninitialized COW bitmap block */
 		cow_bitmap_blk = 0;
@@ -453,6 +452,7 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 		ext4_fsblk_t block, int *maxblocks, struct inode *excluded)
 {
 	struct buffer_head *cow_bh;
+#warning fixme: SNAPSHOT_BLOCK_GROUP macro is wrong for PAGE_SIZE != 4K
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
 	ext4_fsblk_t snapshot_blocks = SNAPSHOT_BLOCKS(snapshot);
@@ -603,8 +603,7 @@ __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 	snapshot_debug_hl(4, "%s(i:%d/%ld, b:%lld/%lld) "
 			"count=%d, h_ref=%d, cmd=%d\n",
 			where, inode_offset, inode_group,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-			SNAPSHOT_BLOCK_GROUP(block),
+			SNAPSHOT_BLOCK_TUPLE(block),
 			count, handle->h_ref, cmd);
 }
 
@@ -759,8 +758,7 @@ static inline void ext4_snapshot_cow_end(const char *where,
 	if (err < 0)
 		snapshot_debug(1, "%s(b:%lld/%lld) failed!"
 				" h_ref=%d, err=%d\n", where,
-				SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-				SNAPSHOT_BLOCK_GROUP(block),
+				SNAPSHOT_BLOCK_TUPLE(block),
 				handle->h_ref, err);
 }
 
@@ -904,8 +902,7 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	snapshot_debug(3, "COWing block [%llu/%llu] of snapshot "
 			"(%u)...\n",
-			SNAPSHOT_BLOCK_GROUP_OFFSET(block),
-			SNAPSHOT_BLOCK_GROUP(block),
+			SNAPSHOT_BLOCK_TUPLE(block),
 			active_snapshot->i_generation);
 	/* sleep 1 tunable delay unit */
 	snapshot_test_delay(SNAPTEST_COW);

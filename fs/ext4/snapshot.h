@@ -30,13 +30,16 @@
 #define ext4_snapblk_t long long
 
 /*
- * We assert that snapshot must use a file system with block size == page
- * size (4K) and that the first file system block is block 0.
+ * We assert that file system block size == page size (on mount time)
+ * and that the first file system block is block 0 (on snapshot create).
  * Snapshot inode direct blocks are reserved for snapshot meta blocks.
  * Snapshot inode single indirect blocks are not used.
- * Snapshot image starts at the first double indirect block.
- * This way, a snapshot image block group can be mapped with 1 double
- * indirect block + 32 indirect blocks.
+ * Snapshot image starts at the first double indirect block, so all blocks in
+ * a snapshot image block group are mapped by the same double indirect block:
+ * 4k: 32k blocks_per_group = 32 IND (4k) blocks = 32 groups per DIND
+ * 8k: 64k blocks_per_group = 32 IND (8k) blocks = 64 groups per DIND
+ * 16k: 128k blocks_per_group = 32 IND (16k) blocks = 128 groups per DIND
+ * TODO: correct macros for PAGE_SIZE != 4k
  */
 #define SNAPSHOT_BLOCK_SIZE		PAGE_SIZE
 #define SNAPSHOT_BLOCK_SIZE_BITS	PAGE_SHIFT
@@ -223,9 +226,8 @@ static inline int ext4_snapshot_get_write_access(handle_t *handle,
 
 /*
  * called from ext4_journal_get_undo_access(),
- * which is called for group bitmap block from:
- * 1. ext4_free_blocks_sb_inode() before deleting blocks
- * 2. ext4_new_blocks() before allocating blocks
+ * which is called for group bitmap block from
+ * ext4_add_groupblocks() before adding blocks to existing group.
  *
  * Return values:
  * = 0 - block was COWed or doesn't need to be COWed
@@ -234,15 +236,7 @@ static inline int ext4_snapshot_get_write_access(handle_t *handle,
 static inline int ext4_snapshot_get_undo_access(handle_t *handle,
 		struct buffer_head *bh)
 {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_BITMAP
-	/*
-	 * undo access is only requested for block bitmaps, which should be
-	 * COWed in ext4_snapshot_test_cow_bitmap(), even if we pass @cow=0.
-	 */
-	return ext4_snapshot_cow(handle, NULL, bh, 0);
-#else
 	return ext4_snapshot_cow(handle, NULL, bh, 1);
-#endif
 }
 
 /*

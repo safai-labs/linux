@@ -144,9 +144,8 @@ static struct buffer_head *ext4_snapshot_read_array(int n, int l,
 {
 	struct buffer_head *bh;
 
-	snapshot_debug_l(n, l, "%s[%d] = [%u/%u]\n", name, idx,
-			SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
-			SNAPSHOT_BLOCK_GROUP(nr));
+	snapshot_debug_l(n, l, "%s[%d] = [%lld/%lld]\n", name, idx,
+			SNAPSHOT_BLOCK_TUPLE(nr));
 	di->nind++;
 
 	bh = sb_bread(di->di_inode->i_sb, nr);
@@ -219,10 +218,9 @@ static void ext4_snapshot_dump_ind(int n, int l,
 			} else {
 				/* print copied block */
 				snapshot_debug_l(n, l+1, "block[%u/%u]"
-					" = [%u/%u]\n",
+					" = [%lld/%lld]\n",
 					blk-1-b0, grp,
-					SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
-					SNAPSHOT_BLOCK_GROUP(prev_key));
+					SNAPSHOT_BLOCK_TUPLE(prev_key));
 				di->ncopied++;
 			}
 			continue;
@@ -238,11 +236,10 @@ static void ext4_snapshot_dump_ind(int n, int l,
 		} else {
 			/* print group of subsequent copied blocks */
 			snapshot_debug_l(n, l+1, "block[%u-%u/%u]"
-				" = [%u-%u/%u]\n",
+				" = [%u-%lld/%lld]\n",
 				blk-1-k-b0, blk-1-b0, grp,
 				SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key)-k,
-				SNAPSHOT_BLOCK_GROUP_OFFSET(prev_key),
-			SNAPSHOT_BLOCK_GROUP(prev_key));
+				SNAPSHOT_BLOCK_TUPLE(prev_key));
 			di->ncopied += k+1;
 		}
 		/* reset subsequent blocks count */
@@ -398,18 +395,16 @@ void ext4_snapshot_dump(int n, struct inode *inode)
 	for (i = 0; i < EXT4_NDIR_BLOCKS; i++) {
 		if (ei->i_data[i]) {
 			nr = le32_to_cpu(ei->i_data[i]);
-			snapshot_debug_l(n, 0, "meta[%d] = [%u/%u] !!!\n", i,
-					SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
-					SNAPSHOT_BLOCK_GROUP(nr));
+			snapshot_debug_l(n, 0, "meta[%d] = [%lld/%lld] !!!\n", i,
+					SNAPSHOT_BLOCK_TUPLE(nr));
 			di.nmeta++;
 		}
 	}
 	/* print indirect branch (snapshot reserved blocks) */
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)
-		snapshot_debug_l(n, 0, "ind[-1] = [%u/%u] !!!\n",
-				SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
-				SNAPSHOT_BLOCK_GROUP(nr));
+		snapshot_debug_l(n, 0, "ind[-1] = [%lld/%lld] !!!\n",
+				SNAPSHOT_BLOCK_TUPLE(nr));
 	/* print double indirect branch (start of snapshot image) */
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)

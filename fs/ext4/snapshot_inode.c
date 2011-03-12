@@ -570,9 +570,7 @@ static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
 				bit, block_group);
 		err = -EIO;
 	}
-#endif
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	
 	brelse(exclude_bitmap_bh);
 #endif
 	brelse(bitmap_bh);
@@ -725,7 +723,15 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 	if (!buffer_tracked_read(bh_result))
 		return 0;
 
-	/* check for read through to block bitmap */
+	/*
+	 * Check for read through to block bitmap:
+	 * Without flex_bg, the bitmaps are located in their own block group.
+	 * With flex_bg, we need to search all group desc of the flex group.
+	 * The exclude bitmap can potentially be allocated from any group, but
+	 * that would only fail fsck sanity check of snapshots.
+	 * TODO: implement flex_bg check correctly.
+	 */
+#warning fixme: test if a block is a block/exclude bitmap is wrong for flex_bg
 	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
 	desc = ext4_get_group_desc(inode->i_sb, block_group, NULL);
 	if (desc)

@@ -41,15 +41,23 @@ extern u8 cow_cache_offset;
 			msleep_interruptible(snapshot_enable_test[i]); \
 	} while (0)
 
-/* sleep 1/100 from total delay every 1% of progress (max = 100%) */
+/*
+ * Sleep 1ms every 'blocks_per_ms', amounting to the total test delay
+ * over 100% of progress (when 'to' reaches 'max').
+ * snapshot_enable_test[i] (msec) is limited to 64K and max (blocks_count)
+ * is likely much more than 64K, so 'blocks_per_ms' is likely non zero.
+ */
 #define snapshot_test_delay_progress(i, from, to, max)			\
 	do {								\
-		if (snapshot_enable_test[i] && (max)) {			\
-			unsigned long x = 100UL*(from)/(max);		\
-			unsigned long y = 100UL*(to)/(max);		\
-			long msec = (y - x)*snapshot_enable_test[i]/100;\
-			if (msec > 0)					\
-				msleep_interruptible(msec);		\
+		if (snapshot_enable_test[i] &&				\
+				(max) > snapshot_enable_test[i] &&	\
+				(from) <= (to) && (to) <= (max)) {	\
+			unsigned long blocks_per_ms =			\
+				do_div((max), snapshot_enable_test[i]);	\
+			unsigned long x = do_div((from), blocks_per_ms);\
+			unsigned long y = do_div((to), blocks_per_ms);	\
+			if (y > x)					\
+				msleep_interruptible(y - x);		\
 		}							\
 	} while (0)
 

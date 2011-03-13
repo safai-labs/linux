@@ -699,14 +699,78 @@ get_block:
 	return 0;
 }
 
+/*
+ * Check if @block is a bitmap block of @group.
+ * if @block is found to be a block/inode/exclude bitmap block, the return
+ * value is one of the non-zero values below:
+ */
+#define BLOCK_BITMAP	1
+#define INODE_BITMAP	2
+#define EXCLUDE_BITMAP	3
+
+static int ext4_snapshot_is_group_bitmap(struct super_block *sb,
+		ext4_fsblk_t block, ext4_group_t group)
+{
+	struct ext4_group_desc *gdp;
+	struct ext4_group_info *grp;
+	ext4_fsblk_t bitmap_blk;
+
+	gdp = ext4_get_group_desc(sb, group, NULL);
+	grp = ext4_get_group_info(sb, group);
+	if (!gdp || !grp)
+		return 0;
+
+	bitmap_blk = ext4_block_bitmap(sb, gdp);
+	if (bitmap_blk == block)
+		return BLOCK_BITMAP;
+	bitmap_blk = ext4_inode_bitmap(sb, gdp);
+	if (bitmap_blk == block)
+		return INODE_BITMAP;
+	bitmap_blk = grp->bg_exclude_bitmap;
+	if (bitmap_blk == block)
+		return EXCLUDE_BITMAP;
+	return 0;
+}
+
+/*
+ * Check if @block is a bitmap block and of any block group.
+ * if @block is found to be a bitmap block, @bitmap_group is set to the
+ * block group described by the bitmap block.
+ */
+static int ext4_snapshot_is_bitmap(struct super_block *sb,
+		ext4_fsblk_t block, ext4_group_t *bitmap_group)
+{
+	ext4_group_t group = SNAPSHOT_BLOCK_GROUP(block);
+	int flex_groups = ext4_flex_bg_size(EXT4_SB(sb));
+	int i, is_bitmap;
+
+	/*
+	 * When block is in the first block group of a flex group, we need to
+	 * check all group desc of the flex group.
+	 * The exclude bitmap can potentially be allocated from any group, if
+	 * exclude inode was added not on mkfs.  The worst case if we fail to
+	 * identify a block as an exclude bitmap is that fsck sanity check of
+	 * snapshots will fail, becasue exclude bitmap inside snapshot will
+	 * not be all zeros.
+	 */
+	if (!EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG) ||
+			(group % flex_groups) != 0)
+		flex_groups = 1;
+
+	for (i = 0; i < flex_groups; i++, group++) {
+		is_bitmap = ext4_snapshot_is_group_bitmap(sb, block, group);
+		if (is_bitmap)
+			break;
+	}
+	*bitmap_group = group;
+	return is_bitmap;
+}
+
 static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 			struct buffer_head *bh_result, int create)
 {
-	unsigned long block_group;
-	struct ext4_group_desc *desc;
-	struct ext4_group_info *grp;
-	ext4_fsblk_t bitmap_blk = 0;
-	int err;
+	ext4_group_t block_group;
+	int err, is_bitmap;
 
 	BUG_ON(create != 0);
 	BUG_ON(buffer_tracked_read(bh_result));
@@ -723,25 +787,15 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 	if (!buffer_tracked_read(bh_result))
 		return 0;
 
-	/*
-	 * Check for read through to block bitmap:
-	 * Without flex_bg, the bitmaps are located in their own block group.
-	 * With flex_bg, we need to search all group desc of the flex group.
-	 * The exclude bitmap can potentially be allocated from any group, but
-	 * that would only fail fsck sanity check of snapshots.
-	 * TODO: implement flex_bg check correctly.
-	 */
-#warning fixme: test if a block is a block/exclude bitmap is wrong for flex_bg
-	block_group = SNAPSHOT_BLOCK_GROUP(bh_result->b_blocknr);
-	desc = ext4_get_group_desc(inode->i_sb, block_group, NULL);
-	if (desc)
-		bitmap_blk = ext4_block_bitmap(inode->i_sb, desc);
-	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+	/* Check for read through to block or exclude bitmap block */
+	is_bitmap = ext4_snapshot_is_bitmap(inode->i_sb, bh_result->b_blocknr,
+			&block_group);
+	if (is_bitmap == BLOCK_BITMAP) {
 		/* copy fixed block bitmap directly to page buffer */
 		cancel_buffer_tracked_read(bh_result);
 		/* cancel_buffer_tracked_read() clears mapped flag */
 		set_buffer_mapped(bh_result);
-		snapshot_debug(2, "fixing snapshot block bitmap #%lu\n",
+		snapshot_debug(2, "fixing snapshot block bitmap #%u\n",
 			       block_group);
 		/*
 		 * XXX: if we return unmapped buffer, the page will be zeroed
@@ -751,15 +805,11 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 		 */
 		return ext4_snapshot_read_block_bitmap(inode->i_sb,
 						       block_group, bh_result);
-	}
-	/* check for read through to exclude bitmap */
-	grp = ext4_get_group_info(inode->i_sb, block_group);
-	bitmap_blk = grp->bg_exclude_bitmap;
-	if (bitmap_blk && bitmap_blk == bh_result->b_blocknr) {
+	} else if (is_bitmap == EXCLUDE_BITMAP) {
 		/* return unmapped buffer to zero out page */
 		cancel_buffer_tracked_read(bh_result);
 		/* cancel_buffer_tracked_read() clears mapped flag */
-		snapshot_debug(2, "zeroing snapshot exclude bitmap #%lu\n",
+		snapshot_debug(2, "zeroing snapshot exclude bitmap #%u\n",
 			       block_group);
 		return 0;
 	}
@@ -779,7 +829,7 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 		snapshot_test_delay(SNAPTEST_READ);
 	}
 #endif
-		return 0;
+	return 0;
 }
 
 int ext4_snapshot_readpage(struct file *file, struct page *page)

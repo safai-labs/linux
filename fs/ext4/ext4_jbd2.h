@@ -564,7 +564,7 @@ static inline int ext4_should_journal_data(struct inode *inode)
 	if (!S_ISREG(inode->i_mode))
 		return 1;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_feature(inode->i_sb))
+	if (EXT4_SNAPSHOTS(inode->i_sb))
 		/* snapshots enforce ordered data */
 		return 0;
 #endif
@@ -582,7 +582,7 @@ static inline int ext4_should_order_data(struct inode *inode)
 	if (!S_ISREG(inode->i_mode))
 		return 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_feature(inode->i_sb))
+	if (EXT4_SNAPSHOTS(inode->i_sb))
 		/* snapshots enforce ordered data */
 		return 1;
 #endif
@@ -598,7 +598,7 @@ static inline int ext4_should_writeback_data(struct inode *inode)
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 1;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_feature(inode->i_sb))
+	if (EXT4_SNAPSHOTS(inode->i_sb))
 		/* snapshots enforce ordered data */
 		return 0;
 #endif
@@ -625,7 +625,7 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 	if (!S_ISREG(inode->i_mode))
 		return 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_feature(inode->i_sb))
+	if (EXT4_SNAPSHOTS(inode->i_sb))
 		/* XXX: should snapshots support dioread_nolock? */
 		return 0;
 #endif

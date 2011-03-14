@@ -3325,7 +3325,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Enforce snapshots requirements: */
-	if (ext4_snapshot_feature(sb)) {
+	if (EXT4_SNAPSHOTS(sb)) {
 		if (blocksize != PAGE_SIZE) {
 			ext4_msg(sb, KERN_ERR,
 				"snapshots require that filesystem blocksize "
@@ -3393,7 +3393,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	if (ext4_snapshot_feature(sb))
+	if (EXT4_SNAPSHOTS(sb))
 		/* Snapshot files are huge files */
 		has_huge_files = 1;
 #endif
@@ -3718,7 +3718,7 @@ no_journal:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Ext4 unsupported mount options */
-	if (ext4_snapshot_feature(sb)) {
+	if (EXT4_SNAPSHOTS(sb)) {
 		if (!EXT4_SB(sb)->s_journal ||
 			test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA) {
 			ext4_msg(sb, KERN_ERR,
@@ -3977,7 +3977,7 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	
-	if (ext4_snapshot_feature(sb) &&
+	if (EXT4_SNAPSHOTS(sb) &&
 			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
 			EXT4_MIN_JOURNAL_BLOCKS) {
 		ext4_msg(sb, KERN_ERR,
@@ -3988,7 +3988,7 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		return NULL;
 	}
 
-	if (ext4_snapshot_feature(sb) &&
+	if (EXT4_SNAPSHOTS(sb) &&
 			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
 			EXT4_BIG_JOURNAL_BLOCKS) {
 		snapshot_debug(1, "warning: journal is not big enough "

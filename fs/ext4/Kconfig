@@ -86,6 +86,7 @@ config EXT4_DEBUG
 
 config EXT4_FS_DEBUG
 	bool "snapshot debugging support"
+	depends on EXT4_FS_SNAPSHOT
 	depends on EXT4_DEBUG
 	default y
 	help

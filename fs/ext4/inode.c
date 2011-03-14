@@ -810,7 +810,7 @@ failed_out:
 static int ext4_alloc_branch_cow(handle_t *handle, struct inode *inode,
 			ext4_fsblk_t iblock, int indirect_blks,
 				  int *blks, ext4_fsblk_t goal,
-				  int *offsets, Indirect *branch, int cmd)
+				  int *offsets, Indirect *branch, int flags)
 #else
 static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 			     ext4_lblk_t iblock, int indirect_blks,
@@ -827,7 +827,7 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 	ext4_fsblk_t current_block;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	if (SNAPMAP_ISMOVE(cmd)) {
+	if (SNAPMAP_ISMOVE(flags)) {
 		/* mapping snapshot block to block device block */
 		current_block = SNAPSHOT_BLOCK(iblock);
 		num = 0;
@@ -869,7 +869,7 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 		lock_buffer(bh);
 		BUFFER_TRACE(bh, "call get_create_access");
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
-		if (!SNAPMAP_ISSYNC(cmd))
+		if (!SNAPMAP_ISSYNC(flags))
 			err = ext4_journal_get_create_access(handle, bh);
 #else
 		err = ext4_journal_get_create_access(handle, bh);
@@ -911,7 +911,7 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 		 * this is not good for performance but it only happens once
 		 * per snapshot/blockgroup.
 		 */
-		if (SNAPMAP_ISSYNC(cmd)) {
+		if (SNAPMAP_ISSYNC(flags)) {
 			mark_buffer_dirty(bh);
 			sync_dirty_buffer(bh);
 		} else
@@ -934,7 +934,7 @@ failed:
 		 * need to set EXT4_FREE_BLOCKS_METADATA.
 		 */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
-		if (!SNAPMAP_ISSYNC(cmd))
+		if (!SNAPMAP_ISSYNC(flags))
 			/* no need to check for errors - we failed anyway */
 			(void)ext4_free_blocks(handle, inode, 0, new_blocks[i],
 					 1, EXT4_FREE_BLOCKS_FORGET);
@@ -946,7 +946,7 @@ failed:
 	for (i = n+1; i < indirect_blks; i++)
 		ext4_free_blocks(handle, inode, 0, new_blocks[i], 1, 0);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	if (SNAPMAP_ISMOVE(cmd) && num > 0)
+	if (SNAPMAP_ISMOVE(flags) && num > 0)
 		/* don't charge snapshot file owner if move failed */
 		dquot_free_block(inode, num);
 	else if (num > 0)
@@ -975,7 +975,7 @@ failed:
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
 static int ext4_splice_branch_cow(handle_t *handle, struct inode *inode,
-			long block, Indirect *where, int num, int blks, int cmd)
+			long block, Indirect *where, int num, int blks, int flags)
 #else
 static int ext4_splice_branch(handle_t *handle, struct inode *inode,
 			      ext4_lblk_t block, Indirect *where, int num,
@@ -1015,13 +1015,6 @@ static int ext4_splice_branch(handle_t *handle, struct inode *inode,
 		for (i = 1; i < blks; i++)
 			*(where->p + i) = cpu_to_le32(current_block++);
 	}
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-#ifdef WARNING_NOT_IMPLEMENTED
-	if (SNAPMAP_ISMOVE(cmd))
-		/* don't update i_block_alloc_info with moved block */
-		block_i = NULL;
-#endif
-#endif
 
 	/* We are done with atomic stuff, now do the rest of housekeeping */
 	/* had we spliced it onto indirect block? */
@@ -1056,7 +1049,7 @@ err_out:
 		 * need to set EXT4_FREE_BLOCKS_METADATA.
 		 */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
-		if (!SNAPMAP_ISSYNC(cmd))
+		if (!SNAPMAP_ISSYNC(flags))
 			/* no need to check for errors - we failed anyway */
 			(void) ext4_free_blocks(handle, inode, where[i].bh, 0,
 					 1, EXT4_FREE_BLOCKS_FORGET);
@@ -1066,7 +1059,7 @@ err_out:
 #endif
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	if (SNAPMAP_ISMOVE(cmd))
+	if (SNAPMAP_ISMOVE(flags))
 		/* don't charge snapshot file owner if move failed */
 		dquot_free_block(inode, blks);
 	else
@@ -1315,9 +1308,12 @@ got_it:
 cleanup:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operation on failure to alloc snapshot block */
-	if (err < 0 && sbh)
-		ext4_snapshot_end_pending_cow(sbh);
-	brelse(sbh);
+	if(SNAPMAP_ISCOW(flags))
+	{
+		if (err < 0 && sbh )
+			ext4_snapshot_end_pending_cow(sbh);
+		brelse(sbh);
+	}
 #endif
 	while (partial > chain) {
 		BUFFER_TRACE(partial->bh, "call brelse");
@@ -2084,7 +2080,7 @@ retry:
 	}
 	*pagep = page;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (ext4_snapshot_feature(inode->i_sb))
+	if (EXT4_SNAPSHOTS(inode->i_sb))
 		ext4_snapshot_write_begin(inode, page, len);
 #endif
 
@@ -3700,7 +3696,7 @@ retry:
 	}
 	*pagep = page;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (ext4_snapshot_feature(inode->i_sb))
+	if (EXT4_SNAPSHOTS(inode->i_sb))
 		ext4_snapshot_write_begin(inode, page, len);
 #endif
 
@@ -5530,7 +5526,7 @@ has_buffer:
 int ext4_get_inode_loc(struct inode *inode, struct ext4_iloc *iloc)
 {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
-	int in_mem = (!ext4_snapshot_feature(inode->i_sb) &&
+	int in_mem = (!EXT4_SNAPSHOTS(inode->i_sb) &&
 		!ext4_test_inode_state(inode, EXT4_STATE_XATTR));
 	
 	/*

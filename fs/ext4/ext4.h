@@ -646,6 +646,18 @@ struct ext4_new_group_data {
 	/* Convert extent to initialized after IO complete */
 #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
+/*
+ * snapshot_map_blocks() flags passed to ext4_map_blocks() for mapping 
+ * blocks to snapshot.
+ */
+	/* handle COW race conditions */
+#define EXT4_GET_BLOCKS_COW	0x20
+	/* allocate only indirect blocks */
+#define EXT4_GET_BLOCKS_MOVE	0x40
+	/* bypass journal and sync allocated indirect blocks directly to disk */
+#define EXT4_GET_BLOCKS_SYNC	0x80
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/* If mapped block is used by snapshot, move it to snapshot
 	   and allocate a new block for new data */
@@ -2445,13 +2457,13 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
 
 /* Is ext4 configured for snapshots support? */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-static inline int ext4_snapshot_feature(struct super_block *sb)
+static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 {
 	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
 			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 }
 #else
-#define ext4_snapshot_feature(sb) (0)
+#define EXT4_SNAPSHOTS(sb) (0)
 #endif
 
 #endif	/* __KERNEL__ */

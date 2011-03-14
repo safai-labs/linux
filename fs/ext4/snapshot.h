@@ -614,38 +614,38 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 #define EXT4_SNAPSHOT_VERSION "ext4 snapshot undefined"
 /* Snapshot NOP macros */
 
-#define NOP (0)
+#define NOP 
 
-#define SNAPMAP_ISCOW(cmd)	NOP
-#define SNAPMAP_ISMOVE(cmd)     NOP
-#define SNAPMAP_ISSYNC(cmd)	NOP
-#define IS_COWING(handle)	NOP
+#define SNAPMAP_ISCOW(cmd)	(0)
+#define SNAPMAP_ISMOVE(cmd)     (0)
+#define SNAPMAP_ISSYNC(cmd)	(0)
+#define IS_COWING(handle)	(0)
 
-#define ext4_snapshot_load(sb, es, ro) NOP
+#define ext4_snapshot_load(sb, es, ro) (0)
 #define ext4_snapshot_destroy(sb)
-#define init_ext4_snapshot() NOP
+#define init_ext4_snapshot() (0)
 #define exit_ext4_snapshot()
-#define ext4_snapshot_active(sbi) NOP
-#define ext4_snapshot_file(inode) NOP
-#define ext4_snapshot_should_move_data(inode) NOP
-#define ext4_snapshot_test_excluded(handle, inode, block_to_free, count) NOP
-#define ext4_snapshot_list(inode) NOP
-#define ext4_snapshot_exclude_inode(inode) NOP
-#define ext4_snapshot_get_flags(ei, filp) NOP
-#define ext4_snapshot_set_flags(handle, inode, flags) NOP
-#define ext4_snapshot_take(inode) NOP
-#define ext4_snapshot_update(inode_i_sb, cleanup, zero) NOP
+#define ext4_snapshot_active(sbi) (0)
+#define ext4_snapshot_file(inode) (0)
+#define ext4_snapshot_should_move_data(inode) (0)
+#define ext4_snapshot_test_excluded(handle, inode, block_to_free, count) (0)
+#define ext4_snapshot_list(inode) (0)
+#define ext4_snapshot_exclude_inode(inode) (0)
+#define ext4_snapshot_get_flags(ei, filp) (0)
+#define ext4_snapshot_set_flags(handle, inode, flags) (0)
+#define ext4_snapshot_take(inode) (0)
+#define ext4_snapshot_update(inode_i_sb, cleanup, zero) (0)
 #define ext4_snapshot_has_active(sb) (NULL)
-#define ext4_snapshot_get_undo_access(handle, bh) NOP
-#define ext4_snapshot_get_write_access(handle, inode, bh) NOP
-#define ext4_snapshot_get_create_access(handle, bh) NOP
-#define ext4_snapshot_excluded(ac_inode) NOP
-#define ext4_snapshot_get_delete_access(handle, inode, block, maxblocks) NOP
+#define ext4_snapshot_get_undo_access(handle, bh) (0)
+#define ext4_snapshot_get_write_access(handle, inode, bh) (0)
+#define ext4_snapshot_get_create_access(handle, bh) (0)
+#define ext4_snapshot_excluded(ac_inode) (0)
+#define ext4_snapshot_get_delete_access(handle, inode, block, maxblocks) (0)
 
-#define ext4_snapshot_get_move_access(handle, inode, block, move) NOP
-#define ext4_snapshot_start_pending_cow(sbh)	NOP
-#define ext4_snapshot_end_pending_cow(sbh)	NOP
-#define ext4_snapshot_is_active(inode)		NOP
+#define ext4_snapshot_get_move_access(handle, inode, block, move) (0)
+#define ext4_snapshot_start_pending_cow(sbh)	(0)
+#define ext4_snapshot_end_pending_cow(sbh)	(0)
+#define ext4_snapshot_is_active(inode)		(0)
 
 #endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

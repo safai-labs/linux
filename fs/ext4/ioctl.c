@@ -173,7 +173,7 @@ flags_out:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
 	case EXT4_IOC_GETSNAPFLAGS:
 		ext4_snapshot_get_flags(inode, filp);
-		flags = EXT4_SNAPFLAGS(ei->i_state_flags);
+		flags = ext4_get_snapstate_flags(inode);
 		return put_user(flags, (int __user *) arg);
 
 	case EXT4_IOC_SETSNAPFLAGS: {
@@ -187,8 +187,6 @@ flags_out:
 
 		if (get_user(flags, (int __user *) arg))
 			return -EFAULT;
-
-		flags = EXT4_SNAPSTATE(flags);
 
 		err = mnt_want_write(filp->f_path.mnt);
 		if (err)
@@ -205,7 +203,7 @@ flags_out:
 		/* update snapshot 'open' flag under i_mutex */
 		mutex_lock(&inode->i_mutex);
 		ext4_snapshot_get_flags(inode, filp);
-		oldflags = ei->i_state_flags;
+		oldflags = ext4_get_snapstate_flags(inode);
 
 		/*
 		 * snapshot_mutex should be held throughout the trio

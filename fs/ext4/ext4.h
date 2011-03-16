@@ -1435,34 +1435,33 @@ enum {
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
 	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_SNAPSTATE_FIRST		EXT4_SNAPSTATE_LIST
-	EXT4_SNAPSTATE_LIST,		/* snapshot is on list (S) */
-	EXT4_SNAPSTATE_ENABLED,		/* snapshot is enabled (n) */
-	EXT4_SNAPSTATE_ACTIVE,		/* snapshot is active  (a) */
-	EXT4_SNAPSTATE_INUSE,		/* snapshot is in-use  (p) */
-	EXT4_SNAPSTATE_DELETED,		/* snapshot is deleted (s) */
-	EXT4_SNAPSTATE_SHRUNK,		/* snapshot was shrunk (h) */
-	EXT4_SNAPSTATE_OPEN,		/* snapshot is mounted (o) */
-	EXT4_SNAPSTATE_TAGGED,		/* snapshot is tagged  (t) */
-#define EXT4_SNAPSTATE_LAST		EXT4_SNAPSTATE_TAGGED
-#endif
+	EXT4_STATE_LAST
 };
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-/* macros to convert inode state flags to/from GETSNAPFLAGS ioctl */
-#define EXT4_SNAPSTATE_SHIFT		EXT4_SNAPSTATE_FIRST
-#define EXT4_SNAPFLAGS_MASK		\
-	((1UL << (EXT4_SNAPSTATE_LAST - EXT4_SNAPSTATE_FIRST)) - 1)
+/*
+ * Snapshot dynamic state flags (starting at offset EXT4_STATE_LAST)
+ * These flags are read by GETSNAPFLAGS ioctl and interpreted by the lssnap
+ * utility.  Do not change these values.
+ */
+enum {
+	EXT4_SNAPSTATE_LIST = 0,	/* snapshot is on list (S) */
+	EXT4_SNAPSTATE_ENABLED = 1,	/* snapshot is enabled (n) */
+	EXT4_SNAPSTATE_ACTIVE = 2,	/* snapshot is active  (a) */
+	EXT4_SNAPSTATE_INUSE = 3,	/* snapshot is in-use  (p) */
+	EXT4_SNAPSTATE_DELETED = 4,	/* snapshot is deleted (s) */
+	EXT4_SNAPSTATE_SHRUNK = 5,	/* snapshot was shrunk (h) */
+	EXT4_SNAPSTATE_OPEN = 6,	/* snapshot is mounted (o) */
+	EXT4_SNAPSTATE_TAGGED = 7,	/* snapshot is tagged  (t) */
+	EXT4_SNAPSTATE_LAST
+};
+
 #define EXT4_SNAPSTATE_MASK		\
-	(EXT4_SNAPFLAGS_MASK << EXT4_SNAPSTATE_SHIFT)
-#define EXT4_SNAPSTATE(flags)		\
-	(((flags) & EXT4_SNAPFLAGS_MASK) << EXT4_SNAPSTATE_SHIFT)
-#define EXT4_SNAPFLAGS(state)		\
-	(((state) & EXT4_SNAPSTATE_MASK) >> EXT4_SNAPSTATE_SHIFT)
+	((1UL << EXT4_SNAPSTATE_LAST) - 1)
 
 #endif
 
+/* atomic single bit funcs */
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 static inline int ext4_test_inode_##name(struct inode *inode, int bit)	\
 {									\
@@ -1477,9 +1476,28 @@ static inline void ext4_clear_inode_##name(struct inode *inode, int bit) \
 	clear_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }
 
+/* non-atomic multi bit funcs */
+#define EXT4_INODE_FLAGS_FNS(name, field, offset)			\
+static inline int ext4_get_##name##_flags(struct inode *inode)		\
+{									\
+	return EXT4_I(inode)->i_##field >> (offset);			\
+}									\
+static inline void ext4_set_##name##_flags(struct inode *inode,		\
+						unsigned long flags)	\
+{									\
+	EXT4_I(inode)->i_##field |= (flags << (offset));		\
+}									\
+static inline void ext4_clear_##name##_flags(struct inode *inode, 	\
+						unsigned long flags)	\
+{									\
+	EXT4_I(inode)->i_##field &= ~(flags << (offset));		\
+}
+
 EXT4_INODE_BIT_FNS(flag, flags, 0)
 #if (BITS_PER_LONG < 64)
 EXT4_INODE_BIT_FNS(state, state_flags, 0)
+EXT4_INODE_BIT_FNS(snapstate, state_flags, EXT4_STATE_LAST)
+EXT4_INODE_FLAGS_FNS(snapstate, state_flags, EXT4_STATE_LAST)
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 {
@@ -1487,6 +1505,8 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 }
 #else
 EXT4_INODE_BIT_FNS(state, flags, 32)
+EXT4_INODE_BIT_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
+EXT4_INODE_FLAGS_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 {

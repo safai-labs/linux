@@ -3542,7 +3542,7 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	ext4_fsblk_t oldblock = 0;
 	int maxblocks;
 #endif
-	int err = 0, depth, ret, cache_type;
+	int err = 0, depth, ret;
 	unsigned int allocated = 0;
 	struct ext4_allocation_request ar;
 	ext4_io_end_t *io = EXT4_I(inode)->cur_aio_dio;
@@ -3574,8 +3574,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 #else
 			goto out;
 #endif
-		} else {
-			BUG();
 		}
 	}
 

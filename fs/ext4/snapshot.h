@@ -395,7 +395,7 @@ static inline int ext4_snapshot_file(struct inode *inode)
 /* tests if @inode is on the on-disk snapshot list */
 static inline int ext4_snapshot_list(struct inode *inode)
 {
-	return ext4_test_inode_state(inode, EXT4_SNAPSTATE_LIST);
+	return ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_LIST);
 }
 #endif
 

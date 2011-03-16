@@ -63,6 +63,7 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 		struct inode *inode)
 {
 	struct inode *old = EXT4_SB(sb)->s_active_snapshot;
+	struct ext4_inode_info *ei = EXT4_I(inode);
 
 	if (old == inode)
 		return 0;
@@ -80,6 +81,26 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 		iput(old);
 	}
 	if (inode) {
+		/*
+		 * Set up the jbd2_inode - we are about to file_inode soon...
+		 */
+		if (!ei->jinode) {
+			struct jbd2_inode *jinode = jbd2_alloc_inode(GFP_KERNEL);
+
+			spin_lock(&inode->i_lock);
+			if (!ei->jinode) {
+				if (!jinode) {
+					spin_unlock(&inode->i_lock);
+					return -ENOMEM;
+				}
+				ei->jinode = jinode;
+				jbd2_journal_init_jbd_inode(ei->jinode, inode);
+				jinode = NULL;
+			}
+			spin_unlock(&inode->i_lock);
+			if (unlikely(jinode != NULL))
+				jbd2_free_inode(jinode);
+		}
 		/*
 		 * ACTIVE && !LIST is an illegal state, so set these
 		 * 2 flags together.
@@ -181,11 +202,12 @@ static int ext4_snapshot_delete(struct inode *inode);
  */
 void ext4_snapshot_get_flags(struct inode *inode, struct file *filp)
 {
-	int open_count = atomic_read(&filp->f_path.dentry->d_count);
+	unsigned int open_count = filp->f_path.dentry->d_count;
 	
 	/*
 	 * 1 count for ioctl (lsattr)
 	 * greater count means the snapshot is open by user (mounted?)
+	 * We rely on d_count because snapshot shouldn't have hard links.
 	 */
 	if (ext4_snapshot_list(inode) && open_count > 1)
 		ext4_set_inode_snapstate(inode, EXT4_SNAPSTATE_OPEN);
@@ -2167,8 +2189,9 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 		 * ACTIVE && !LIST is an illegal state, so set these
 		 * 2 flags together.
 		 */
-		ext4_set_snapstate_flags(inode, 1UL<<EXT4_SNAPSTATE_ACTIVE |
-						1UL<<EXT4_SNAPSTATE_LIST);
+		ext4_set_snapstate_flags(active_snapshot,
+				1UL<<EXT4_SNAPSTATE_ACTIVE |
+				1UL<<EXT4_SNAPSTATE_LIST);
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

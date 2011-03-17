@@ -1181,11 +1181,9 @@ ext4_mb_load_buddy(struct super_block *sb, ext4_group_t group,
 	e4b->bd_buddy_page = NULL;
 	e4b->bd_bitmap_page = NULL;
 	/*
-	 * We only need to take the read lock if other groups share the buddy
-	 * page with this group or if blocks may be added to this (last) group
-	 * by ext4_group_extend().
+	 * We only need the read lock if other groups share our buddy page
 	 */
-	if (blocks_per_page > 2 || group == sbi->s_groups_count - 1)
+	if (blocks_per_page > 2)
 		e4b->alloc_semp = &grp->alloc_sem;
 	else
 		e4b->alloc_semp = NULL;
@@ -2021,13 +2019,6 @@ static int ext4_mb_good_group(struct ext4_allocation_context *ac,
 		    ((group % flex_size) == 0))
 			return 0;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
-		/* Avoid using the last bg for COW blocks */
-		if ((ac->ac_flags & EXT4_MB_HINT_COWING) &&
-		    group == EXT4_SB(ac->ac_sb)->s_groups_count - 1)
-			return 0;
-
-#endif
 		return 1;
 	case 1:
 		if ((free / fragments) >= ac->ac_g_ex.fe_len)
@@ -4909,9 +4900,7 @@ error_return:
  * @block:			start physcial block to add to the block group
  * @count:			number of blocks to free
  *
- * This marks the blocks as free in the bitmap. We ask the
- * mballoc to reload the buddy after this by setting group
- * EXT4_GROUP_INFO_NEED_INIT_BIT flag
+ * This marks the blocks as free in the bitmap and updates buddy counters.
  */
 void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
 			 ext4_fsblk_t block, unsigned long count)

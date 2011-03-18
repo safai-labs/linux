@@ -3050,6 +3050,9 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	map.m_len = 1;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if ((flags & EXT4_GET_BLOCKS_DELAY_CREATE) &&
+	    ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
 	if ((flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE) &&
 	     buffer_partial_write(bh)) {
 		/* Read existing block data before moving it to snapshot */

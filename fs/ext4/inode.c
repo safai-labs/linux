@@ -1170,11 +1170,11 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			}
 			if (err > 0) {
 				/*
-				 * Return EXT4_MAP_MOW via map->m_flags
+				 * Return EXT4_MAP_REMAP via map->m_flags
 				 * to tell ext4_map_blocks() that the
 				 * found block should be moved to snapshot.
 				 */
-				map->m_flags |= EXT4_MAP_MOW;
+				map->m_flags |= EXT4_MAP_REMAP;
 				map->m_pblk = first_block;
 			}
 			/*
@@ -1183,7 +1183,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			 * (move or not move) in one ext4_map_blocks() call.
 			 */
 			map->m_len = maxblocks;
-		} else if (map->m_flags & EXT4_MAP_MOW &&
+		} else if (map->m_flags & EXT4_MAP_REMAP &&
 				map->m_pblk == first_block) {
 			/*
 			 * Second call from ext4_map_blocks():
@@ -1198,7 +1198,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		partial = chain + depth - 1;
 	else
 		/* map->m_len blocks do not need to be moved to snapshot */
-		map->m_flags &= ~EXT4_MAP_MOW; 
+		map->m_flags &= ~EXT4_MAP_REMAP; 
 
 #endif
 	/* Simplest case - block found, no allocation needed */
@@ -1274,7 +1274,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (map->m_flags & EXT4_MAP_MOW) {
+	if (map->m_flags & EXT4_MAP_REMAP) {
 		int ret;
 		maxblocks = 1;
 		/* move old block to snapshot */
@@ -1610,7 +1610,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (retval > 0 && (map->m_flags & EXT4_MAP_MOW)) {
+	if (retval > 0 && (map->m_flags & EXT4_MAP_REMAP)) {
 		/*
 		 * If mow is needed on the requested block and
 		 * request comes from delayed-allocation-write path,
@@ -1712,8 +1712,8 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	up_write((&EXT4_I(inode)->i_data_sem));
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/* Clear EXT4_MAP_MOW, it is not needed any more. */
-	map->m_flags &= ~EXT4_MAP_MOW; 
+	/* Clear EXT4_MAP_REMAP, it is not needed any more. */
+	map->m_flags &= ~EXT4_MAP_REMAP; 
 #endif
 
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
@@ -1736,7 +1736,7 @@ static int ext4_partial_write_begin(struct inode *inode, sector_t iblock,
 	struct ext4_map_blocks map;
 	int ret;
 
-	BUG_ON(!buffer_move_on_write(bh) || !buffer_partial_write(bh));
+	BUG_ON(!buffer_partial_write(bh));
 	BUG_ON(!bh->b_page || !PageLocked(bh->b_page));
 	map.m_lblk = iblock;
 	map.m_len = 1;
@@ -1789,15 +1789,13 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (buffer_move_on_write(bh) && buffer_partial_write(bh)) {
+	if ((flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE) &&
+	     buffer_partial_write(bh)) {
 		/* Read existing block data before moving it to snapshot */
 		ret = ext4_partial_write_begin(inode, iblock, bh);
 		if (ret < 0)
 			goto out;
 	}
-	if (buffer_move_on_write(bh))
-		/* Pass move-on-write hint on map_blocks flags */
-		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
 #endif
 	ret = ext4_map_blocks(handle, inode, &map, flags);
 	if (ret > 0) {
@@ -1811,14 +1809,27 @@ out:
 		ext4_journal_stop(handle);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/*
-	 * BH_Move_On_Write and BH_Partial_Write flags are only used to pass
+	 * BH_Partial_Write flags are only used to pass
 	 * hints to this function and should be cleared on exit.
 	 */
-	clear_buffer_move_on_write(bh);
 	clear_buffer_partial_write(bh);
 #endif
 	return ret;
 }
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+/*
+ * ext4_get_block_mow is used when a block may be needed to be snapshotted. 
+ */
+int ext4_get_block_mow(struct inode *inode, sector_t iblock,
+		   struct buffer_head *bh, int create)
+{
+	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
+	if (create && ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+	return _ext4_get_block(inode, iblock, bh, flags);
+}
+#endif
 
 int ext4_get_block(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
@@ -2016,11 +2027,10 @@ static void ext4_truncate_failed_write(struct inode *inode)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
  * Prepare for snapshot.
- * Clear mapped flag of buffers and set mow and partial write flag of 
- * buffers.
+ * Clear mapped flag of buffers and set partial write flag of buffers.
  */
-static void ext4_snapshot_write_begin(struct inode *inode, 
-				struct page *page, unsigned len) 
+static void ext4_snapshot_write_begin(struct inode *inode,
+				struct page *page, unsigned len)
 {
 	struct buffer_head *bh = NULL;
 	/*
@@ -2030,7 +2040,7 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 	 * guarantee this we have to know that the transaction is not restarted.
 	 * Can we count on that?
 	 */
-	if (!ext4_snapshot_should_move_data(inode)) 
+	if (!ext4_snapshot_should_move_data(inode))
 		return;
 
 	if (!page_has_buffers(page))
@@ -2047,14 +2057,16 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 	if (!buffer_jbd(bh) && !buffer_delay(bh)) {
 		clear_buffer_mapped(bh);
 		/* explicitly request move-on-write */
-		set_buffer_move_on_write(bh);
 		if (len < PAGE_CACHE_SIZE)
 			/* read block before moving it to snapshot */
 			set_buffer_partial_write(bh);
 	}
 }
 
+static int ext4_get_block_write_mow(struct inode *inode, sector_t iblock,
+		   struct buffer_head *bh_result, int create);
 #endif
+
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create);
 static int ext4_write_begin(struct file *file, struct address_space *mapping,
@@ -2103,9 +2115,17 @@ retry:
 #endif
 
 	if (ext4_should_dioread_nolock(inode))
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		ret = __block_write_begin(page, pos, len, ext4_get_block_write_mow);
+#else
 		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
+#endif
 	else
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		ret = __block_write_begin(page, pos, len, ext4_get_block_mow);
+#else
 		ret = __block_write_begin(page, pos, len, ext4_get_block);
+#endif
 
 	if (!ret && ext4_should_journal_data(inode)) {
 		ret = walk_page_buffers(handle, page_buffers(page),
@@ -3030,15 +3050,13 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	map.m_len = 1;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (buffer_move_on_write(bh) && buffer_partial_write(bh)) {
+	if ((flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE) &&
+	     buffer_partial_write(bh)) {
 		/* Read existing block data before moving it to snapshot */
 		ret = ext4_partial_write_begin(inode, iblock, bh);
 		if (ret < 0)
 			goto out;
 	}
-	if (buffer_move_on_write(bh))
-		/* Pass move-on-write hint on map_blocks flags */
-		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
 #endif
 
 	/*
@@ -3088,8 +3106,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 
 out:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/*We need to clear mow and partial write flag here */
-	clear_buffer_move_on_write(bh);
+	/*We need to clear partial write flag here */
 	clear_buffer_partial_write(bh);
 #endif
 	return 0;
@@ -4158,6 +4175,25 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+/*
+ * ext4_get_block used when preparing for a DIO write or buffer write.
+ * We allocate an uinitialized extent if blocks haven't been allocated.
+ * The extent will be converted to initialized after the IO is complete.
+ */
+static int ext4_get_block_write_mow(struct inode *inode, sector_t iblock,
+		   struct buffer_head *bh_result, int create)
+{
+	int flags = create ? EXT4_GET_BLOCKS_IO_CREATE_EXT : 0;
+	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
+		   inode->i_ino, create);
+	
+	if (create && ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+	return _ext4_get_block(inode, iblock, bh_result, flags);
+}
+#endif
+
 /*
  * ext4_get_block used when preparing for a DIO write or buffer write.
  * We allocate an uinitialized extent if blocks haven't been allocated.
@@ -4613,8 +4649,7 @@ int ext4_block_truncate_page(handle_t *handle,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/* check if block needs to be moved to snapshot before zeroing */
 	if (ext4_snapshot_should_move_data(inode)) {
-		set_buffer_move_on_write(bh);
-		err = ext4_get_block(inode, iblock, bh, 1);
+		err = ext4_get_block_mow(inode, iblock, bh, 1);
 		if (err)
 			goto unlock;
 		if (buffer_new(bh)) {

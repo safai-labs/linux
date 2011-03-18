@@ -3678,7 +3678,7 @@ found:
 		if (err > 0) {
 			if (!(flags & EXT4_GET_BLOCKS_CREATE)) {
 				/* Do not map found block. */
-				map->m_flags |= EXT4_MAP_MOW;
+				map->m_flags |= EXT4_MAP_REMAP;
 				err = 0;
 				goto out2;
 			} else {

@@ -3674,13 +3674,14 @@ found:
 		 */
 		maxblocks = 1;
 		err = ext4_snapshot_get_move_access(handle, inode, newblock,
-				&maxblocks, 0);
+				&map->m_len, 0);
+		allocated = map->m_len;
 		if (err > 0) {
 			if (!(flags & EXT4_GET_BLOCKS_CREATE)) {
 				/* Do not map found block. */
 				map->m_flags |= EXT4_MAP_REMAP;
 				err = 0;
-				goto out2;
+				goto out;
 			} else {
 				oldblock = newblock;
 			}
@@ -3810,9 +3811,11 @@ found:
 		 * Move oldblock to snapshot.
 		 * XXX delayed-mow needs moving multi blocks a time.
 		 */
-		maxblocks = map->m_len;
+		map->m_len = ar.len;
+		maxblocks = ar.len;
 		err = ext4_snapshot_get_move_access(handle, inode,
 				oldblock, &maxblocks, 1);
+		printk("ext4_ext_map_blocks: move %d of %d [%llu]\n", maxblocks, ar.len, oldblock);
 		if (err < 1) {
 			/* MOW fails. */
 			err = err ? : -EIO;	
@@ -3835,6 +3838,7 @@ found:
 					ext4_ext_store_pblock(ex, newblock);
 					err = ext4_ext_dirty(handle, inode,
 						path + depth);
+					printk("new extent: [%d:%d]", le32_to_cpu(ex->ee_block), ext4_ext_get_actual_len(ex));
 				} else 
 					BUG();
 			}

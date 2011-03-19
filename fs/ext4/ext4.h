@@ -209,12 +209,17 @@ struct ext4_allocation_request {
 #define EXT4_MAP_UNWRITTEN	(1 << BH_Unwritten)
 #define EXT4_MAP_BOUNDARY	(1 << BH_Boundary)
 #define EXT4_MAP_UNINIT		(1 << BH_Uninit)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+#define EXT4_MAP_REMAP		(1 << BH_Remap)
+#define EXT4_MAP_FLAGS		(EXT4_MAP_NEW | EXT4_MAP_MAPPED |\
+				 EXT4_MAP_UNWRITTEN | EXT4_MAP_BOUNDARY |\
+				 EXT4_MAP_UNINIT | EXT4_MAP_REMAP)
+#else
 #define EXT4_MAP_FLAGS		(EXT4_MAP_NEW | EXT4_MAP_MAPPED |\
 				 EXT4_MAP_UNWRITTEN | EXT4_MAP_BOUNDARY |\
 				 EXT4_MAP_UNINIT)
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-#define EXT4_MAP_REMAP		(1 << BH_Remap)
 #endif
+
 
 struct ext4_map_blocks {
 	ext4_fsblk_t m_pblk;
@@ -654,10 +659,15 @@ struct ext4_new_group_data {
 #define EXT4_GET_BLOCKS_SYNC	0x80
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/* If mapped block is used by snapshot, move it to snapshot
-	   and allocate a new block for new data */
+	/* Look up if mapped block is used by snapshot,
+	 * if so and EXT4_GET_BLOCKS_CREATE is set, move it to snapshot
+	 * and allocate a new block for new data.
+	 * if EXT4_GET_BLOCKS_CREATE is not set, return REMAP flags.
+	 */
 #define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
-#define EXT4_GET_BLOCKS_DELAY_CREATE		0x0200	
+#define EXT4_GET_BLOCKS_DELAY_CREATE		0x0200
+	/* remap the request blocks */
+#define EXT4_GET_BLOCKS_REMAP			0x0400	
 #endif
 
 /*

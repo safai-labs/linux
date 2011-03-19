@@ -79,7 +79,12 @@ static int noalloc_get_block_write(struct inode *inode, sector_t iblock,
 static int ext4_set_bh_endio(struct buffer_head *bh, struct inode *inode);
 static void ext4_end_io_buffer_write(struct buffer_head *bh, int uptodate);
 static int __ext4_journalled_writepage(struct page *page, unsigned int len);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+static int ext4_bh_delay_or_unwritten_or_remap(handle_t *handle,
+		struct buffer_head *bh);
+#else
 static int ext4_bh_delay_or_unwritten(handle_t *handle, struct buffer_head *bh);
+#endif
 
 /*
  * Test whether an inode is a fast symlink.
@@ -1133,9 +1138,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	int depth;
 	int count = 0;
 	ext4_fsblk_t first_block = 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	int maxblocks;
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
 #endif
@@ -1151,7 +1153,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	err = 0;
-	maxblocks = map->m_len;
 	if (!partial && (flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE)) {
 		BUG_ON(!ext4_snapshot_should_move_data(inode));
 		first_block = le32_to_cpu(chain[depth - 1].key);
@@ -1162,7 +1163,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			 */
 			err = ext4_snapshot_get_move_access(handle, inode,
 							    first_block, 
-							    &maxblocks, 0);
+							    &map->m_len, 0);
 			if (err < 0) {
 				/* cleanup the whole chain and exit */
 				partial = chain + depth - 1;
@@ -1175,14 +1176,13 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 				 * found block should be moved to snapshot.
 				 */
 				map->m_flags |= EXT4_MAP_REMAP;
-				map->m_pblk = first_block;
 			}
 			/*
 			 * Set max. blocks to map to max. blocks, which
 			 * ext4_snapshot_get_move_access() allows us to handle
 			 * (move or not move) in one ext4_map_blocks() call.
 			 */
-			map->m_len = maxblocks;
+			err = 0;
 		} else if (map->m_flags & EXT4_MAP_REMAP &&
 				map->m_pblk == first_block) {
 			/*
@@ -1196,9 +1196,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	if (err)
 		/* do not map found block - it should be moved to snapshot */
 		partial = chain + depth - 1;
-	else
-		/* map->m_len blocks do not need to be moved to snapshot */
-		map->m_flags &= ~EXT4_MAP_REMAP; 
 
 #endif
 	/* Simplest case - block found, no allocation needed */
@@ -1235,8 +1232,17 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	 * Next look up the indirect map to count the totoal number of
 	 * direct blocks to allocate for this branch.
 	 */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (map->m_flags & EXT4_MAP_REMAP) {
+		BUG_ON(indirect_blks != 0);
+		count = map->m_len;
+	} else
+		count = ext4_blks_to_allocate(partial, indirect_blks,
+				     	      map->m_len, blocks_to_boundary);
+#else
 	count = ext4_blks_to_allocate(partial, indirect_blks,
 				      map->m_len, blocks_to_boundary);
+#endif
 	/*
 	 * Block out ext4_truncate while we alter the tree
 	 */
@@ -1276,15 +1282,16 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (map->m_flags & EXT4_MAP_REMAP) {
 		int ret;
-		maxblocks = 1;
 		/* move old block to snapshot */
 		ret = ext4_snapshot_get_move_access(handle, inode,
 						    le32_to_cpu(*(partial->p)),
-						    &maxblocks, 1);
+						    &map->m_len, 1);
+//		BUG_ON(map->m_len != count);
+		printk("move %d blocks of %d\n", map->m_len, count);
 		if (ret < 1) {
 			/* failed to move to snapshot - free new block */
 			ext4_free_blocks(handle, inode, partial->bh,
-				le32_to_cpu(partial->key), 1, flags);
+				le32_to_cpu(partial->key), count, flags);
 			err = ret ? : -EIO;
 			goto cleanup;
 		}
@@ -1609,27 +1616,16 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 			return ret;
 	}
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (retval > 0 && (map->m_flags & EXT4_MAP_REMAP)) {
-		/*
-		 * If mow is needed on the requested block and
-		 * request comes from delayed-allocation-write path,
-		 * we do mow here. This will avoid an extra lookup
-		 * in delayed-allocation-write path.
-		 */
-		if (flags & EXT4_GET_BLOCKS_DELAY_CREATE)
-			flags |= EXT4_GET_BLOCKS_CREATE;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
+	if (retval > 0 && (map->m_flags & EXT4_MAP_REMAP) &&
+	    (flags & EXT4_GET_BLOCKS_PRE_IO)) {
 		/*
 		 * If mow is needed on the requested block and 
 		 * request comes from async-direct-io-write path,
 		 * we return an unmapped buffer to fall back to buffered I/O.
 		 */
-		if (flags & EXT4_GET_BLOCKS_PRE_IO) {
-			map->m_flags &= ~EXT4_MAP_MAPPED;
-			retval = 0;
-		}
-#endif
+		map->m_flags &= ~EXT4_MAP_MAPPED;
+		retval = 0;
 	}
 #endif
 	/* If it is only a block(s) look up */
@@ -1643,7 +1639,12 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	 * ext4_ext_get_block() returns th create = 0
 	 * with buffer head unmapped.
 	 */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED &&
+		!(map->m_flags & EXT4_MAP_REMAP))
+#else
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED)
+#endif
 		return retval;
 
 	/*
@@ -2027,10 +2028,11 @@ static void ext4_truncate_failed_write(struct inode *inode)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
  * Prepare for snapshot.
- * Clear mapped flag of buffers and set partial write flag of buffers.
+ * Clear mapped flag of buffers,
+ * Set partial write flag of buffers in non-delayed-mow case.
  */
 static void ext4_snapshot_write_begin(struct inode *inode,
-				struct page *page, unsigned len)
+				struct page *page, unsigned len, int delay)
 {
 	struct buffer_head *bh = NULL;
 	/*
@@ -2057,7 +2059,7 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 	if (!buffer_jbd(bh) && !buffer_delay(bh)) {
 		clear_buffer_mapped(bh);
 		/* explicitly request move-on-write */
-		if (len < PAGE_CACHE_SIZE)
+		if (!delay && len < PAGE_CACHE_SIZE)
 			/* read block before moving it to snapshot */
 			set_buffer_partial_write(bh);
 	}
@@ -2111,7 +2113,7 @@ retry:
 	*pagep = page;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (EXT4_SNAPSHOTS(inode->i_sb))
-		ext4_snapshot_write_begin(inode, page, len);
+		ext4_snapshot_write_begin(inode, page, len, 0);
 #endif
 
 	if (ext4_should_dioread_nolock(inode))
@@ -2595,6 +2597,12 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 						clear_buffer_delay(bh);
 						bh->b_blocknr = pblock;
 					}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+					if (buffer_remap(bh)) {
+						clear_buffer_remap(bh);
+						bh->b_blocknr = pblock;
+					}
+#endif
 					if (buffer_unwritten(bh) ||
 					    buffer_mapped(bh))
 						BUG_ON(bh->b_blocknr != pblock);
@@ -2604,7 +2612,8 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 				}
 
 				/* redirty page if block allocation undone */
-				if (buffer_delay(bh) || buffer_unwritten(bh))
+				if (buffer_delay(bh) || buffer_unwritten(bh) ||
+				    buffer_remap(bh))
 					redirty_page = 1;
 				bh = bh->b_this_page;
 				block_start += bh->b_size;
@@ -2723,7 +2732,12 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
 	if ((mpd->b_size == 0) ||
 	    ((mpd->b_state  & (1 << BH_Mapped)) &&
 	     !(mpd->b_state & (1 << BH_Delay)) &&
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	     !(mpd->b_state & (1 << BH_Unwritten)) &&
+		 !(mpd->b_state & (1 << BH_Remap))))
+#else
 	     !(mpd->b_state & (1 << BH_Unwritten))))
+#endif
 		goto submit_io;
 
 	handle = ext4_journal_current_handle();
@@ -2754,6 +2768,13 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
 		get_blocks_flags |= EXT4_GET_BLOCKS_IO_CREATE_EXT;
 	if (mpd->b_state & (1 << BH_Delay))
 		get_blocks_flags |= EXT4_GET_BLOCKS_DELALLOC_RESERVE;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (mpd->b_state & (1 << BH_Remap))
+		get_blocks_flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+
+	printk("flush %d blocks at %d, %x mapped %d\n", map.m_len,
+			map.m_lblk, get_blocks_flags, mpd->b_state & BH_Mapped);
+#endif
 
 	blks = ext4_map_blocks(handle, mpd->inode, &map, get_blocks_flags);
 	if (blks < 0) {
@@ -2837,8 +2858,13 @@ submit_io:
 	mpd->io_done = 1;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+#define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
+		(1 << BH_Delay) | (1 << BH_Unwritten) | (1 << BH_Remap))
+#else
 #define BH_FLAGS ((1 << BH_Uptodate) | (1 << BH_Mapped) | \
 		(1 << BH_Delay) | (1 << BH_Unwritten))
+#endif
 
 /*
  * mpage_add_bh_to_extent - try to add one more block to extent of blocks
@@ -2915,10 +2941,19 @@ flush_it:
 	return;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+static int ext4_bh_delay_or_unwritten_or_remap(handle_t *handle,
+		struct buffer_head *bh)
+{
+	return ((buffer_delay(bh) || buffer_unwritten(bh)) && buffer_dirty(bh)) ||
+		buffer_remap(bh);
+}
+#else
 static int ext4_bh_delay_or_unwritten(handle_t *handle, struct buffer_head *bh)
 {
 	return (buffer_delay(bh) || buffer_unwritten(bh)) && buffer_dirty(bh);
 }
+#endif
 
 /*
  * __mpage_da_writepage - finds extent of pages and blocks
@@ -2991,7 +3026,11 @@ static int __mpage_da_writepage(struct page *page,
 			 * Otherwise we won't make progress
 			 * with the page in ext4_writepage
 			 */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+			if (ext4_bh_delay_or_unwritten_or_remap(NULL, bh)) {
+#else
 			if (ext4_bh_delay_or_unwritten(NULL, bh)) {
+#endif
 				mpage_add_bh_to_extent(mpd, logical,
 						       bh->b_size,
 						       bh->b_state);
@@ -3035,9 +3074,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	int ret = 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	handle_t *handle = ext4_journal_current_handle();
-	unsigned flags = EXT4_GET_BLOCKS_DELAY_CREATE;
+	int flags = 0;
 #endif
-
 	sector_t invalid_block = ~((sector_t) 0xffff);
 
 	if (invalid_block < ext4_blocks_count(EXT4_SB(inode->i_sb)->s_es))
@@ -3050,16 +3088,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	map.m_len = 1;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if ((flags & EXT4_GET_BLOCKS_DELAY_CREATE) &&
-	    ext4_snapshot_should_move_data(inode))
+	if (ext4_snapshot_should_move_data(inode))
 		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
-	if ((flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE) &&
-	     buffer_partial_write(bh)) {
-		/* Read existing block data before moving it to snapshot */
-		ret = ext4_partial_write_begin(inode, iblock, bh);
-		if (ret < 0)
-			goto out;
-	}
 #endif
 
 	/*
@@ -3068,6 +3098,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	 * the same as allocated blocks.
 	 */
 
+	printk("ext4_get_block_prep: inode %d at %d\n", inode->i_ino, map.m_lblk);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	ret = ext4_map_blocks(handle, inode, &map, flags);
 #else
@@ -3075,6 +3106,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 #endif
 	if (ret < 0)
 		return ret;
+	printk("ext4_get_block_prep: inode %d at %d ret %d\n", inode->i_ino,
+		   map.m_lblk, ret);
 	if (ret == 0) {
 		if (buffer_delay(bh))
 			return 0; /* Not sure this could or should happen */
@@ -3095,7 +3128,8 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 
 	map_bh(bh, inode->i_sb, map.m_pblk);
 	bh->b_state = (bh->b_state & ~EXT4_MAP_FLAGS) | map.m_flags;
-
+	
+	printk("buffer remap %d\n", buffer_remap(bh));
 	if (buffer_unwritten(bh)) {
 		/* A delayed write to unwritten bh should be marked
 		 * new and mapped.  Mapped ensures that we don't do
@@ -3108,10 +3142,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	}
 
 out:
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/*We need to clear partial write flag here */
-	clear_buffer_partial_write(bh);
-#endif
 	return 0;
 }
 
@@ -3266,7 +3296,11 @@ static int ext4_writepage(struct page *page,
 	}
 	page_bufs = page_buffers(page);
 	if (walk_page_buffers(NULL, page_bufs, 0, len, NULL,
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+			      ext4_bh_delay_or_unwritten_or_remap)) {
+#else
 			      ext4_bh_delay_or_unwritten)) {
+#endif
 		/*
 		 * We don't want to do block allocation, so redirty
 		 * the page and return.  We may reach here when we do
@@ -3735,7 +3769,7 @@ retry:
 	*pagep = page;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (EXT4_SNAPSHOTS(inode->i_sb))
-		ext4_snapshot_write_begin(inode, page, len);
+		ext4_snapshot_write_begin(inode, page, len, 1);
 #endif
 
 	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);

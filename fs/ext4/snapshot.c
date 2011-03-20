@@ -1042,8 +1042,11 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 		/* don't move - we were just checking */
 		goto out;
 
-	/* try to move @count blocks from inode to snapshot */
-	/* @count blocks may cross block boundry. */
+	/* try to move @count blocks from inode to snapshot.
+	 * @count blocks may cross block boundry.
+	 * TODO: if moving fails after some blocks has been moved,
+	 * maybe we need a blockbitmap fsck.
+	 */
 	blk = block;
 	while (count) {
 		err = ext4_snapshot_map_blocks(handle, active_snapshot, blk,

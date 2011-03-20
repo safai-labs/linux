@@ -2770,9 +2770,6 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (mpd->b_state & (1 << BH_Remap))
 		get_blocks_flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
-
-	printk("flush %d blocks at %d, %x mapped %d\n", map.m_len,
-			map.m_lblk, get_blocks_flags, mpd->b_state & BH_Mapped);
 #endif
 
 	blks = ext4_map_blocks(handle, mpd->inode, &map, get_blocks_flags);

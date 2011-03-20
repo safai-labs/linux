@@ -1282,12 +1282,11 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (map->m_flags & EXT4_MAP_REMAP) {
 		int ret;
+		map->m_len = count; 
 		/* move old block to snapshot */
 		ret = ext4_snapshot_get_move_access(handle, inode,
 						    le32_to_cpu(*(partial->p)),
 						    &map->m_len, 1);
-//		BUG_ON(map->m_len != count);
-		printk("move %d blocks of %d\n", map->m_len, count);
 		if (ret < 1) {
 			/* failed to move to snapshot - free new block */
 			ext4_free_blocks(handle, inode, partial->bh,
@@ -3098,7 +3097,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	 * the same as allocated blocks.
 	 */
 
-	printk("ext4_get_block_prep: inode %d at %d\n", inode->i_ino, map.m_lblk);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	ret = ext4_map_blocks(handle, inode, &map, flags);
 #else
@@ -3106,8 +3104,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 #endif
 	if (ret < 0)
 		return ret;
-	printk("ext4_get_block_prep: inode %d at %d ret %d\n", inode->i_ino,
-		   map.m_lblk, ret);
 	if (ret == 0) {
 		if (buffer_delay(bh))
 			return 0; /* Not sure this could or should happen */
@@ -3129,7 +3125,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	map_bh(bh, inode->i_sb, map.m_pblk);
 	bh->b_state = (bh->b_state & ~EXT4_MAP_FLAGS) | map.m_flags;
 	
-	printk("buffer remap %d\n", buffer_remap(bh));
 	if (buffer_unwritten(bh)) {
 		/* A delayed write to unwritten bh should be marked
 		 * new and mapped.  Mapped ensures that we don't do

@@ -3540,7 +3540,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	ext4_fsblk_t newblock = 0;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	ext4_fsblk_t oldblock = 0;
-	int maxblocks;
 #endif
 	int err = 0, depth, ret;
 	unsigned int allocated = 0;
@@ -3672,10 +3671,10 @@ found:
 		 * XXX With delayed-move-write support,
 		 * multi-blocks should be moved each time.
 		 */
-		maxblocks = 1;
+		allocated = allocated < map->m_len ? allocated : map->m_len;
 		err = ext4_snapshot_get_move_access(handle, inode, newblock,
-				&map->m_len, 0);
-		allocated = map->m_len;
+				&allocated, 0);
+		map->m_len = allocated;
 		if (err > 0) {
 			if (!(flags & EXT4_GET_BLOCKS_CREATE)) {
 				/* Do not map found block. */
@@ -3719,7 +3718,11 @@ found:
 	err = ext4_ext_search_left(inode, path, &ar.lleft, &ar.pleft);
 	if (err)
 		goto out2;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+	ar.lright = map->m_lblk + allocated;
+#else	
 	ar.lright = map->m_lblk;
+#endif
 	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright);
 	if (err)
 		goto out2;
@@ -3808,14 +3811,11 @@ found:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	if (oldblock) {
 		/*
-		 * Move oldblock to snapshot.
-		 * XXX delayed-mow needs moving multi blocks a time.
+		 * Move oldblocks to snapshot.
 		 */
 		map->m_len = ar.len;
-		maxblocks = ar.len;
 		err = ext4_snapshot_get_move_access(handle, inode,
-				oldblock, &maxblocks, 1);
-		printk("ext4_ext_map_blocks: move %d of %d [%llu]\n", maxblocks, ar.len, oldblock);
+				oldblock, &map->m_len, 1);
 		if (err < 1) {
 			/* MOW fails. */
 			err = err ? : -EIO;	
@@ -3838,7 +3838,6 @@ found:
 					ext4_ext_store_pblock(ex, newblock);
 					err = ext4_ext_dirty(handle, inode,
 						path + depth);
-					printk("new extent: [%d:%d]", le32_to_cpu(ex->ee_block), ext4_ext_get_actual_len(ex));
 				} else 
 					BUG();
 			}

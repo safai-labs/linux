@@ -2769,7 +2769,8 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
 		get_blocks_flags |= EXT4_GET_BLOCKS_DELALLOC_RESERVE;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (mpd->b_state & (1 << BH_Remap))
-		get_blocks_flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+		get_blocks_flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE |
+				EXT4_GET_BLOCKS_DELALLOC_RESERVE;
 #endif
 
 	blks = ext4_map_blocks(handle, mpd->inode, &map, get_blocks_flags);
@@ -3119,9 +3120,16 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 		goto out;
 	}
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (map.m_flags & EXT4_MAP_REMAP) {
+		ret = ext4_da_reserve_space(inode, iblock);
+		if (ret < 0)
+			return ret;	
+	}
+#endif
 	map_bh(bh, inode->i_sb, map.m_pblk);
 	bh->b_state = (bh->b_state & ~EXT4_MAP_FLAGS) | map.m_flags;
-	
+
 	if (buffer_unwritten(bh)) {
 		/* A delayed write to unwritten bh should be marked
 		 * new and mapped.  Mapped ensures that we don't do

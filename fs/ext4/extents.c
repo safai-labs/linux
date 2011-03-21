@@ -3813,7 +3813,7 @@ found:
 		err = ext4_snapshot_get_move_access(handle, inode,
 				oldblock, &map->m_len, 1);
 		if (err < 1) {
-			/* MOW fails. */
+			/* FIXME need ext4_std_error here ? */
 			err = err ? : -EIO;	
 		} else {
 			/* 

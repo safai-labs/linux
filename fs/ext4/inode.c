@@ -1288,6 +1288,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 						    le32_to_cpu(*(partial->p)),
 						    &map->m_len, 1);
 		if (ret < 1) {
+			/* FIXME need ext4_std_error here ? */
 			/* failed to move to snapshot - free new block */
 			ext4_free_blocks(handle, inode, partial->bh,
 				le32_to_cpu(partial->key), count, flags);

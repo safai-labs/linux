@@ -1625,6 +1625,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		 */
 		map->m_flags &= ~EXT4_MAP_MAPPED;
 		retval = 0;
+		return retval;
 	}
 #endif
 	/* If it is only a block(s) look up */
@@ -4425,7 +4426,11 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 		ret = blockdev_direct_IO(rw, iocb, inode,
 					 inode->i_sb->s_bdev, iov,
 					 offset, nr_segs,
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+					 ext4_get_block_write_mow,
+#else
 					 ext4_get_block_write,
+#endif
 					 ext4_end_io_dio);
 		if (iocb->private)
 			EXT4_I(inode)->cur_aio_dio = NULL;

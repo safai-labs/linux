@@ -1660,10 +1660,13 @@ retry:
 		ret = next3_snapshot_get_move_access(handle, inode,
 				le32_to_cpu(*(partial->p)), 1);
 		if (ret < 1) {
-			/* failed to move to snapshot - free new block */
-			next3_free_blocks(handle, inode,
-					le32_to_cpu(partial->key), 1);
+			/* failed to move to snapshot - abort! */
 			err = ret ? : -EIO;
+			next3_journal_abort_handle(__func__,
+					"next3_snapshot_get_move_access", NULL,
+					handle, err);
+			/*next3_free_blocks(handle, inode,
+					le32_to_cpu(partial->key), 1);*/
 			goto out_mutex;
 		}
 		/* block moved to snapshot - continue to splice new block */

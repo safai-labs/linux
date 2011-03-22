@@ -3812,9 +3812,12 @@ found:
 		map->m_len = ar.len;
 		err = ext4_snapshot_get_move_access(handle, inode,
 				oldblock, &map->m_len, 1);
-		if (err < 1) {
-			/* FIXME need ext4_std_error here ? */
-			err = err ? : -EIO;	
+		if (err <= 0) {
+                        /* failed to move to snapshot - abort! */
+                        err = err ? : -EIO;
+                        ext4_journal_abort_handle(__func__, __LINE__,
+					"ext4_snapshot_get_move_access", NULL,
+					handle, err);
 		} else {
 			/* 
 			 * Move to snapshot success.

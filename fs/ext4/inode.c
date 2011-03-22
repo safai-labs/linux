@@ -1250,13 +1250,13 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	err = ext4_alloc_branch_cow(handle, inode, map->m_lblk, indirect_blks,
 				     &count, goal, offsets + (partial - chain),
 				     partial, flags);
+	if (err)
+		goto cleanup;
 #else
 	err = ext4_alloc_branch(handle, inode, map->m_lblk, indirect_blks,
 				&count, goal,
 				offsets + (partial - chain), partial);
 #endif
-	if (err)
-		goto cleanup;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	if (SNAPMAP_ISCOW(flags)) {
@@ -1281,18 +1281,17 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (map->m_flags & EXT4_MAP_REMAP) {
-		int ret;
 		map->m_len = count; 
 		/* move old block to snapshot */
-		ret = ext4_snapshot_get_move_access(handle, inode,
+		err = ext4_snapshot_get_move_access(handle, inode,
 						    le32_to_cpu(*(partial->p)),
 						    &map->m_len, 1);
-		if (ret < 1) {
-			/* FIXME need ext4_std_error here ? */
-			/* failed to move to snapshot - free new block */
-			ext4_free_blocks(handle, inode, partial->bh,
-				le32_to_cpu(partial->key), count, flags);
-			err = ret ? : -EIO;
+		if (err <= 0) {
+                        /* failed to move to snapshot - abort! */
+                        err = err ? : -EIO;
+                        ext4_journal_abort_handle(__func__, __LINE__,
+					"ext4_snapshot_get_move_access", NULL,
+					handle, err);
 			goto cleanup;
 		}
 		/* block moved to snapshot - continue to splice new block */
@@ -1306,11 +1305,11 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	 * credits cannot be returned.  Can we handle this somehow?  We
 	 * may need to return -EAGAIN upwards in the worst case.  --sct
 	 */
-	if (!err)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-		err = ext4_splice_branch_cow(handle, inode, map->m_lblk,
-				     partial, indirect_blks, count, flags);
+	err = ext4_splice_branch_cow(handle, inode, map->m_lblk, partial,
+				     indirect_blks, count, flags);
 #else
+	if (!err)
 		err = ext4_splice_branch(handle, inode, map->m_lblk,
 					 partial, indirect_blks, count);
 #endif

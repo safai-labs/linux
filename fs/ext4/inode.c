@@ -1826,7 +1826,7 @@ int ext4_get_block_mow(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
 {
 	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
-	if (create && ext4_snapshot_should_move_data(inode))
+	if (ext4_snapshot_should_move_data(inode))
 		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
 	return _ext4_get_block(inode, iblock, bh, flags);
 }
@@ -2064,9 +2064,6 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 			set_buffer_partial_write(bh);
 	}
 }
-
-static int ext4_get_block_write_mow(struct inode *inode, sector_t iblock,
-		   struct buffer_head *bh_result, int create);
 #endif
 
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
@@ -2117,11 +2114,7 @@ retry:
 #endif
 
 	if (ext4_should_dioread_nolock(inode))
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-		ret = __block_write_begin(page, pos, len, ext4_get_block_write_mow);
-#else
 		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
-#endif
 	else
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 		ret = __block_write_begin(page, pos, len, ext4_get_block_mow);
@@ -4213,25 +4206,6 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-/*
- * ext4_get_block used when preparing for a DIO write or buffer write.
- * We allocate an uinitialized extent if blocks haven't been allocated.
- * The extent will be converted to initialized after the IO is complete.
- */
-static int ext4_get_block_write_mow(struct inode *inode, sector_t iblock,
-		   struct buffer_head *bh_result, int create)
-{
-	int flags = create ? EXT4_GET_BLOCKS_IO_CREATE_EXT : 0;
-	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
-		   inode->i_ino, create);
-	
-	if (create && ext4_snapshot_should_move_data(inode))
-		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
-	return _ext4_get_block(inode, iblock, bh_result, flags);
-}
-#endif
-
 /*
  * ext4_get_block used when preparing for a DIO write or buffer write.
  * We allocate an uinitialized extent if blocks haven't been allocated.
@@ -4240,10 +4214,21 @@ static int ext4_get_block_write_mow(struct inode *inode, sector_t iblock,
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create)
 {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
+	int flags = create ? EXT4_GET_BLOCKS_IO_CREATE_EXT : 0;
+	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
+		   inode->i_ino, create);
+	
+	if (create && ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+	return _ext4_get_block(inode, iblock, bh_result, flags);
+
+#else
 	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
 		   inode->i_ino, create);
 	return _ext4_get_block(inode, iblock, bh_result,
 			       EXT4_GET_BLOCKS_IO_CREATE_EXT);
+#endif
 }
 
 static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,
@@ -4426,11 +4411,7 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 		ret = blockdev_direct_IO(rw, iocb, inode,
 					 inode->i_sb->s_bdev, iov,
 					 offset, nr_segs,
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-					 ext4_get_block_write_mow,
-#else
 					 ext4_get_block_write,
-#endif
 					 ext4_end_io_dio);
 		if (iocb->private)
 			EXT4_I(inode)->cur_aio_dio = NULL;

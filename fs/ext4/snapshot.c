@@ -968,6 +968,7 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	ext4_fsblk_t blk = 0;
 	int err = 0, count = *maxblocks;
+	int moved_blks = 0;
 	int excluded = 0;
 
 	if (!active_snapshot)
@@ -1041,12 +1042,23 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 		/* don't move - we were just checking */
 		goto out;
 
-	/* try to move @count blocks from inode to snapshot */
-	err = ext4_snapshot_map_blocks(handle, active_snapshot, block,
-			count, NULL, SNAPMAP_MOVE);
-	if (err <= 0)
-		goto out;
-	count = err;
+	/* try to move @count blocks from inode to snapshot.
+	 * @count blocks may cross block boundry.
+	 * TODO: if moving fails after some blocks has been moved,
+	 * maybe we need a blockbitmap fsck.
+	 */
+	blk = block;
+	while (count) {
+		err = ext4_snapshot_map_blocks(handle, active_snapshot, blk,
+					count, NULL, SNAPMAP_MOVE);
+		if (err <= 0)
+			goto out;
+		moved_blks += err;
+		blk += err;
+		count -= err;
+	}
+	count = moved_blks;
+	err = moved_blks;
 	/*
 	 * User should no longer be charged for these blocks.
 	 * Snapshot file owner was charged for these blocks

@@ -1746,7 +1746,7 @@ static int ext4_partial_write_begin(struct inode *inode, sector_t iblock,
 	if (ret <= 0)
 		return ret;
 
-	if (!buffer_uptodate(bh)) {
+	if (!buffer_uptodate(bh) && !buffer_unwritten(bh)) {
 		/* map existing block for read */
 		map_bh(bh, inode->i_sb, map.m_pblk);
 		ll_rw_block(READ, 1, &bh);

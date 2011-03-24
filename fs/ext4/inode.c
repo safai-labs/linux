@@ -1624,8 +1624,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		 * we return an unmapped buffer to fall back to buffered I/O.
 		 */
 		map->m_flags &= ~EXT4_MAP_MAPPED;
-		retval = 0;
-		return retval;
+		return 0;
 	}
 #endif
 	/* If it is only a block(s) look up */

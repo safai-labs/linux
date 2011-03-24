@@ -285,7 +285,7 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	struct buffer_head *cow_bh;
 	ext4_fsblk_t bitmap_blk;
 	ext4_fsblk_t cow_bitmap_blk;
-	int cmd, err = 0;
+	int err = 0;
 
 	desc = ext4_get_group_desc(sb, block_group, NULL);
 	if (!desc)
@@ -353,24 +353,9 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 	if (cow_bh)
 		goto out;
 
-	if (!EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG))
-		cmd = SNAPMAP_BITMAP;
-	else
-#warning fixme: init COW bitmap with flex_bg may use too many buffer credits
-		/*
-		 * XXX: flex_bg break the rule that the block bitmap is the
-		 * first block to be COWed in a group (it may be another
-		 * group's block bitmap), so we cannot use the SNAPMAP_BITMAP
-		 * cmd to bypass the journaling of metadata, which may result
-		 * in running out of buffer credits too soon (i.e. OOPS).
-		 * we need to init all COW bitmaps of a flex group, before
-		 * COWing any other blocks in that flex group.
-		 */
-		cmd = SNAPMAP_COW;
-
 	/* allocate snapshot block for COW bitmap */
 	cow_bh = ext4_getblk(handle, snapshot, SNAPSHOT_IBLOCK(bitmap_blk),
-				cmd, &err);
+			     SNAPMAP_BITMAP, &err);
 	if (!cow_bh)
 		goto out;
 	if (!err) {

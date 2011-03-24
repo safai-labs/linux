@@ -914,13 +914,13 @@ static int ext4_mb_init_cache(struct page *page, char *incore)
 	for (i = 0; i < blocks_per_page; i++) {
 		int group;
 
-		if (!bh[i])
-			/* skip initialized uptodate buddy */
-			continue;
-
 		group = (first_block + i) >> 1;
 		if (group >= ngroups)
 			break;
+
+		if (!bh[group - first_group])
+			/* skip initialized uptodate buddy */
+			continue;
 
 		/*
 		 * data carry information regarding this

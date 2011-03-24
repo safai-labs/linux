@@ -178,7 +178,10 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 			/*
 			 * 'blk' is the COW bitmap physical block -
 			 * store it in cow_bh for subsequent calls
+			 * FIXME: for non-first flex_bg group,
+			 * we will not find COW bitmap like this.
 			 */
+#warning fixme: need to fetch flex_bg cow bitmap from previous group
 			map_bh(cow_bh, inode->i_sb, blk);
 			set_buffer_new(cow_bh);
 			snapshot_debug(3, "COW bitmap #%lu: snapshot "

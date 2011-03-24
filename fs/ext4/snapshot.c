@@ -223,8 +223,9 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	 * changes to block bitmap are the new active snapshot blocks,
 	 * because before allocating/freeing any other blocks a task
 	 * must first get_write_access() on the bitmap and get here.
-	 * TODO: make sure that bitmap write access with flex_bg gets here!
+	 * FIXME: for non-first flex_bg group, we will not init COW bitmap.
 	 */
+#warning fixme: need to init flex_bg cow bitmap before get_write_access
 	ext4_lock_group(sb, block_group);
 
 	/*

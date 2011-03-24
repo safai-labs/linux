@@ -204,7 +204,6 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
 	char *dst, *src, *mask = NULL;
-	struct journal_head *jh;
 
 	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
 	if (!bitmap_bh)
@@ -220,19 +219,13 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	/*
 	 * Another COWing task may be changing this block bitmap
 	 * (allocating active snapshot blocks) while we are trying
-	 * to copy it.  Copying committed_data will keep us
-	 * protected from these changes.  At this point we are
-	 * guaranteed that the only difference between block bitmap
-	 * and committed_data are the new active snapshot blocks,
+	 * to copy it.  At this point we are guaranteed that the only
+	 * changes to block bitmap are the new active snapshot blocks,
 	 * because before allocating/freeing any other blocks a task
-	 * must first get_undo_access() and get here.
+	 * must first get_write_access() on the bitmap and get here.
+	 * TODO: make sure that bitmap write access with flex_bg gets here!
 	 */
-#warning fixme: committed_data is obsolete and locks should be replaced with group_lock
-	jbd_lock_bh_journal_head(bitmap_bh);
-	jbd_lock_bh_state(bitmap_bh);
-	jh = bh2jh(bitmap_bh);
-	if (jh && jh->b_committed_data)
-		src = jh->b_committed_data;
+	ext4_lock_group(sb, block_group);
 
 	/*
 	 * in the path coming from ext4_snapshot_read_block_bitmap(),
@@ -242,8 +235,7 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	__ext4_snapshot_copy_bitmap(cow_bh, dst, src, mask);
 	kunmap_atomic(dst, KM_USER0);
 
-	jbd_unlock_bh_state(bitmap_bh);
-	jbd_unlock_bh_journal_head(bitmap_bh);
+	ext4_unlock_group(sb, block_group);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	brelse(exclude_bitmap_bh);

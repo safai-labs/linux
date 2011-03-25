@@ -122,7 +122,8 @@ static inline int ext4_test_mow_tid(struct inode *inode)
 		ext4_get_snapshot_id(EXT4_SB(inode->i_sb)));
 }
 
-static inline void snapshot_size_extend(struct inode *inode, ext4_fsblk_t blocks)
+static inline void snapshot_size_extend(struct inode *inode,
+			ext4_fsblk_t blocks)
 {
 #ifdef CONFIG_EXT4_FS_DEBUG
 	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
@@ -135,7 +136,8 @@ static inline void snapshot_size_extend(struct inode *inode, ext4_fsblk_t blocks
 	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
 }
 
-static inline void snapshot_size_truncate(struct inode *inode, ext4_fsblk_t blocks)
+static inline void snapshot_size_truncate(struct inode *inode,
+			ext4_fsblk_t blocks)
 {
 	loff_t i_size = (loff_t)blocks << SNAPSHOT_BLOCK_SIZE_BITS;
 

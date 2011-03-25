@@ -103,6 +103,25 @@
 	EXT4_I(inode)->i_disksize = 0;				\
 	snapshot_size_truncate((inode), 0)
 
+/* set trancation ID of active snapshot */
+static inline void ext4_set_snapshot_id(struct ext4_sb_info *sbi)
+{
+	sbi->s_es->s_snapshot_id = 
+		cpu_to_le32((sbi->s_journal->j_transaction_sequence));
+}
+
+/* get trancation ID of active snapshot */
+static inline tid_t ext4_get_snapshot_id(struct ext4_sb_info *sbi)
+{
+	return (tid_t)le32_to_cpu(sbi->s_es->s_snapshot_id);
+}
+
+static inline int ext4_test_mow_tid(struct inode *inode)
+{
+	return tid_gt(EXT4_I(inode)->i_datasync_tid,
+		ext4_get_snapshot_id(EXT4_SB(inode->i_sb)));
+}
+
 static inline void snapshot_size_extend(struct inode *inode, ext4_fsblk_t blocks)
 {
 #ifdef CONFIG_EXT4_FS_DEBUG

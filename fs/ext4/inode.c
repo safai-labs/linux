@@ -4074,10 +4074,11 @@ static int ext4_releasepage(struct page *page, gfp_t wait)
  * ext4_get_block_dio used when preparing for a DIO write
  * to indirect mapped files with snapshots.
  */
-int ext4_get_block_dio(struct inode *inode, sector_t iblock,
+int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
 {
-	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
+	BUG_ON(create == 0);
+	int flags = EXT4_GET_BLOCKS_CREATE;
 
 	/*
 	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
@@ -4150,7 +4151,7 @@ retry:
 				 inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
-				 (rw == WRITE) ? ext4_get_block_dio :
+				 (rw == WRITE) ? ext4_get_block_dio_write :
 #endif
 				 ext4_get_block, NULL);
 

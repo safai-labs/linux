@@ -1,0 +1,6 @@
+-journal COW credits
+     journal COW credits have to be recomputed for extent file.
+
+-partial-write
+     Partial-write need to be handle more elegently for snapshot.
+     A private block_write_begin() is needed.

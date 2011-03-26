@@ -94,26 +94,29 @@
    journalled): alloc(dind+ind+cow) = 9 */
 #define EXT4_COW_BITMAP_CREDITS	(3*EXT4_ALLOC_CREDITS)
 /* number of credits for other block COW operations:
-   alloc(ind+cow)+write(dind+ind) = 8 */
-#define EXT4_COW_BLOCK_CREDITS	(2*EXT4_ALLOC_CREDITS+2*EXT4_WRITE_CREDITS)
-/* number of credits for the first COW operation in the block group:
-   9+8 = 17 */
+   alloc(dind+ind+cow)+write(dind+ind) = 11 */
+#define EXT4_COW_BLOCK_CREDITS	(3*EXT4_ALLOC_CREDITS+2*EXT4_WRITE_CREDITS)
+/* number of credits for the first COW operation in the block group, which
+ * is not the first group in a flex group (alloc 2 dind blocks):
+   9+11 = 20 */
 #define EXT4_COW_CREDITS	(EXT4_COW_BLOCK_CREDITS +	\
 				 EXT4_COW_BITMAP_CREDITS)
 /* number of credits for snapshot operations counted once per transaction:
    write(sb+inode+tind) = 3 */
 #define EXT4_SNAPSHOT_CREDITS	(3*EXT4_WRITE_CREDITS)
 /*
- * in total, for N COW operations, we may have to journal 17N+3 blocks,
- * and we also want to reserve 17+3 credits for the last COW operation,
- * so we add 17(N-1)+3+(17+3) to the requested N buffer credits
- * and request 18N+6 buffer credits.
+ * in total, for N COW operations, we may have to journal 20N+3 blocks,
+ * and we also want to reserve 20+3 credits for the last COW operation,
+ * so we add 20(N-1)+3+(20+3) to the requested N buffer credits
+ * and request 21N+6 buffer credits.
+ * that's a lot of extra credits and much more then needed for the common
+ * case, but what can we do?
  *
  * we are going to need a bigger journal to accommodate the
  * extra snapshot credits.
- * mke2fs uses the following default formula for fs-size above 1G:
+ * mke2fs -j uses the following default formula for fs-size above 1G:
  * journal-size = MIN(128M, fs-size/32)
- * use the following formula and override the default (-J size=):
+ * mke2fs -j -J big uses the following formula:
  * journal-size = MIN(3G, fs-size/32)
  */
 #define EXT4_SNAPSHOT_TRANS_BLOCKS(n) \
@@ -133,10 +136,10 @@
 
 /*
  * Ext4 is not designed for filesystems under 4G with journal size < 128M
- * Recommended journal size is 2G (created with 'mke2fs -j -J big')
+ * Recommended journal size is 3G (created with 'mke2fs -j -J big')
  */
 #define EXT4_MIN_JOURNAL_BLOCKS	32768U
-#define EXT4_BIG_JOURNAL_BLOCKS	(16*EXT4_MIN_JOURNAL_BLOCKS)
+#define EXT4_BIG_JOURNAL_BLOCKS	(24*EXT4_MIN_JOURNAL_BLOCKS)
 #else
  #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
 	(handle->h_buffer_credits >= (n))

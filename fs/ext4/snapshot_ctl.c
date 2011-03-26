@@ -1022,9 +1022,6 @@ next_inode:
 	lock_buffer(es_bh);
 	memcpy(es_bh->b_data, sbi->s_sbh->b_data, sb->s_blocksize);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
-	/* remove the HAS_SNAPSHOT feature to disable ext4 mount */
-	es->s_feature_ro_compat &=
-		~cpu_to_le32(EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 	/* set the IS_SNAPSHOT flag to signal fsck this is a snapshot */
 	es->s_flags |= cpu_to_le32(EXT4_FLAGS_IS_SNAPSHOT);
 	/* reset snapshots list in snapshot's super block copy */

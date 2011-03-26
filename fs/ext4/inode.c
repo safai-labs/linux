@@ -1825,12 +1825,13 @@ int ext4_get_block_mow(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
 {
 	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
+
 	if (ext4_snapshot_should_move_data(inode))
 		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
 	return _ext4_get_block(inode, iblock, bh, flags);
 }
-#endif
 
+#endif
 int ext4_get_block(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
 {
@@ -4151,6 +4152,15 @@ retry:
 				 inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
+				 /*
+				  * snapshots code gets here for DIO write
+				  * to ind mapped files or outside i_size
+				  * of extent mapped files and for DIO read
+				  * to all files.
+				  * XXX: isn't it possible to expose stale data
+				  *      on DIO read to newly allocated ind map
+				  *      blocks or newly MOWed blocks?
+				  */
 				 (rw == WRITE) ? ext4_get_block_dio_write :
 #endif
 				 ext4_get_block, NULL);
@@ -4215,14 +4225,13 @@ static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create)
 {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
-	int flags = create ? EXT4_GET_BLOCKS_IO_CREATE_EXT : 0;
+	int flags = EXT4_GET_BLOCKS_IO_CREATE_EXT;
+
 	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
 		   inode->i_ino, create);
-	
-	if (create && ext4_snapshot_should_move_data(inode))
+	if (ext4_snapshot_should_move_data(inode))
 		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
 	return _ext4_get_block(inode, iblock, bh_result, flags);
-
 #else
 	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
 		   inode->i_ino, create);

@@ -1,0 +1,21 @@
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Sun Mar 27 21:34:57 2011 +0200
+HEAD: d37d9422
+
+during run of phoronix-test-suite and while taking a snapshot every minute,
+the following error happened after 10 minutes during sqlite test:
+
+[278786.691109] pa ffff88002a1821c8: logic 32, phys. 20103712, len 32
+[278786.691117] NEXT4-fs error (device sda6): next4_mb_release_inode_pa:3668: group 613free 30, pa_free 29
+[278786.691125] Aborting journal on device sda6-8.
+[278786.691371] NEXT4-fs (sda6): Remounting filesystem read-only
+
+fsck.next4 reported multiply claimed blocks from sqlite db and snapshots:
+
+File /installed-tests/sqlite/benchmark.db (inode #5022126, mod time
+Sun Mar 27 17:22:37 2011)
+ has 2 multiply-claimed block(s), shared with 2 file(s):
+       /.snapshots/11 (inode #5177356, mod time Sun Mar 27 17:22:36 2011)
+       /.snapshots/10 (inode #5177355, mod time Sun Mar 27 17:21:35 2011)
+
+================================================================================

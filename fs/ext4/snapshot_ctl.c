@@ -1054,8 +1054,6 @@ next_inode:
 	ext4_set_snapshot_id(sbi);
 	sbi->s_es->s_snapshot_inum = cpu_to_le32(inode->i_ino);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-#endif
 	err = 0;
 out_unlockfs:
 	unlock_super(sb);

@@ -103,23 +103,30 @@
 	EXT4_I(inode)->i_disksize = 0;				\
 	snapshot_size_truncate((inode), 0)
 
-/* set trancation ID of active snapshot */
-static inline void ext4_set_snapshot_id(struct ext4_sb_info *sbi)
+#define SNAPSHOT_TRANSACTION_ID(sb)				\
+	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)
+
+static inline int ext4_snapshot_active(struct ext4_sb_info *sbi);
+
+/* set transaction ID for active snapshot */
+static inline void ext4_set_snapshot_tid(struct super_block *sb)
 {
-	sbi->s_es->s_snapshot_id = 
-		cpu_to_le32((sbi->s_journal->j_transaction_sequence));
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	SNAPSHOT_TRANSACTION_ID(sb) =
+			EXT4_SB(sb)->s_journal->j_transaction_sequence;
 }
 
 /* get trancation ID of active snapshot */
-static inline tid_t ext4_get_snapshot_id(struct ext4_sb_info *sbi)
+static inline tid_t ext4_get_snapshot_tid(struct super_block *sb)
 {
-	return (tid_t)le32_to_cpu(sbi->s_es->s_snapshot_id);
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	return SNAPSHOT_TRANSACTION_ID(sb);
 }
 
 static inline int ext4_test_mow_tid(struct inode *inode)
 {
 	return tid_gt(EXT4_I(inode)->i_datasync_tid,
-		ext4_get_snapshot_id(EXT4_SB(inode->i_sb)));
+		      ext4_get_snapshot_tid(inode->i_sb));
 }
 
 static inline void snapshot_size_extend(struct inode *inode,

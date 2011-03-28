@@ -1219,7 +1219,7 @@ struct ext4_super_block {
 	__le16  s_reserved_pad;
 	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
 	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
-	__le32	s_snapshot_id;		/* Active snapshot ID*/
+	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
 	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
 	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
 #define EXT4_S_ERR_START offsetof(struct ext4_super_block, s_error_count)

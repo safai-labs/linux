@@ -480,6 +480,9 @@ static int ext4_snapshot_create(struct inode *inode)
 
 	/* record the new snapshot ID in the snapshot inode generation field */
 	inode->i_generation = le32_to_cpu(sbi->s_es->s_snapshot_id) + 1;
+	if (inode->i_generation == 0)
+		/* 0 is not a valid snapshot id */
+		inode->i_generation = 1;
 
 	/* record the file system size in the snapshot inode disksize field */
 	SNAPSHOT_SET_BLOCKS(inode, snapshot_blocks);
@@ -1051,8 +1054,14 @@ next_inode:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
 	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le64(snapshot_r_blocks);
 #endif
-	ext4_set_snapshot_id(sbi);
+
+	sbi->s_es->s_snapshot_id =
+		cpu_to_le32(le32_to_cpu(sbi->s_es->s_snapshot_id) + 1);
+	if (sbi->s_es->s_snapshot_id == 0)
+		/* 0 is not a valid snapshot id */
+		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
 	sbi->s_es->s_snapshot_inum = cpu_to_le32(inode->i_ino);
+	ext4_set_snapshot_tid(sb);
 
 	err = 0;
 out_unlockfs:

@@ -3792,7 +3792,8 @@ found:
 	 * Please refer to code and comments about preallocation in
 	 * mballoc.c for more information.
 	 */
-	if (!ext4_test_mow_tid(inode)) {
+	if (ext4_snapshot_active(EXT4_SB(inode->i_sb)) &&
+	    !ext4_test_mow_tid(inode)) {
 		ext4_discard_preallocations(inode);
 	}
 #endif
@@ -3903,7 +3904,15 @@ found:
 	 */
 	if ((flags & EXT4_GET_BLOCKS_UNINIT_EXT) == 0) {
 		ext4_ext_put_in_cache(inode, map->m_lblk, allocated, newblock);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		if (SNAPMAP_ISCOW(flags) && SNAPMAP_ISMOVE(flags))
+			/* do not uptade i_data_sync_id of snapshot */
+			ext4_update_inode_fsync_trans(handle, inode, 0);
+		else
+			ext4_update_inode_fsync_trans(handle, inode, 1);
+#else
 		ext4_update_inode_fsync_trans(handle, inode, 1);
+#endif
 	} else
 		ext4_update_inode_fsync_trans(handle, inode, 0);
 out:

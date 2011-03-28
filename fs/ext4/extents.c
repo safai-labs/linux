@@ -3794,6 +3794,8 @@ found:
 	 */
 	if (ext4_snapshot_active(EXT4_SB(inode->i_sb)) &&
 	    !ext4_test_mow_tid(inode)) {
+		printk("discard inode preallocations for inode %lu\n",
+			inode->i_ino);
 		ext4_discard_preallocations(inode);
 	}
 #endif
@@ -3902,17 +3904,18 @@ found:
 	 * Cache the extent and update transaction to commit on fdatasync only
 	 * when it is _not_ an uninitialized extent.
 	 */
-	if ((flags & EXT4_GET_BLOCKS_UNINIT_EXT) == 0) {
-		ext4_ext_put_in_cache(inode, map->m_lblk, allocated, newblock);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-		if (SNAPMAP_ISCOW(flags) && SNAPMAP_ISMOVE(flags))
-			/* do not uptade i_data_sync_id of snapshot */
-			ext4_update_inode_fsync_trans(handle, inode, 0);
-		else
-			ext4_update_inode_fsync_trans(handle, inode, 1);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+	if (IS_COWING(handle)) {
+		/*
+		 * snapshot does not supprt fdatasync and fsync
+		 * and there is no need to cache extent
+		 */
+	} else if ((flags & EXT4_GET_BLOCKS_UNINIT_EXT) == 0) {
 #else
-		ext4_update_inode_fsync_trans(handle, inode, 1);
+	if ((flags & EXT4_GET_BLOCKS_UNINIT_EXT) == 0) {
 #endif
+		ext4_ext_put_in_cache(inode, map->m_lblk, allocated, newblock);
+		ext4_update_inode_fsync_trans(handle, inode, 1);
 	} else
 		ext4_update_inode_fsync_trans(handle, inode, 0);
 out:

@@ -1318,7 +1318,12 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 	map->m_flags |= EXT4_MAP_NEW;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (!IS_COWING(handle))
+		ext4_update_inode_fsync_trans(handle, inode, 1);
+#else
 	ext4_update_inode_fsync_trans(handle, inode, 1);
+#endif
 got_it:
 
 	map->m_flags |= EXT4_MAP_MAPPED;
@@ -4078,9 +4083,9 @@ static int ext4_releasepage(struct page *page, gfp_t wait)
 int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
 {
-	BUG_ON(create == 0);
 	int flags = EXT4_GET_BLOCKS_CREATE;
 
+	BUG_ON((create & EXT4_GET_BLOCKS_CREATE) == 0);
 	/*
 	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
 	 * but we know this is a write, so we need to check if block

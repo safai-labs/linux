@@ -1055,35 +1055,15 @@ next_inode:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
 	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le64(snapshot_r_blocks);
 #endif
+
 	sbi->s_es->s_snapshot_id =
-		cpu_to_le32(le32_to_cpu(sbi->s_es->s_snapshot_id)+1);
+		cpu_to_le32(le32_to_cpu(sbi->s_es->s_snapshot_id) + 1);
 	if (sbi->s_es->s_snapshot_id == 0)
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
 	sbi->s_es->s_snapshot_inum = cpu_to_le32(inode->i_ino);
+	ext4_set_snapshot_tid(sb);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/* 
-	 * All inode preallocations need to be discarded, otherwise blocks
-	 * maybe used by both a regular file and the snapshot file that we
-	 * are taking in the below case.
-	 *
-	 * Case: An user take a snapshot when an inode has a preallocation
-	 * 12/512, of which 12/64 has been used by the inode. Here 12 is the
-	 * logical block number. After the snapshot is taken, an user issues
-	 * a write request on the 12th block, then an allocation on 12 is
-	 * needed and allocator will use blocks from the preallocations.As
-	 * a result, the event above happens.
-	 *
-	 *
-	 * For now, all preallocations are discarded.
-	 *
-	 * Please refer to code and comments about preallocation in
-	 * mballoc.c for more information.
-	 */
-
-	ext4_mb_discard_all_preallocations(sb);
-#endif
 	err = 0;
 out_unlockfs:
 	unlock_super(sb);

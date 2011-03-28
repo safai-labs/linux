@@ -72,7 +72,7 @@
 	(ext4_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-5 (23-Mar-2010)"
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-5 (28-Mar-2010)"
 
 #define SNAPSHOT_BYTES_OFFSET					\
 	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
@@ -103,7 +103,34 @@
 	EXT4_I(inode)->i_disksize = 0;				\
 	snapshot_size_truncate((inode), 0)
 
-static inline void snapshot_size_extend(struct inode *inode, ext4_fsblk_t blocks)
+#define SNAPSHOT_TRANSACTION_ID(sb)				\
+	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)
+
+static inline int ext4_snapshot_active(struct ext4_sb_info *sbi);
+
+/* set transaction ID for active snapshot */
+static inline void ext4_set_snapshot_tid(struct super_block *sb)
+{
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	SNAPSHOT_TRANSACTION_ID(sb) =
+			EXT4_SB(sb)->s_journal->j_transaction_sequence;
+}
+
+/* get trancation ID of active snapshot */
+static inline tid_t ext4_get_snapshot_tid(struct super_block *sb)
+{
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	return SNAPSHOT_TRANSACTION_ID(sb);
+}
+
+static inline int ext4_test_mow_tid(struct inode *inode)
+{
+	return tid_gt(EXT4_I(inode)->i_datasync_tid,
+		      ext4_get_snapshot_tid(inode->i_sb));
+}
+
+static inline void snapshot_size_extend(struct inode *inode,
+			ext4_fsblk_t blocks)
 {
 #ifdef CONFIG_EXT4_FS_DEBUG
 	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
@@ -116,7 +143,8 @@ static inline void snapshot_size_extend(struct inode *inode, ext4_fsblk_t blocks
 	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
 }
 
-static inline void snapshot_size_truncate(struct inode *inode, ext4_fsblk_t blocks)
+static inline void snapshot_size_truncate(struct inode *inode,
+			ext4_fsblk_t blocks)
 {
 	loff_t i_size = (loff_t)blocks << SNAPSHOT_BLOCK_SIZE_BITS;
 

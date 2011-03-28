@@ -1318,7 +1318,12 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 	map->m_flags |= EXT4_MAP_NEW;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	if (!IS_COWING(handle))
+		ext4_update_inode_fsync_trans(handle, inode, 1);
+#else
 	ext4_update_inode_fsync_trans(handle, inode, 1);
+#endif
 got_it:
 
 	map->m_flags |= EXT4_MAP_MAPPED;
@@ -1624,8 +1629,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		 * we return an unmapped buffer to fall back to buffered I/O.
 		 */
 		map->m_flags &= ~EXT4_MAP_MAPPED;
-		retval = 0;
-		return retval;
+		return 0;
 	}
 #endif
 	/* If it is only a block(s) look up */
@@ -4076,10 +4080,10 @@ static int ext4_releasepage(struct page *page, gfp_t wait)
  * ext4_get_block_dio used when preparing for a DIO write
  * to indirect mapped files with snapshots.
  */
-int ext4_get_block_dio(struct inode *inode, sector_t iblock,
+int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
 {
-	int flags = create ? EXT4_GET_BLOCKS_CREATE : 0;
+	int flags = EXT4_GET_BLOCKS_CREATE;
 
 	/*
 	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
@@ -4161,7 +4165,7 @@ retry:
 				  *      on DIO read to newly allocated ind map
 				  *      blocks or newly MOWed blocks?
 				  */
-				 (rw == WRITE) ? ext4_get_block_dio :
+				 (rw == WRITE) ? ext4_get_block_dio_write :
 #endif
 				 ext4_get_block, NULL);
 

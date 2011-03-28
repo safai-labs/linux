@@ -907,6 +907,8 @@ copy_inode_blocks:
 	 */
 	iloc.block_group = 0;
 	err = next3_get_inode_loc(curr_inode, &iloc);
+	brelse(bhs[COPY_INODE_TABLE]);
+	bhs[COPY_INODE_TABLE] = iloc.bh;
 	desc = next3_get_group_desc(sb, iloc.block_group, NULL);
 	if (err || !desc) {
 		snapshot_debug(1, "failed to read inode and bitmap blocks "
@@ -921,13 +923,12 @@ copy_inode_blocks:
 		goto next_inode;
 	prev_inode_blk = iloc.bh->b_blocknr;
 #endif
-	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
-		brelse(bhs[i]);
+	brelse(bhs[COPY_BLOCK_BITMAP]);
 	bhs[COPY_BLOCK_BITMAP] = sb_bread(sb,
 			le32_to_cpu(desc->bg_block_bitmap));
+	brelse(bhs[COPY_INODE_BITMAP]);
 	bhs[COPY_INODE_BITMAP] = sb_bread(sb,
 			le32_to_cpu(desc->bg_inode_bitmap));
-	bhs[COPY_INODE_TABLE] = iloc.bh;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
 	brelse(exclude_bitmap_bh);
 	exclude_bitmap_bh = read_exclude_bitmap(sb, iloc.block_group);

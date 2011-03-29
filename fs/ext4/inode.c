@@ -4085,7 +4085,6 @@ int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
 {
 	int flags = EXT4_GET_BLOCKS_CREATE;
 
-	BUG_ON((create & EXT4_GET_BLOCKS_CREATE) == 0);
 	/*
 	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
 	 * but we know this is a write, so we need to check if block

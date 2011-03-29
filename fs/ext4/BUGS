@@ -1,27 +1,6 @@
 Reported-by: Amir Goldstein <amir73il@users.sf.net>
-Date:   Sun Mar 27 21:34:57 2011 +0200
-HEAD: d37d9422
-
-during run of phoronix-test-suite and while taking a snapshot every minute,
-the following error happened after 10 minutes during sqlite test:
-
-[278786.691109] pa ffff88002a1821c8: logic 32, phys. 20103712, len 32
-[278786.691117] NEXT4-fs error (device sda6): next4_mb_release_inode_pa:3668: group 613free 30, pa_free 29
-[278786.691125] Aborting journal on device sda6-8.
-[278786.691371] NEXT4-fs (sda6): Remounting filesystem read-only
-
-fsck.next4 reported multiply claimed blocks from sqlite db and snapshots:
-
-File /installed-tests/sqlite/benchmark.db (inode #5022126, mod time
-Sun Mar 27 17:22:37 2011)
- has 2 multiply-claimed block(s), shared with 2 file(s):
-       /.snapshots/11 (inode #5177356, mod time Sun Mar 27 17:22:36 2011)
-       /.snapshots/10 (inode #5177355, mod time Sun Mar 27 17:21:35 2011)
-
-================================================================================
-Reported-by: Amir Goldstein <amir73il@users.sf.net>
 Date:   Mon Mar 28 16:52:23 2011 +0200
-HEAD: 00b08a6
+HEAD: 6fabd57c
 
 when running xfstest 70 with acl,user_xattr mount options, the test hangs on fsstress task:
 
@@ -53,4 +32,67 @@ when running xfstest 70 with acl,user_xattr mount options, the test hangs on fss
 [ 1801.310538]  [<ffffffff815be0d9>] ? trace_hardirqs_on_thunk+0x3a/0x3f
 [ 1801.310544]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
 [ 1801.310547] INFO: lockdep is turned off.
+
+================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Tue Mar 29 14:04:26 2011 +0200
+HEAD: 6fabd57c
+
+during run of phoronix-test-suite and while taking a snapshot every minute,
+the following error happened during dbench 12 test, at the same second when
+new snapshot was activated.
+
+Mar 29 14:04:26 qalab kernel: [13897.762962] snapshot: snapshot (594) created
+Mar 29 14:04:26 qalab kernel: [13898.062591] snapshot: snapshot (593) deactivated
+Mar 29 14:04:26 qalab kernel: [13898.062596] snapshot: snapshot (594) activated
+Mar 29 14:04:26 qalab kernel: [13898.062619] ------------[ cut here ]------------
+Mar 29 14:04:26 qalab kernel: [13898.062667] kernel BUG at /home/amir/ext4-snapshots/fs/next4/inode.c:1582!
+Mar 29 14:04:26 qalab kernel: [13898.062718] invalid opcode: 0000 [#1] SMP
+Mar 29 14:04:26 qalab kernel: [13898.062753] last sysfs file: /sys/devices/pci0000:00/0000:00:19.0/irq
+Mar 29 14:04:26 qalab kernel: [13898.062795] CPU 3
+Mar 29 14:04:26 qalab kernel: [13898.062811] Modules linked in:
+Mar 29 14:04:26 qalab kernel: [13898.062832] snapshot: snapshot (594) has been taken
+Mar 29 14:04:26 qalab kernel: [13898.062868]  next4 binfmt_misc parport_pc ppdev i915 snd_hda_codec_realtek snd_hda_intel snd_hda_codec snd_hwdep snd_pcm drm_kms_helper snd_seq_midi drm snd_rawmidi snd_seq_midi_event snd_seq snd_timer snd_seq_device snd i2c_algo_bit psmouse soundcore video intel_agp lp tpm_tis parport intel_gtt tpm serio_raw snd_page_alloc tpm_bios usbhid hid firewire_ohci firewire_core crc_itu_t e1000e pata_marvell
+Mar 29 14:04:26 qalab kernel: [13898.063239]
+Mar 29 14:04:26 qalab kernel: [13898.063254] Pid: 564, comm: dbench Tainted: G   M        2.6.38+ #3                  /DQ35JO
+Mar 29 14:04:26 qalab kernel: [13898.063330] RIP: 0010:[<ffffffffa02983f5>]  [<ffffffffa02983f5>] next4_map_blocks+0x285/0x290 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.063411] RSP: 0018:ffff8800c5e8fb88  EFLAGS: 00010287
+Mar 29 14:04:26 qalab kernel: [13898.063448] RAX: ffff8800bd5d6000 RBX: ffff8800c5e8fc28 RCX: 0000000000000000
+Mar 29 14:04:26 qalab kernel: [13898.063494] RDX: ffff8800c5e8fc28 RSI: ffff8800c33f8158 RDI: ffff88008e830428
+Mar 29 14:04:26 qalab kernel: [13898.063540] RBP: ffff8800c5e8fbd8 R08: ffff8800c5e8fcb8 R09: 0000000000000000
+Mar 29 14:04:26 qalab kernel: [13898.063586] R10: 0000000000af0002 R11: ffffffffa02db480 R12: ffff8800c33f8158
+Mar 29 14:04:26 qalab kernel: [13898.063632] R13: ffff88008e830428 R14: 0000000000000000 R15: 0000000000000001
+Mar 29 14:04:26 qalab kernel: [13898.063679] FS:  00007fc29e132700(0000) GS:ffff8800ce980000(0000) knlGS:0000000000000000
+Mar 29 14:04:26 qalab kernel: [13898.063732] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+Mar 29 14:04:26 qalab kernel: [13898.063770] CR2: 000000000086830c CR3: 00000000ac77e000 CR4: 00000000000006e0
+Mar 29 14:04:26 qalab kernel: [13898.063817] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+Mar 29 14:04:26 qalab kernel: [13898.063862] DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+Mar 29 14:04:26 qalab kernel: [13898.063909] Process dbench (pid: 564, threadinfo ffff8800c5e8e000, task ffff8800b5388000)
+Mar 29 14:04:26 qalab kernel: [13898.063961] Stack:
+Mar 29 14:04:26 qalab kernel: [13898.063977]  ffff8800bd5d1000 0000000000000000 ffff8800c5e8fcc0 ffff88008e830428
+Mar 29 14:04:26 qalab kernel: [13898.064038]  ffff8800c5e8fc78 ffff88008e830428 ffff8800c5e8fcb8 0000000000af0002
+Mar 29 14:04:26 qalab kernel: [13898.064099]  0000000000000000 0000000000000001 ffff8800c5e8fc78 ffffffffa02cf430
+Mar 29 14:04:26 qalab kernel: [13898.064160] Call Trace:
+Mar 29 14:04:26 qalab kernel: [13898.064195]  [<ffffffffa02cf430>] next4_snapshot_map_blocks+0x50/0x120 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064248]  [<ffffffff8124e3b5>] ? do_get_write_access+0x3c5/0x530
+Mar 29 14:04:26 qalab kernel: [13898.064304]  [<ffffffffa02d0ad2>] next4_snapshot_test_and_cow+0x572/0xa30 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064366]  [<ffffffffa02bdd0b>] __next4_journal_get_write_access_inode+0xdb/0xf0 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064430]  [<ffffffffa029407a>] next4_reserve_inode_write+0x7a/0xa0 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064488]  [<ffffffffa02a1099>] ? next4_unlink+0x1a9/0x2c0 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064545]  [<ffffffffa0294780>] next4_mark_inode_dirty+0x70/0x250 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064601]  [<ffffffffa029e93f>] ? next4_delete_entry+0x10f/0x180 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064649]  [<ffffffff8118359b>] ? __d_lookup+0x1eb/0x240
+Mar 29 14:04:26 qalab kernel: [13898.064697]  [<ffffffffa02a1099>] next4_unlink+0x1a9/0x2c0 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.064741]  [<ffffffff8117871b>] vfs_unlink+0x9b/0xf0
+Mar 29 14:04:26 qalab kernel: [13898.064779]  [<ffffffff8117b106>] do_unlinkat+0x1b6/0x1e0
+Mar 29 14:04:26 qalab kernel: [13898.064817]  [<ffffffff81170e16>] ? sys_newstat+0x36/0x50
+Mar 29 14:04:26 qalab kernel: [13898.064854]  [<ffffffff815be0d9>] ? trace_hardirqs_on_thunk+0x3a/0x3f
+Mar 29 14:04:26 qalab kernel: [13898.064899]  [<ffffffff81135d8c>] ? might_fault+0x5c/0xb0
+Mar 29 14:04:26 qalab kernel: [13898.064936]  [<ffffffff8117b146>] sys_unlink+0x16/0x20
+Mar 29 14:04:26 qalab kernel: [13898.064975]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
+Mar 29 14:04:26 qalab kernel: [13898.065014] Code: e7 e8 30 ab ff ff 85 c0 0f 84 02 ff ff ff e9 4d ff ff ff eb 01 90 ba 01 00 00 00 44 89 ee 4c 89 e7 e8 f0 a8 ff ff e9 bc fe ff ff <0f> 0b eb fe eb 05 90 90 90 90 90 55 48 89 e5 48 83 c4 80 48 89
+Mar 29 14:04:26 qalab kernel: [13898.065337] RIP  [<ffffffffa02983f5>] next4_map_blocks+0x285/0x290 [next4]
+Mar 29 14:04:26 qalab kernel: [13898.065397]  RSP <ffff8800c5e8fb88>
+Mar 29 14:04:26 qalab kernel: [13898.089325] ---[ end trace da1d6c3b51f3e8bf ]---
+
 

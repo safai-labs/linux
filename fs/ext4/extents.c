@@ -3772,34 +3772,6 @@ found:
 		/* disable in-core preallocation for non-regular files */
 		ar.flags = 0;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-	/* 
-	 * All inode preallocations allocated before the time when the
-	 * active snapshot is taken need to be discarded, otherwise blocks
-	 * maybe used by both a regular file and the snapshot file that we
-	 * are taking in the below case.
-	 *
-	 * Case: An user take a snapshot when an inode has a preallocation
-	 * 12/512, of which 12/64 has been used by the inode. Here 12 is the
-	 * logical block number. After the snapshot is taken, an user issues
-	 * a write request on the 12th block, then an allocation on 12 is
-	 * needed and allocator will use blocks from the preallocations.As
-	 * a result, the event above happens.
-	 *
-	 *
-	 * For now, all preallocations are discarded.
-	 *
-	 * Please refer to code and comments about preallocation in
-	 * mballoc.c for more information.
-	 */
-	if (ext4_snapshot_active(EXT4_SB(inode->i_sb)) &&
-	    !ext4_test_mow_tid(inode)) {
-		printk("discard inode preallocations for inode %lu\n",
-			inode->i_ino);
-		ext4_discard_preallocations(inode);
-	}
-#endif
-
 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
 	if (!newblock)
 		goto out2;

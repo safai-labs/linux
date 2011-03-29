@@ -887,7 +887,7 @@ int ext4_snapshot_take(struct inode *inode)
 	 * flush journal to disk and clear the RECOVER flag
 	 * before taking the snapshot
 	 */
-	sb->s_op->freeze_fs(sb);
+	freeze_super(sb);
 	lock_super(sb);
 
 #ifdef CONFIG_EXT4_FS_DEBUG
@@ -1067,7 +1067,7 @@ next_inode:
 	err = 0;
 out_unlockfs:
 	unlock_super(sb);
-	sb->s_op->unfreeze_fs(sb);
+	thaw_super(sb);
 
 	if (err)
 		goto out_err;
@@ -2282,14 +2282,14 @@ prev_snapshot:
 				       EXT4_INODE_SNAPFILE_DELETED);
 	if (deleted && igrab(active_snapshot)) {
 		/* lock journal updates before deactivating snapshot */
-		sb->s_op->freeze_fs(sb);
+		freeze_super(sb);
 		lock_super(sb);
 		/* deactivate in-memory active snapshot - cannot fail */
 		(void) ext4_snapshot_set_active(sb, NULL);
 		/* clear on-disk active snapshot */
 		EXT4_SB(sb)->s_es->s_snapshot_inum = 0;
 		unlock_super(sb);
-		sb->s_op->unfreeze_fs(sb);
+		thaw_super(sb);
 		/* remove unused deleted active snapshot */
 		err = ext4_snapshot_remove(active_snapshot);
 		/* drop the refcount to 0 */

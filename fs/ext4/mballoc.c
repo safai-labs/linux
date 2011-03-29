@@ -4278,22 +4278,6 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
 	return freed;
 }
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-/* maximum int value */
-#define NEEDED 0xfffffff
-void ext4_mb_discard_all_preallocations(struct super_block *sb)
-{
-	ext4_group_t i, ngroups = ext4_get_groups_count(sb);
-	int ret = 1;
-
-	for (i = 0; i < ngroups; i++) {
-		while (ret > 0)
-			ret = ext4_mb_discard_group_preallocations(sb,
-					i, NEEDED);
-	}
-}
-#endif
-
 /*
  * Main entry point into mballoc to allocate blocks
  * it tries to use preallocation first, then falls back

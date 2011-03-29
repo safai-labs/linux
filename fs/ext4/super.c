@@ -2738,6 +2738,40 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 			return 0;
 		}
 	}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	/* Enforce snapshots requirements: */
+	if (EXT4_SNAPSHOTS(sb)) {
+		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+					EXT4_FEATURE_INCOMPAT_EXTENTS|
+#endif
+					EXT4_FEATURE_INCOMPAT_FLEX_BG|
+					EXT4_FEATURE_INCOMPAT_64BIT)) {
+			ext4_msg(sb, KERN_ERR,
+				"has_snapshot feature cannot be mixed with "
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+				"features: flex_bg, 64bit");
+#else
+				"features: flex_bg, extents, 64bit");
+#endif
+			return 0;
+		}
+		if (!EXT4_HAS_COMPAT_FEATURE(sb,
+					EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
+			ext4_msg(sb, KERN_ERR,
+				"exclude_inode feature is required "
+				"for snapshots");
+			return 0;
+		}
+		if (EXT4_TEST_FLAGS(sb, EXT4_FLAGS_IS_SNAPSHOT)) {
+			ext4_msg(sb, KERN_ERR,
+				"A snapshot image must be mounted read-only. "
+				"If this is an exported snapshot image, you "
+				"must run fsck -xy to make it writable.");
+			return 0;
+		}
+	}
+#endif
 	return 1;
 }
 
@@ -3149,23 +3183,6 @@ static void ext4_destroy_lazyinit_thread(void)
 
 	kthread_stop(ext4_lazyinit_task);
 }
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-
-static char *journal_mode_string(struct super_block *sb)
-{
-	if (!EXT4_SB(sb)->s_journal)
-		return "no-journal";
-	switch (test_opt(sb, DATA_FLAGS)) {
-	case EXT4_MOUNT_JOURNAL_DATA:
-		return "journal";
-	case EXT4_MOUNT_ORDERED_DATA:
-		return "ordered";
-	case EXT4_MOUNT_WRITEBACK_DATA:
-		return "writeback";
-	}
-	return "unknown";
-}
-#endif
 
 static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 				__releases(kernel_lock)
@@ -3338,37 +3355,13 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	/* Enforce snapshots requirements: */
-	if (EXT4_SNAPSHOTS(sb)) {
-		if (blocksize != PAGE_SIZE) {
-			ext4_msg(sb, KERN_ERR,
+	/* Enforce snapshots blocksize == pagesize */
+	if (EXT4_SNAPSHOTS(sb) && blocksize != PAGE_SIZE) {
+		ext4_msg(sb, KERN_ERR,
 				"snapshots require that filesystem blocksize "
 				"(%d) be equal to system page size (%lu)",
 				blocksize, PAGE_SIZE);
-			goto failed_mount;
-		}
-		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
-#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-					EXT4_FEATURE_INCOMPAT_EXTENTS|
-#endif
-					EXT4_FEATURE_INCOMPAT_FLEX_BG|
-					EXT4_FEATURE_INCOMPAT_64BIT)) {
-			ext4_msg(sb, KERN_ERR,
-				"has_snapshot feature cannot be mixed with "
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-				"features: flex_bg, 64bit");
-#else
-				"features: flex_bg, extents, 64bit");
-#endif
-			goto failed_mount;
-		}
-		if (!EXT4_HAS_COMPAT_FEATURE(sb,
-					EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
-			ext4_msg(sb, KERN_ERR,
-				"exclude_inode feature is required "
-				"for snapshots");
-			goto failed_mount;
-		}
+		goto failed_mount;
 	}
 
 #endif
@@ -3732,23 +3725,13 @@ no_journal:
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	/* Ext4 unsupported mount options */
-	if (EXT4_SNAPSHOTS(sb)) {
-		if (!EXT4_SB(sb)->s_journal ||
-			test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA) {
-			ext4_msg(sb, KERN_ERR,
-				"%s mode is not supported with snapshots",
-				journal_mode_string(sb));
-			goto failed_mount4;
-		}
-#ifdef CONFIG_QUOTA
-		if (sbi->s_jquota_fmt) {
-			ext4_msg(sb, KERN_ERR,
-				"journaled quota is not supported with "
-				"snapshots");
-			goto failed_mount4;
-		}
-#endif
+	/* Enforce journal ordered mode with snapshots */
+	if (EXT4_SNAPSHOTS(sb) && !(sb->s_flags & MS_RDONLY) &&
+		(!EXT4_SB(sb)->s_journal ||
+		 test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA)) {
+		ext4_msg(sb, KERN_ERR,
+				"snapshots require journal ordered mode");
+		goto failed_mount4;
 	}
 
 #endif

@@ -926,6 +926,8 @@ copy_inode_blocks:
 	 */
 	iloc.block_group = 0;
 	err = ext4_get_inode_loc(curr_inode, &iloc);
+	brelse(bhs[COPY_INODE_TABLE]);
+	bhs[COPY_INODE_TABLE] = iloc.bh;
 	desc = ext4_get_group_desc(sb, iloc.block_group, NULL);
 	if (err || !desc) {
 		snapshot_debug(1, "failed to read inode and bitmap blocks "
@@ -940,13 +942,12 @@ copy_inode_blocks:
 		goto next_inode;
 	prev_inode_blk = iloc.bh->b_blocknr;
 #endif
-	for (i = 0; i < COPY_INODE_BLOCKS_NUM; i++)
-		brelse(bhs[i]);
+	brelse(bhs[COPY_BLOCK_BITMAP]);
 	bhs[COPY_BLOCK_BITMAP] = sb_bread(sb,
-		    ext4_block_bitmap(sb, desc));
+			ext4_block_bitmap(sb, desc));
+	brelse(bhs[COPY_INODE_BITMAP]);
 	bhs[COPY_INODE_BITMAP] = sb_bread(sb,
 			ext4_inode_bitmap(sb, desc));
-	bhs[COPY_INODE_TABLE] = iloc.bh;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	brelse(exclude_bitmap_bh);
 	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, iloc.block_group);

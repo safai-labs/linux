@@ -1054,6 +1054,8 @@ struct ext4_inode_info {
 	EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
 #define EXT4_CLEAR_FLAGS(sb, mask) \
 	EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
+#define EXT4_TEST_FLAGS(sb, mask) \
+	(EXT4_SB(sb)->s_es->s_flags & cpu_to_le32(mask))
 #endif
 #endif
 

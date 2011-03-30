@@ -33,3 +33,174 @@ when running xfstest 70 with acl,user_xattr mount options, the test hangs on fss
 [ 1801.310544]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
 [ 1801.310547] INFO: lockdep is turned off.
 
+============================================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Tue Mar 29 22:19:41 2011 +0200
+HEAD: 40073931
+
+the following warnings are printed when deleting a snapshot during phoronix tests:
+
+Mar 29 22:19:41 qalab kernel: [27505.934175] snapshot: snapshot (871) marked for deletion
+Mar 29 22:19:41 qalab kernel: [27505.976536] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976552] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976560] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976571] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976583] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976595] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976609] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976621] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976634] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976645] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976657] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976671] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.988038] snapshot: snapshot (871) deleted
+
+============================================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Tue Mar 29 22:19:43 2011 +0200
+HEAD: 40073931
+
+while running phoronix test suite, the following error happened
+(on all CPUs), during tiobench [64MB Random Write - 32 Threads]:
+
+Mar 29 22:19:43 qalab kernel: [27508.008816] ------------[ cut here ]------------
+Mar 29 22:19:43 qalab kernel: [27508.008858] kernel BUG at /home/amir/ext4-snapshots/fs/next4/extents.c:3871!
+Mar 29 22:19:43 qalab kernel: [27508.008903] invalid opcode: 0000 [#1] SMP 
+Mar 29 22:19:43 qalab kernel: [27508.008934] last sysfs file: /sys/devices/pci0000:00/0000:00:1e.0/0000:06:03.0/local_cpus
+Mar 29 22:19:43 qalab kernel: [27508.008979] CPU 0 
+Mar 29 22:19:43 qalab kernel: [27508.008993] Modules linked in: next4 binfmt_misc parport_pc ppdev i915 snd_hda_codec_realtek snd_hda_intel snd_hda_codec snd_hwdep snd_pcm snd_seq_midi drm_kms_helper snd_rawmidi drm snd_seq_midi_event snd_seq snd_timer snd_seq_device snd psmouse soundcore snd_page_alloc tpm_tis tpm i2c_algo_bit tpm_bios intel_agp intel_gtt video serio_raw lp parport usbhid hid firewire_ohci firewire_core crc_itu_t pata_marvell e1000e
+Mar 29 22:19:43 qalab kernel: [27508.009307] 
+Mar 29 22:19:43 qalab kernel: [27508.009320] Pid: 22968, comm: tiotest Tainted: G   M        2.6.38+ #3                  /DQ35JO
+Mar 29 22:19:43 qalab kernel: [27508.009382] RIP: 0010:[<ffffffffa02a63bf>]  [<ffffffffa02a63bf>] next4_ext_map_blocks+0xb1f/0x1d50 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.009454] RSP: 0018:ffff8800311f39e8  EFLAGS: 00010297
+Mar 29 22:19:43 qalab kernel: [27508.009485] RAX: ffff88003c9d9ff0 RBX: ffff88006408db20 RCX: 00000000001c4029
+Mar 29 22:19:43 qalab kernel: [27508.009525] RDX: 0000000000000b16 RSI: 00000000000a841d RDI: ffffffffa02c5480
+Mar 29 22:19:43 qalab kernel: [27508.009564] RBP: ffff8800311f3b48 R08: 0000000000000014 R09: ff6e14a882d51e02
+Mar 29 22:19:43 qalab kernel: [27508.009604] R10: 0000000001608203 R11: ffffffffa02c5480 R12: ffff8800311f3be8
+Mar 29 22:19:43 qalab kernel: [27508.009644] R13: ffff88011e143e70 R14: ffff88011e143e40 R15: ffff8801055c3818
+Mar 29 22:19:43 qalab kernel: [27508.009684] FS:  00007f78dc6c8700(0000) GS:ffff8800ce800000(0000) knlGS:0000000000000000
+Mar 29 22:19:43 qalab kernel: [27508.009730] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+Mar 29 22:19:43 qalab kernel: [27508.009762] CR2: 00007f92cbdd1560 CR3: 000000011dd6d000 CR4: 00000000000006f0
+Mar 29 22:19:43 qalab kernel: [27508.009803] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+Mar 29 22:19:43 qalab kernel: [27508.009842] DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+Mar 29 22:19:43 qalab kernel: [27508.009883] Process tiotest (pid: 22968, threadinfo ffff8800311f2000, task ffff88011de08000)
+Mar 29 22:19:43 qalab kernel: [27508.009929] Stack:
+Mar 29 22:19:43 qalab kernel: [27508.009943]  ffff8800311f3a38 ffffffff8119d953 ffff8800311f3a28 ffff8800311f3ac8
+Mar 29 22:19:43 qalab kernel: [27508.009996]  ffff8800311f3be8 0000000001641db1 ffffea0000000b17 0000000000000b16
+Mar 29 22:19:43 qalab kernel: [27508.010048]  ffff8800311f3a48 ffffffff81121f76 ffff8800311f3a48 0000000000000b16
+Mar 29 22:19:43 qalab kernel: [27508.010100] Call Trace:
+Mar 29 22:19:43 qalab kernel: [27508.010121]  [<ffffffff8119d953>] ? block_write_full_page_endio+0xe3/0x120
+Mar 29 22:19:43 qalab kernel: [27508.010164]  [<ffffffff81121f76>] ? __pagevec_release+0x26/0x40
+Mar 29 22:19:43 qalab kernel: [27508.010206]  [<ffffffffa027f96d>] ? mpage_da_submit_io+0x33d/0x4f0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.010262]  [<ffffffffa02822a7>] next4_map_blocks+0x137/0x290 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.010308]  [<ffffffffa0282782>] mpage_da_map_and_submit+0xd2/0x450 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.010350]  [<ffffffff811173f0>] ? find_get_pages_tag+0x0/0x1f0
+Mar 29 22:19:43 qalab kernel: [27508.010394]  [<ffffffffa0283000>] write_cache_pages_da+0x410/0x4b0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.010442]  [<ffffffffa0283392>] next4_da_writepages+0x2f2/0x6a0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.010482]  [<ffffffff8111f9f4>] do_writepages+0x24/0x40
+Mar 29 22:19:43 qalab kernel: [27508.010515]  [<ffffffff81115d2b>] __filemap_fdatawrite_range+0x5b/0x60
+Mar 29 22:19:43 qalab kernel: [27508.010554]  [<ffffffff81115d8a>] filemap_write_and_wait_range+0x5a/0x80
+Mar 29 22:19:43 qalab kernel: [27508.010594]  [<ffffffff81198eca>] vfs_fsync_range+0x5a/0xa0
+Mar 29 22:19:43 qalab kernel: [27508.010627]  [<ffffffff8116d840>] ? fget+0x0/0x230
+Mar 29 22:19:43 qalab kernel: [27508.010657]  [<ffffffff81198f7c>] vfs_fsync+0x1c/0x20
+Mar 29 22:19:43 qalab kernel: [27508.010687]  [<ffffffff81198fba>] do_fsync+0x3a/0x60
+Mar 29 22:19:43 qalab kernel: [27508.010717]  [<ffffffff81199010>] sys_fsync+0x10/0x20
+Mar 29 22:19:43 qalab kernel: [27508.010750]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
+Mar 29 22:19:43 qalab kernel: [27508.010784] Code: 4c 89 ff 4d 6b ed 30 4f 8d 2c 2e 4c 89 ea e8 b9 c1 ff ff 85 c0 89 45 cc 0f 85 f3 00 00 00 49 8b 45 10 8b 10 41 3b 54 24 08 74 04 <0f> 0b eb fe 0f b7 50 04 66 81 fa 00 80 0f b7 ca 76 08 89 ca 8d 
+Mar 29 22:19:43 qalab kernel: [27508.011073] RIP  [<ffffffffa02a63bf>] next4_ext_map_blocks+0xb1f/0x1d50 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.011129]  RSP <ffff8800311f39e8>
+Mar 29 22:19:43 qalab kernel: [27508.026279] ------------[ cut here ]------------
+Mar 29 22:19:43 qalab kernel: [27508.026305] kernel BUG at /home/amir/ext4-snapshots/fs/next4/extents.c:3871!
+Mar 29 22:19:43 qalab kernel: [27508.026342] invalid opcode: 0000 [#2] SMP 
+Mar 29 22:19:43 qalab kernel: [27508.026371] last sysfs file: /sys/devices/pci0000:00/0000:00:1e.0/0000:06:03.0/local_cpus
+Mar 29 22:19:43 qalab kernel: [27508.026406] CPU 0 
+Mar 29 22:19:43 qalab kernel: [27508.026417] Modules linked in: next4 binfmt_misc parport_pc ppdev i915 snd_hda_codec_realtek snd_hda_intel snd_hda_codec snd_hwdep snd_pcm snd_seq_midi drm_kms_helper snd_rawmidi drm snd_seq_midi_event snd_seq snd_timer snd_seq_device snd psmouse soundcore snd_page_alloc tpm_tis tpm i2c_algo_bit tpm_bios intel_agp intel_gtt video serio_raw lp parport usbhid hid firewire_ohci firewire_core crc_itu_t pata_marvell e1000e
+Mar 29 22:19:43 qalab kernel: [27508.026688] 
+Mar 29 22:19:43 qalab kernel: [27508.026698] Pid: 22997, comm: tiotest Tainted: G   M        2.6.38+ #3                  /DQ35JO
+Mar 29 22:19:43 qalab kernel: [27508.026747] RIP: 0010:[<ffffffffa02a63bf>]  [<ffffffffa02a63bf>] next4_ext_map_blocks+0xb1f/0x1d50 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.026800] RSP: 0018:ffff880037bad9e8  EFLAGS: 00010283
+Mar 29 22:19:43 qalab kernel: [27508.026825] RAX: ffff8800a5165ff0 RBX: ffff880046338f28 RCX: 00000000001c4029
+Mar 29 22:19:43 qalab kernel: [27508.026856] RDX: 0000000000000c4e RSI: 00000000000a841d RDI: ffffffffa02c5480
+Mar 29 22:19:43 qalab kernel: [27508.026887] RBP: ffff880037badb48 R08: 0000000000000014 R09: ffd92778de1a5602
+Mar 29 22:19:43 qalab kernel: [27508.028620] R10: 0000000001628203 R11: ffffffffa02c5480 R12: ffff880037badbe8
+Mar 29 22:19:43 qalab kernel: [27508.030685] R13: ffff8800378dc570 R14: ffff8800378dc540 R15: ffff8801055c3ce8
+Mar 29 22:19:43 qalab kernel: [27508.033067] FS:  00007f78dd6ca700(0000) GS:ffff8800ce800000(0000) knlGS:0000000000000000
+Mar 29 22:19:43 qalab kernel: [27508.035127] CS:  0010 DS: 0000 ES: 0000 CR0: 000000008005003b
+Mar 29 22:19:43 qalab kernel: [27508.035127] CR2: 00007fe9100110e8 CR3: 000000011dd6d000 CR4: 00000000000006f0
+Mar 29 22:19:43 qalab kernel: [27508.035127] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+Mar 29 22:19:43 qalab kernel: [27508.035127] DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+Mar 29 22:19:43 qalab kernel: [27508.035127] Process tiotest (pid: 22997, threadinfo ffff880037bac000, task ffff88011df63f40)
+Mar 29 22:19:43 qalab kernel: [27508.035127] Stack:
+Mar 29 22:19:43 qalab kernel: [27508.035127]  ffffea0001f1afa8 0000000000000c4e ffff880037bada28 ffff880037badac8
+Mar 29 22:19:43 qalab kernel: [27508.035127]  ffff880037badbe8 0000000001641dd9 ffffea0000000c53 0000000000000c4e
+Mar 29 22:19:43 qalab kernel: [27508.035127]  ffff880037bada48 ffffffff81121f76 ffff880037bada48 0000000000000c4e
+Mar 29 22:19:43 qalab kernel: [27508.035127] Call Trace:
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81121f76>] ? __pagevec_release+0x26/0x40
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffffa027f96d>] ? mpage_da_submit_io+0x33d/0x4f0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffffa02822a7>] next4_map_blocks+0x137/0x290 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffffa0282782>] mpage_da_map_and_submit+0xd2/0x450 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff811173f0>] ? find_get_pages_tag+0x0/0x1f0
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffffa0283000>] write_cache_pages_da+0x410/0x4b0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffffa0283392>] next4_da_writepages+0x2f2/0x6a0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff8111f9f4>] do_writepages+0x24/0x40
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81115d2b>] __filemap_fdatawrite_range+0x5b/0x60
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81115d8a>] filemap_write_and_wait_range+0x5a/0x80
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81198eca>] vfs_fsync_range+0x5a/0xa0
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff8116d840>] ? fget+0x0/0x230
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81198f7c>] vfs_fsync+0x1c/0x20
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81198fba>] do_fsync+0x3a/0x60
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff81199010>] sys_fsync+0x10/0x20
+Mar 29 22:19:43 qalab kernel: [27508.035127]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
+Mar 29 22:19:43 qalab kernel: [27508.035127] Code: 4c 89 ff 4d 6b ed 30 4f 8d 2c 2e 4c 89 ea e8 b9 c1 ff ff 85 c0 89 45 cc 0f 85 f3 00 00 00 49 8b 45 10 8b 10 41 3b 54 24 08 74 04 <0f> 0b eb fe 0f b7 50 04 66 81 fa 00 80 0f b7 ca 76 08 89 ca 8d 
+Mar 29 22:19:43 qalab kernel: [27508.035127] RIP  [<ffffffffa02a63bf>] next4_ext_map_blocks+0xb1f/0x1d50 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.035127]  RSP <ffff880037bad9e8>
+Mar 29 22:19:43 qalab kernel: [27508.110632] ---[ end trace 8595e293de3c64e3 ]---
+Mar 29 22:19:43 qalab kernel: [27508.126962] ---[ end trace 8595e293de3c64e4 ]---
+Mar 29 22:19:43 qalab kernel: [27508.167716] ------------[ cut here ]------------
+Mar 29 22:19:43 qalab kernel: [27508.169571] kernel BUG at /home/amir/ext4-snapshots/fs/next4/extents.c:3871!
+Mar 29 22:19:43 qalab kernel: [27508.171427] invalid opcode: 0000 [#3] SMP 
+Mar 29 22:19:43 qalab kernel: [27508.173267] last sysfs file: /sys/devices/pci0000:00/0000:00:1e.0/0000:06:03.0/local_cpus
+Mar 29 22:19:43 qalab kernel: [27508.175134] CPU 1 
+Mar 29 22:19:43 qalab kernel: [27508.175148] Modules linked in: next4 binfmt_misc parport_pc ppdev i915 snd_hda_codec_realtek snd_hda_intel snd_hda_codec snd_hwdep snd_pcm snd_seq_midi drm_kms_helper snd_rawmidi drm snd_seq_midi_event snd_seq snd_timer snd_seq_device snd psmouse soundcore snd_page_alloc tpm_tis tpm i2c_algo_bit tpm_bios intel_agp intel_gtt video serio_raw lp parport usbhid hid firewire_ohci firewire_core crc_itu_t pata_marvell e1000e
+Mar 29 22:19:43 qalab kernel: [27508.177416] 
+Mar 29 22:19:43 qalab kernel: [27508.177416] Pid: 22982, comm: tiotest Tainted: G   M  D     2.6.38+ #3                  /DQ35JO
+Mar 29 22:19:43 qalab kernel: [27508.177416] RIP: 0010:[<ffffffffa02a63bf>]  [<ffffffffa02a63bf>] next4_ext_map_blocks+0xb1f/0x1d50 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416] RSP: 0018:ffff880028f0d9e8  EFLAGS: 00010297
+Mar 29 22:19:43 qalab kernel: [27508.177416] RAX: ffff88000787dff0 RBX: ffff88006408aac8 RCX: 00000000001c4029
+Mar 29 22:19:43 qalab kernel: [27508.177416] RDX: 0000000000000c1e RSI: 00000000000a841d RDI: ffffffffa02c5480
+Mar 29 22:19:43 qalab kernel: [27508.177416] RBP: ffff880028f0db48 R08: 0000000000000014 R09: ffdc5d8740968a02
+Mar 29 22:19:43 qalab kernel: [27508.177416] R10: 0000000001610207 R11: ffffffffa02c5480 R12: ffff880028f0dbe8
+Mar 29 22:19:43 qalab kernel: [27508.177416] R13: ffff88010c34c870 R14: ffff88010c34c840 R15: ffff88007db8d690
+Mar 29 22:19:43 qalab kernel: [27508.177416] FS:  00007f78e4ed9700(0000) GS:ffff8800ce880000(0000) knlGS:0000000000000000
+Mar 29 22:19:43 qalab kernel: [27508.177416] CS:  0010 DS: 0000 ES: 0000 CR0: 000000008005003b
+Mar 29 22:19:43 qalab kernel: [27508.177416] CR2: 00000000006dfaa4 CR3: 000000011dd6d000 CR4: 00000000000006e0
+Mar 29 22:19:43 qalab kernel: [27508.177416] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+Mar 29 22:19:43 qalab kernel: [27508.177416] DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+Mar 29 22:19:43 qalab kernel: [27508.177416] Process tiotest (pid: 22982, threadinfo ffff880028f0c000, task ffff8800310f3f40)
+Mar 29 22:19:43 qalab kernel: [27508.177416] Stack:
+Mar 29 22:19:43 qalab kernel: [27508.177416]  ffff880028f0da38 ffffffff8119d953 000000000000000e ffff880028f0dac8
+Mar 29 22:19:43 qalab kernel: [27508.177416]  ffff880028f0dbe8 0000000001641f11 ffffea0000000c1f 0000000000000c1e
+Mar 29 22:19:43 qalab kernel: [27508.177416]  ffff880028f0da48 ffffffff81121f76 ffff880028f0da48 0000000000000c1e
+Mar 29 22:19:43 qalab kernel: [27508.177416] Call Trace:
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff8119d953>] ? block_write_full_page_endio+0xe3/0x120
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81121f76>] ? __pagevec_release+0x26/0x40
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffffa027f96d>] ? mpage_da_submit_io+0x33d/0x4f0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffffa02822a7>] next4_map_blocks+0x137/0x290 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffffa0282782>] mpage_da_map_and_submit+0xd2/0x450 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff811173f0>] ? find_get_pages_tag+0x0/0x1f0
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffffa0283000>] write_cache_pages_da+0x410/0x4b0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffffa0283392>] next4_da_writepages+0x2f2/0x6a0 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff8111f9f4>] do_writepages+0x24/0x40
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81115d2b>] __filemap_fdatawrite_range+0x5b/0x60
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81115d8a>] filemap_write_and_wait_range+0x5a/0x80
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81198eca>] vfs_fsync_range+0x5a/0xa0
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff8116d840>] ? fget+0x0/0x230
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81198f7c>] vfs_fsync+0x1c/0x20
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81198fba>] do_fsync+0x3a/0x60
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff81199010>] sys_fsync+0x10/0x20
+Mar 29 22:19:43 qalab kernel: [27508.177416]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
+Mar 29 22:19:43 qalab kernel: [27508.177416] Code: 4c 89 ff 4d 6b ed 30 4f 8d 2c 2e 4c 89 ea e8 b9 c1 ff ff 85 c0 89 45 cc 0f 85 f3 00 00 00 49 8b 45 10 8b 10 41 3b 54 24 08 74 04 <0f> 0b eb fe 0f b7 50 04 66 81 fa 00 80 0f b7 ca 76 08 89 ca 8d 
+Mar 29 22:19:43 qalab kernel: [27508.177416] RIP  [<ffffffffa02a63bf>] next4_ext_map_blocks+0xb1f/0x1d50 [next4]
+Mar 29 22:19:43 qalab kernel: [27508.177416]  RSP <ffff880028f0d9e8>
+Mar 29 22:19:43 qalab kernel: [27508.259182] ---[ end trace 8595e293de3c64e5 ]---
+M

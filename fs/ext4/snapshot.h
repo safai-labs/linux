@@ -108,7 +108,13 @@
 
 static inline int ext4_snapshot_active(struct ext4_sb_info *sbi);
 
-/* set transaction ID for active snapshot */
+/**
+ * set transaction ID for active snapshot 
+ *
+ * this function is called after freeze_super() returns but before
+ * calling unfreeze_super() to record the tid at time when a snapshot is
+ * taken.
+ */
 static inline void ext4_set_snapshot_tid(struct super_block *sb)
 {
 	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
@@ -125,7 +131,7 @@ static inline tid_t ext4_get_snapshot_tid(struct super_block *sb)
 
 static inline int ext4_test_mow_tid(struct inode *inode)
 {
-	return tid_gt(EXT4_I(inode)->i_datasync_tid,
+	return tid_geq(EXT4_I(inode)->i_datasync_tid,
 		      ext4_get_snapshot_tid(inode->i_sb));
 }
 

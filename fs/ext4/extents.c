@@ -2903,7 +2903,7 @@ static int ext4_split_extents(handle_t *handle,
 	int may_zeroout;
 	int uninitialized;
 
-	ext_debug("ext4_split_unwritten_extents: inode %lu, logical"
+	ext_debug("ext4_split_extents: inode %lu, logical"
 		"block %llu, max_blocks %u\n", inode->i_ino,
 		(unsigned long long)map->m_lblk, map->m_len);
 
@@ -3740,16 +3740,9 @@ found:
 	newex.ee_block = cpu_to_le32(map->m_lblk);
 	newex.ee_len = cpu_to_le16(map->m_len);
 
-	/* Overlap checking is not needed for MOW case. */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	if (oldblock) {
-		/*
-		 * Overlap happens for MOW.
-		 */
-		unsigned short left_len;
-		left_len = le32_to_cpu(ex->ee_block) +
-		    ext4_ext_get_actual_len(ex) - map->m_lblk;
-		map->m_len = left_len < map->m_len ? left_len : map->m_len;
+		/* Overlap checking is not needed for MOW case. */
 		err = 0;
 	} else
 		err = ext4_ext_check_overlap(inode, &newex, path);
@@ -3813,33 +3806,42 @@ found:
 		map->m_len = ar.len;
 		err = ext4_snapshot_get_move_access(handle, inode,
 				oldblock, &map->m_len, 1);
-		if (err <= 0) {
-                        /* failed to move to snapshot - abort! */
-                        err = err ? : -EIO;
-                        ext4_journal_abort_handle(__func__, __LINE__,
+		if (err <= 0 || map->m_len < ar.len) {
+			/* failed to move to snapshot - abort! */
+			err = err ? : -EIO;
+			ext4_journal_abort_handle(__func__, __LINE__,
 					"ext4_snapshot_get_move_access", NULL,
 					handle, err);
 		} else {
 			/* 
-			 * Move to snapshot success.
+			 * Move to snapshot successfully.
+			 * TODO merge extent after finishing MOW
 			 */
+			err = ext4_split_extents(handle, inode, map,
+					path, flags | EXT4_GET_BLOCKS_PRE_IO);
+			if (err < 0) {
+				goto out;	
+			}
 
-			/* Pass EXT4_GET_BLOCKS_PRE_IO to split extent. */
-			(void)ext4_split_extents(handle, inode,
-					map, path, flags | EXT4_GET_BLOCKS_PRE_IO);
+			/* extent tree may be changed. */
 			depth = ext_depth(inode);
-			err = ext4_ext_get_access(handle, inode,
-						path + depth);
+			ext4_ext_drop_refs(path);
+			path = ext4_ext_find_extent(inode, map->m_lblk, path);
+			if (IS_ERR(path)) {
+				err = PTR_ERR(path);
+				goto out;
+			}
+
+			/* just verify splitting. */
+			ex = path[depth].p_ext;
+			BUG_ON(le32_to_cpu(ex->ee_block) != map->m_lblk ||
+			       ext4_ext_get_actual_len(ex) != map->m_len);
+
+			err = ext4_ext_get_access(handle, inode, path + depth);
 			if (!err) {
-				ex = path[depth].p_ext;
-				if (le32_to_cpu(ex->ee_block) == map->m_lblk &&
-					ext4_ext_get_actual_len(ex) ==
-					map->m_len) {
-					ext4_ext_store_pblock(ex, newblock);
-					err = ext4_ext_dirty(handle, inode,
-						path + depth);
-				} else 
-					BUG();
+				/* splice new blocks to the inode*/
+				ext4_ext_store_pblock(ex, newblock);
+				err = ext4_ext_dirty(handle, inode, path + depth);
 			}
 		}
 		

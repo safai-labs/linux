@@ -1,7 +1,7 @@
 #!/bin/sh
 # strip fake ifdefs from ext4-snapshots branch
 
-BASE=v2.6.37
+BASE=v2.6.38
 PATCH=ext4_snapshots.patch
 
 # re-create the strip_ifdefs branch from current branch
@@ -10,15 +10,11 @@ git checkout -b strip_ifdefs || exit 1
 
 make clean SUBDIRS=fs/ext4
 rm -f fs/ext4/*.tmp
+gcc -o strip_ifdefs strip_ifdefs.c
 
 echo "stripping fake snapshot ifdefs from ext4 files..."
-# strip all SNAPSHOT ifdefs from C files
-for f in $( ls fs/ext4/*.c ) ; do
-	./strip_ifdefs $f $f.tmp snapshot y || exit 1
-	mv -f $f.tmp $f || exit 1
-done
-# strip all SNAPSHOT ifdefs from h files
-for f in fs/ext4/Kconfig $( ls fs/ext4/*.h ) ; do
+# strip all SNAPSHOT ifdefs from ext4 files
+for f in $( ls fs/ext4/* ) ; do
 	./strip_ifdefs $f $f.tmp snapshot y || exit 1
 	mv -f $f.tmp $f || exit 1
 done
@@ -29,8 +25,7 @@ echo "ext4 files changed by snapshots patch:"
 git diff --stat $BASE fs/ext4
 
 # create one big snapshots patch and run it through checkpatch
-echo "checking ext4 snapshots patch..."
+echo "checking $PATCH..."
 git diff $BASE fs/ext4 > $PATCH
 ./scripts/checkpatch.pl $PATCH | tee $PATCH.check | tail
-
 

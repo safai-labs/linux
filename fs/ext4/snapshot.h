@@ -200,17 +200,17 @@ extern int ext4_snapshot_read_block_bitmap(struct super_block *sb,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 extern int ext4_snapshot_test_and_cow(const char *where,
 		handle_t *handle, struct inode *inode,
-		struct buffer_head *bh, int cow);
+		ext4_fsblk_t block, struct buffer_head *bh, int cow);
 
 /*
  * test if a metadata block should be COWed
  * and if it should, copy the block to the active snapshot
  */
-#define ext4_snapshot_cow(handle, inode, bh, cow)		\
+#define ext4_snapshot_cow(handle, inode, block, bh, cow)	\
 	ext4_snapshot_test_and_cow(__func__, handle, inode,	\
-			bh, cow)
+			block, bh, cow)
 #else
-#define ext4_snapshot_cow(handle, inode, bh, cow) 0
+#define ext4_snapshot_cow(handle, inode, block, bh, cow) 0
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
@@ -246,22 +246,7 @@ extern int ext4_snapshot_test_and_move(const char *where,
 static inline int ext4_snapshot_get_write_access(handle_t *handle,
 		struct inode *inode, struct buffer_head *bh)
 {
-	return ext4_snapshot_cow(handle, inode, bh, 1);
-}
-
-/*
- * called from ext4_journal_get_undo_access(),
- * which is called for group bitmap block from
- * ext4_add_groupblocks() before adding blocks to existing group.
- *
- * Return values:
- * = 0 - block was COWed or doesn't need to be COWed
- * < 0 - error
- */
-static inline int ext4_snapshot_get_undo_access(handle_t *handle,
-		struct buffer_head *bh)
-{
-	return ext4_snapshot_cow(handle, NULL, bh, 1);
+	return ext4_snapshot_cow(handle, inode, bh->b_blocknr, bh, 1);
 }
 
 /*
@@ -274,13 +259,50 @@ static inline int ext4_snapshot_get_undo_access(handle_t *handle,
 static inline int ext4_snapshot_get_create_access(handle_t *handle,
 		struct buffer_head *bh)
 {
+	int err;
+
+	/* Should block be COWed? */
+	err = ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 0);
 	/*
-	 * This block shouldn't need to be COWed if get_delete_access() was
+	 * A new block shouldn't need to be COWed if get_delete_access() was
 	 * called for all deleted blocks.  However, it may need to be COWed
 	 * if fsck was run and if it had freed some blocks without moving them
 	 * to snapshot.  In the latter case, -EIO will be returned.
 	 */
-	return ext4_snapshot_cow(handle, NULL, bh, 0);
+	if (err > 0)
+		err = -EIO;
+	return err;
+}
+
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+/*
+ * get_bitmap_access() is called before modifying a block bitmap.
+ * this call initializes the COW bitmap for @group.
+ *
+ * Return values:
+ * = 0 - COW bitmap is initialized
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
+		struct super_block *sb, ext4_group_t group,
+		struct buffer_head *bh)
+{
+	/*
+	 * With flex_bg, block bitmap may reside in a different group than
+	 * the group it describes, so we need to init both COW bitmaps:
+	 * 1. init the COW bitmap for @group by testing
+	 *    if the first block in the group should be COWed
+	 */
+	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
+		int err = ext4_snapshot_cow(handle, NULL,
+				ext4_group_first_block_no(sb, group),
+				NULL, 0);
+		if (err < 0)
+			return err;
+	}
+	/* 2. COW the block bitmap itself, which may be in another group */
+	return ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 1);
 }
 
 #endif

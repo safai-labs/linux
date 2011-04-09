@@ -2742,18 +2742,11 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 	/* Enforce snapshots requirements: */
 	if (EXT4_SNAPSHOTS(sb)) {
 		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
-#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-					EXT4_FEATURE_INCOMPAT_EXTENTS|
-#endif
-					EXT4_FEATURE_INCOMPAT_FLEX_BG|
+					EXT4_FEATURE_INCOMPAT_META_BG|
 					EXT4_FEATURE_INCOMPAT_64BIT)) {
 			ext4_msg(sb, KERN_ERR,
 				"has_snapshot feature cannot be mixed with "
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-				"features: flex_bg, 64bit");
-#else
-				"features: flex_bg, extents, 64bit");
-#endif
+				"features: meta_bg, 64bit");
 			return 0;
 		}
 		if (!EXT4_HAS_COMPAT_FEATURE(sb,

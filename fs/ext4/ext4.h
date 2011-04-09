@@ -60,7 +60,6 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-#define CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 #define CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 #define CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
@@ -85,7 +84,6 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_CTL
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
@@ -290,9 +288,6 @@ struct ext4_io_submit {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 #define EXT4_EXCLUDE_INO		 9	/* Snapshot exclude inode */
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
-#define EXT4_EXCLUDE_INO_OLD		10	/* Old exclude inode */
-#endif
 
 /* First non-reserved inode for old ext4 filesystems */
 #define EXT4_GOOD_OLD_FIRST_INO	11
@@ -478,9 +473,6 @@ struct flex_groups {
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
 #endif
 
 /* Flags that are appropriate for regular files (all but dir-specific ones). */
@@ -1046,17 +1038,15 @@ struct ext4_inode_info {
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define EXT4_FLAGS_IS_SNAPSHOT		0x0010 /* Is a snapshot image */
-#define EXT4_FLAGS_FIX_SNAPSHOT	0x0020 /* Corrupted snapshot */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
+#define EXT4_FLAGS_FIX_SNAPSHOT		0x0020 /* Corrupted snapshot */
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
-#define EXT4_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
+
 #define EXT4_SET_FLAGS(sb, mask) \
 	EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
 #define EXT4_CLEAR_FLAGS(sb, mask) \
 	EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
 #define EXT4_TEST_FLAGS(sb, mask) \
 	(EXT4_SB(sb)->s_es->s_flags & cpu_to_le32(mask))
-#endif
 #endif
 
 /*
@@ -1238,16 +1228,7 @@ struct ext4_super_block {
 	__u8	s_last_error_func[32];	/* function where the error happened */
 #define EXT4_S_ERR_END offsetof(struct ext4_super_block, s_mount_opts)
 	__u8	s_mount_opts[64];
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-	__u32	s_reserved[108];	/* Padding to the end of the block */
-	/* old snapshot field positions */
-/*3F0*/	__le32	s_snapshot_list_old;	/* Old snapshot list head */
-	__le32	s_snapshot_r_blocks_old;/* Old reserved for snapshot */
-	__le32	s_snapshot_id_old;	/* Old active snapshot ID */
-	__le32	s_snapshot_inum_old;	/* Old active snapshot inode */
-#else
 	__le32	s_reserved[112];        /* Padding to the end of the bloc */
-#endif
 };
 
 #define EXT4_S_ERR_LEN (EXT4_S_ERR_END - EXT4_S_ERR_START)
@@ -1584,10 +1565,6 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define EXT4_FEATURE_COMPAT_EXCLUDE_INODE	0x0080 /* Has exclude inode */
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_COMPAT_BIG_JOURNAL_OLD	0x1000 /* Old big journal */
-#define EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD	0x2000 /* Old exclude inode */
-#endif
 
 #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
@@ -1599,12 +1576,6 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
-#define EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
-#endif
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002
@@ -1626,25 +1597,10 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 					 EXT4_FEATURE_INCOMPAT_64BIT| \
 					 EXT4_FEATURE_INCOMPAT_FLEX_BG)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
-					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
-					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
-					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
-					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
-					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
-					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE)
-#else
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
 					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
 					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR)
-#endif
 #else
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \

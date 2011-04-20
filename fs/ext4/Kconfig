@@ -228,6 +228,25 @@ config EXT4_FS_SNAPSHOT_BLOCK_COW
 	  Implementation of copying blocks into a snapshot file.
 	  This mechanism is used to copy-on-write metadata blocks to snapshot.
 
+config EXT4_FS_SNAPSHOT_BLOCK_MOVE
+	bool "snapshot block operation - move blocks to snapshot"
+	depends on EXT4_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Implementation of moving blocks into a snapshot file.
+	  The move block command maps an allocated blocks to the snapshot file,
+	  allocating only the indirect blocks when needed.
+	  This mechanism is used to move-on-write data blocks to snapshot.
+
+config EXT4_FS_SNAPSHOT_BLOCK_BITMAP
+	bool "snapshot block operation - copy block bitmap to snapshot"
+	depends on EXT4_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  The snapshot copy of the file system block bitmap is called the COW
+	  bitmap and it is used to check if a block was allocated at the time
+	  that the snapshot was taken.
+
 config EXT4_FS_SNAPSHOT_JOURNAL
 	bool "snapshot journaled"
 	depends on EXT4_FS_SNAPSHOT_BLOCK
@@ -322,7 +341,6 @@ config EXT4_FS_SNAPSHOT_LIST
 	  We make use of this fact to overload the in-memory inode field
 	  ext4_inode_info.i_orphan for the chaining of snapshots.
 
-
 config EXT4_FS_SNAPSHOT_LIST_READ
 	bool "snapshot list - read through to previous snapshot"
 	depends on EXT4_FS_SNAPSHOT_LIST
@@ -341,7 +359,6 @@ config EXT4_FS_SNAPSHOT_RACE
 	help
 	  Resolve snapshot race conditions
 
-
 config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	bool "snapshot race conditions - concurrent COW bitmap operations"
 	depends on EXT4_FS_SNAPSHOT_RACE
@@ -354,7 +371,6 @@ config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	  wait (in msleep(1) loop), until the COW bitmap cache is uptodate.
 	  The COWing task copies the bitmap block into the new COW bitmap block
 	  and updates the COW bitmap cache with the new block number.
-
 
 config EXT4_FS_SNAPSHOT_RACE_COW
 	bool "snapshot race conditions - concurrent COW operations"
@@ -376,7 +392,6 @@ config EXT4_FS_SNAPSHOT_RACE_COW
 	  buffer_new flag is cleared and then copies the 'new' buffer directly
 	  into the snapshot file page.
 
-
 config EXT4_FS_SNAPSHOT_RACE_READ
 	bool "snapshot race conditions - tracked reads"
 	depends on EXT4_FS_SNAPSHOT_RACE
@@ -394,6 +409,14 @@ config EXT4_FS_SNAPSHOT_RACE_READ
 	  (again, in msleep(1) loop), until the pending COW operation is
 	  completed, so the COWing task cannot be starved by reader tasks.
 
+config EXT4_FS_SNAPSHOT_CTL
+	bool "snapshot control"
+	depends on EXT4_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Snapshot control with chattr -X.
+	  Take/delete snapshot with chattr -X +/-S.
+	  Enable/disable snapshot with chattr -X +/-n.
 
 config EXT4_FS_SNAPSHOT_CTL_INIT
 	bool "snapshot control - init new snapshot"
@@ -434,33 +457,6 @@ config EXT4_FS_SNAPSHOT_CTL_DUMP
 	help
 	  Use chattr -d to print the blocks map of a snapshot file.
 	  Snapshot debugging should be enabled.
-config EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	bool "snapshot block operation - move blocks to snapshot"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  Implementation of moving blocks into a snapshot file.
-	  The move block command maps an allocated blocks to the snapshot file,
-	  allocating only the indirect blocks when needed.
-	  This mechanism is used to move-on-write data blocks to snapshot.
-
-config EXT4_FS_SNAPSHOT_BLOCK_BITMAP
-	bool "snapshot block operation - copy block bitmap to snapshot"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  The snapshot copy of the file system block bitmap is called the COW
-	  bitmap and it is used to check if a block was allocated at the time
-	  that the snapshot was taken.
-
-config EXT4_FS_SNAPSHOT_CTL
-	bool "snapshot control"
-	depends on EXT4_FS_SNAPSHOT_FILE
-	default y
-	help
-	  Snapshot control with chattr -X.
-	  Take/delete snapshot with chattr -X +/-S.
-	  Enable/disable snapshot with chattr -X +/-n.
 
 config EXT4_FS_SNAPSHOT_EXCLUDE
 	bool "snapshot exclude"

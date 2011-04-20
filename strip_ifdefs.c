@@ -160,8 +160,12 @@ int main(int argc, char *argv[])
 			exit(0);
 	}
 
-	if (!key && !hfile && !config)
-		/* remove _ suffix from main key */
+	if (!key && !(strip > 0 && (hfile || config)))
+		/*
+		 * remove _ suffix from main key
+		 * leave it to keep MAIN ifdefs in h files
+		 * and in Kconfig when stipping fake ifdefs
+		 */
 		MAINKEY_LEN--;
 
 	fprintf(stderr, "stripping SNAPSHOT%s%s%s from file %s...\n",
@@ -195,8 +199,8 @@ int main(int argc, char *argv[])
 				continue;
 			} else if (!strncmp(line, "config ", 7)) {
 				if (debug) {
-					if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-15) &&
-						!strncmp(line+MAINKEY_LEN-8, "DEBUG", 5)) {
+					if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-16) &&
+						!strncmp(line+MAINKEY_LEN-9, "DEBUG", 5)) {
 						/* strip debug config */
 						hold = 0;
 						filter = FILTER_UNDEFINED;
@@ -205,11 +209,11 @@ int main(int argc, char *argv[])
 						filter = FILTER_NONE;
 					}
 				} else if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-7)) {
-					if (!key)
+					if (!key && strip > 0)
 						/* discard all snapshot sub configs */
 						break;
 					snapshot = 1;
-					if (key && !strncmp(line+MAINKEY_LEN+1, key, keylen)) {
+					if (!key || !strncmp(line+MAINKEY_LEN, key, keylen)) {
 						/* start filtering snapshot sub config */
 						if (filter)
 							exit_error("nested snapshot sub config",
@@ -236,7 +240,7 @@ int main(int argc, char *argv[])
 						printf("%s", line+3);
 				} else if (key) {
 				       	if (!strncmp(line+1, "depends on ", 11) && 
-						!strncmp(line+12+MAINKEY_LEN+1, key, keylen))
+						!strncmp(line+12+MAINKEY_LEN, key, keylen))
 						exit_error("snapshot sub config dependecy",
 								filename, lineno, line);
 				} 
@@ -245,16 +249,15 @@ int main(int argc, char *argv[])
 				hold = 0;
 				fputs("\n", outfile);
 			}
-		} else if (debug) {
-			/* strip lines with "snapshot_debug" */
-			if (strstr(line, "snapshot_debug"))
-				continue;
 		} else if (makefile) {
 			/* strip snapshot files from makefile */
-			if (!key && strip < 0 && strstr(line, "snapshot.o"))
+			if (!key && strip < 0 && strstr(line, "snapshot"))
+				continue;
+			if (debug && strip < 0 && strstr(line, "snapshot_debug.o"))
 				continue;
 			/* strip default config options */
-			if (!key && (strstr(line+14, "?=") ||
+			if (!key && strip > 0 &&
+					(strstr(line+14, "?=") ||
 					!strncmp(line, "if", 2) ||
 					!strncmp(line, "endif", 5)))
 				continue;
@@ -286,15 +289,17 @@ int main(int argc, char *argv[])
 				continue;
 
 			/* strip off snapshot file includes */
-			if (!key && strip < 0 &&
-					!strncmp(line+1, "include", 7) &&
-					!strncmp(line+10, "snapshot.h", 10))
-				continue;
+			if (strip < 0 && !strncmp(line+1, "include", 7)) {
+				if (!key && !strncmp(line+10, "snapshot.h", 10))
+					continue;
+				if (debug && !strncmp(line+10, "snapshot_debug.h", 15))
+					continue;
+			}
 
 			/* filter define MAINKEY */
 			if (!strncmp(line+1, "define", 6) &&
 				!strncmp(line+8, MAINKEY, MAINKEY_LEN) &&
-				(!key || !strncmp(line+8+MAINKEY_LEN+1, key, keylen)))
+				(!key || !strncmp(line+8+MAINKEY_LEN, key, keylen)))
 				continue;
 
 			/* filter ifdef/ifndef MAINKEY */
@@ -325,7 +330,7 @@ int main(int argc, char *argv[])
 							(filter && !key && strip < 0))
 						exit_error("snapshot ifdef nested inside snapshot ifndef",
 								filename, lineno, line);
-					if (!key || !strncmp(ifdef+MAINKEY_LEN+1, key, keylen))
+					if (!key || !strncmp(ifdef+MAINKEY_LEN, key, keylen))
 						/* filter snapshot ifdefs that match key */
 						filter = (line[3] == 'n' ? -strip : strip);
 					if (filter)

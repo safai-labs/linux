@@ -559,7 +559,7 @@ out:
  * COW functions
  */
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 static void
 __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 		struct super_block *sb, struct inode *inode,
@@ -622,7 +622,7 @@ void init_ext4_snapshot_cow_cache(void)
 	return;
 found:
 	cow_tid_offset = pos - (char *)NULL;
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	cow_cache_offset = cow_tid_offset;
 #endif
 }
@@ -988,7 +988,7 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 		goto out;
 	}
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	if (inode == NULL &&
 		!(EXT4_I(active_snapshot)->i_flags & EXT4_UNRM_FL)) {
 		/*

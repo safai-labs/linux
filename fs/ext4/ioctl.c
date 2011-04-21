@@ -101,7 +101,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 		if (ext4_snapshot_file(inode) &&
 				((oldflags ^ flags) & EXT4_NODUMP_FL)) {
 			/* print snapshot inode map on chattr -d */

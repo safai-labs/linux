@@ -23,11 +23,6 @@
 static int verify_group_input(struct super_block *sb,
 			      struct ext4_new_group_data *input)
 {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#ifdef CONFIG_EXT4_FS_DEBUG
-	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
-#endif
-#endif
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_super_block *es = sbi->s_es;
 	ext4_fsblk_t start = ext4_blocks_count(es);
@@ -52,16 +47,6 @@ static int verify_group_input(struct super_block *sb,
 		free_blocks_count--;
 		input->free_blocks_count = free_blocks_count;
 	}
-#ifdef CONFIG_EXT4_FS_DEBUG
-	if (active_snapshot &&
-			EXT4_I(active_snapshot)->i_flags & EXT4_UNRM_FL) {
-		/* assign all new blocks to active snapshot */
-		input->blocks_count -= free_blocks_count;
-		end -= free_blocks_count;
-		input->free_blocks_count = free_blocks_count = 0;
-		input->reserved_blocks = 0;
-	}
-#endif
 
 #endif
 	if (test_opt(sb, DEBUG))

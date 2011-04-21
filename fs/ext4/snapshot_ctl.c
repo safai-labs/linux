@@ -666,7 +666,7 @@ alloc_inode_blocks:
 				SNAPMAP_WRITE);
 next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 		ext4_fsblk_t blk0 = iloc.block_group *
 			EXT4_BLOCKS_PER_GROUP(sb);
 		snapshot_debug(1, "failed to allocate block/inode bitmap "
@@ -890,7 +890,7 @@ int ext4_snapshot_take(struct inode *inode)
 	freeze_super(sb);
 	lock_super(sb);
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	if (snapshot_enable_test[SNAPTEST_TAKE]) {
 		snapshot_debug(1, "taking snapshot (%u) ...\n",
 				inode->i_generation);

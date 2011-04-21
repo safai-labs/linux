@@ -15,7 +15,7 @@
 #ifndef _LINUX_EXT4_SNAPSHOT_DEBUG_H
 #define _LINUX_EXT4_SNAPSHOT_DEBUG_H
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 #include <linux/delay.h>
 
 #define SNAPSHOT_INDENT_MAX 4
@@ -97,7 +97,7 @@ extern void ext4_snapshot_remove_debugfs_entry(void);
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 extern void ext4_snapshot_dump(int n, struct inode *inode);
 #else
 #define ext4_snapshot_dump(n, i)

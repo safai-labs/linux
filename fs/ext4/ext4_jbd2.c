@@ -216,7 +216,7 @@ static void ext4_journal_cow_stats(int n, ext4_handle_t *handle)
 #define ext4_journal_cow_stats(n, handle)
 #endif
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 void __ext4_journal_trace(int n, const char *fn, const char *caller,
 		ext4_handle_t *handle, int nblocks)
 {

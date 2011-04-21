@@ -75,7 +75,7 @@ static void buffer_io_error(struct buffer_head *bh)
  * {get|put}_bh_tracked_reader() are atomic.
  */
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 /*
  * trace maximum value of b_count on all fs buffers to see if we are
  * overflowing to upper word (tracked readers count)

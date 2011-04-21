@@ -138,7 +138,7 @@ static inline int ext4_test_mow_tid(struct inode *inode)
 static inline void snapshot_size_extend(struct inode *inode,
 			ext4_fsblk_t blocks)
 {
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
 	ext4_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
 
@@ -646,7 +646,7 @@ extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
 
 #define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)

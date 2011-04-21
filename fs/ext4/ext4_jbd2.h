@@ -351,7 +351,7 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 void __ext4_journal_trace(int debug, const char *fn, const char *caller,
 		ext4_handle_t *handle, int nblocks);
 

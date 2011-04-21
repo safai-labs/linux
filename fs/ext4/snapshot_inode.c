@@ -817,7 +817,7 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 		return 0;
 	}
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	snapshot_debug(3, "started tracked read: block = [%llu/%llu]\n",
 		       SNAPSHOT_BLOCK_TUPLE(bh_result->b_blocknr));
 	if (snapshot_enable_test[SNAPTEST_READ]) {

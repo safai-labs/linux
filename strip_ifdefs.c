@@ -198,17 +198,7 @@ int main(int argc, char *argv[])
 				hold = 1;
 				continue;
 			} else if (!strncmp(line, "config ", 7)) {
-				if (debug) {
-					if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-16) &&
-						!strncmp(line+MAINKEY_LEN-9, "DEBUG", 5)) {
-						/* strip debug config */
-						hold = 0;
-						filter = FILTER_UNDEFINED;
-					} else {
-						/* stop filtering debug config */
-						filter = FILTER_NONE;
-					}
-				} else if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-7)) {
+				if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-7)) {
 					if (!key && strip > 0)
 						/* discard all snapshot sub configs */
 						break;

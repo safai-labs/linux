@@ -15,7 +15,7 @@
 #include <linux/statfs.h>
 #include "snapshot.h"
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * General snapshot locking semantics:
  *

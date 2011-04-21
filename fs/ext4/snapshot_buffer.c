@@ -1,5 +1,5 @@
 /*
- *  linux/fs/ext4/buffer.c
+ *  linux/fs/ext4/snapshot_buffer.c
  *
  *  from
  *
@@ -9,19 +9,10 @@
  */
 
 /*
- * Start bdflush() with kernel_thread not syscall - Paul Gortmaker, 12/95
+ * Tracked buffer read implementation for ext4 snapshots
+ * by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
- * Removed a lot of unnecessary code and simplified things now that
- * the buffer cache isn't our primary cache - Andrew Tridgell 12/96
- *
- * Speed up hash, lru, and free list operations.  Use gfp() for allocating
- * hash table, use SLAB cache for buffer heads. SMP threading.  -DaveM
- *
- * Added 32k buffer block sizes - these are required older ARM systems. - RMK
- *
- * async buffer flushing, 1999 Andrea Arcangeli <andrea@suse.de>
- *
- * Tracked buffer read for ext4, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2011 CTERA Networks
  */
 
 #include <linux/kernel.h>

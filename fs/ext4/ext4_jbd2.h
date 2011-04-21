@@ -11,8 +11,7 @@
  *
  * Ext4-specific journaling extensions.
  *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Snapshot extra COW credits, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #ifndef _EXT4_JBD2_H

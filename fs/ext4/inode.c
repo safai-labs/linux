@@ -21,8 +21,7 @@
  *
  *  Assorted race fixes, rewrite of ext4_get_block() by Al Viro, 2000
  *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ *  Snapshot inode extentions, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #include <linux/module.h>

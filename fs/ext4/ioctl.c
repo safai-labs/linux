@@ -6,8 +6,7 @@
  * Laboratoire MASI - Institut Blaise Pascal
  * Universite Pierre et Marie Curie (Paris VI)
  *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Snapshot control API, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #include <linux/fs.h>

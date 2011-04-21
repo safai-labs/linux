@@ -1,18 +1,16 @@
 /*
  *  linux/fs/ext4/snapshot_buffer.c
  *
+ *  Tracked buffer read implementation for ext4 snapshots
+ *  by Amir Goldstein <amir73il@users.sf.net>, 2008
+ *
+ *  Copyright (C) 2008-2011 CTERA Networks
+ *
  *  from
  *
  *  linux/fs/buffer.c
  *
  *  Copyright (C) 1991, 1992, 2002  Linus Torvalds
- */
-
-/*
- * Tracked buffer read implementation for ext4 snapshots
- * by Amir Goldstein <amir73il@users.sf.net>, 2008
- *
- * Copyright (C) 2008-2011 CTERA Networks
  */
 
 #include <linux/kernel.h>

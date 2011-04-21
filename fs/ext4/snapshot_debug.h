@@ -3,7 +3,7 @@
  *
  * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
- * Copyright (C) 2008-2010 CTERA Networks
+ * Copyright (C) 2008-2011 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your

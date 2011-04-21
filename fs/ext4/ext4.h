@@ -11,9 +11,6 @@
  *  linux/include/linux/minix_fs.h
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
- *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _EXT4_H

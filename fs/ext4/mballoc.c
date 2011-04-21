@@ -4558,9 +4558,15 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  * @count:		number of blocks to count
  * @metadata:		Are these metadata blocks
  */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
 			struct inode *inode, struct buffer_head *bh,
 			ext4_fsblk_t block, unsigned long count, int flags)
+#else
+void ext4_free_blocks(handle_t *handle, struct inode *inode,
+		      struct buffer_head *bh, ext4_fsblk_t block,
+		      unsigned long count, int flags)
+#endif
 {
 	struct buffer_head *bitmap_bh = NULL;
 	struct super_block *sb = inode->i_sb;

@@ -1960,6 +1960,7 @@ extern int ext4_mb_reserve_blocks(struct super_block *, int);
 extern void ext4_discard_preallocations(struct inode *);
 extern int __init ext4_init_mballoc(void);
 extern void ext4_exit_mballoc(void);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 extern void __ext4_free_blocks(const char *where, unsigned int line,
 			       handle_t *handle,  struct inode *inode,
 			       struct buffer_head *bh, ext4_fsblk_t block,
@@ -1967,6 +1968,11 @@ extern void __ext4_free_blocks(const char *where, unsigned int line,
 #define ext4_free_blocks(handle, inode, bh, block, count, flags) \
 	__ext4_free_blocks(__func__, __LINE__ , (handle), (inode), (bh), \
 			   (block), (count), (flags))
+#else
+extern void ext4_free_blocks(handle_t *handle, struct inode *inode,
+			     struct buffer_head *bh, ext4_fsblk_t block,
+			     unsigned long count, int flags);
+#endif
 extern int ext4_mb_add_groupinfo(struct super_block *sb,
 		ext4_group_t i, struct ext4_group_desc *desc);
 extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);

@@ -34,7 +34,6 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ext4_get_inode_flags(ei);
 		flags = ei->i_flags & EXT4_FL_USER_VISIBLE;
 		return put_user(flags, (int __user *) arg);
-
 	case EXT4_IOC_SETFLAGS: {
 		handle_t *handle = NULL;
 		int err, migrate = 0;
@@ -84,8 +83,8 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			if (!capable(CAP_SYS_RESOURCE))
 				goto flags_out;
 		}
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
+
 		/*
 		 * The SNAPFILE flag can only be changed on directories by
 		 * the relevant capability.

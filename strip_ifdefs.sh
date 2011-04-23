@@ -21,11 +21,13 @@ done
 
 git commit -a -m "stripped fake SNAPSHOT ifdefs"
 
-echo "ext4 files changed by snapshots patch:"
-git diff --stat $BASE fs/ext4
-
 # create one big snapshots patch and run it through checkpatch
+echo "creating $PATCH..."
+git diff --diff-filter=M -b $BASE fs/ext4 > $PATCH
+echo "ext4 files changed by snapshots patch:"
+#git diff --stat --diff-filter=M -b $BASE fs/ext4
+diffstat $PATCH
+
 echo "checking $PATCH..."
-git diff $BASE fs/ext4 > $PATCH
 ./scripts/checkpatch.pl $PATCH | tee $PATCH.check | tail
 

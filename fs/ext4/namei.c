@@ -1644,6 +1644,7 @@ static int ext4_delete_entry(handle_t *handle,
 		if (ext4_check_dir_entry(dir, NULL, de, bh, i))
 			return -EIO;
 		if (de == de_del)  {
+			BUFFER_TRACE(bh, "get_write_access");
 			err = ext4_journal_get_write_access(handle, bh);
 			if (unlikely(err)) {
 				ext4_std_error(dir->i_sb, err);
@@ -2037,7 +2038,6 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
 	*i_next = le32_to_cpu(*s_last);
 	*s_last = cpu_to_le32(inode->i_ino);
 #else
-
 	/* Insert this inode at the head of the on-disk orphan list... */
 	NEXT_ORPHAN(inode) = le32_to_cpu(EXT4_SB(sb)->s_es->s_last_orphan);
 	EXT4_SB(sb)->s_es->s_last_orphan = cpu_to_le32(inode->i_ino);

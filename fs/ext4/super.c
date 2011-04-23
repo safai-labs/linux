@@ -284,7 +284,6 @@ handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
 		}
 		return (handle_t *)handle;
 #else
-
 		return jbd2_journal_start(journal, nblocks);
 #endif
 	}
@@ -365,7 +364,6 @@ static void ext4_record_journal_errstr(struct super_block *sb,
 }
 
 #endif
-
 void ext4_journal_abort_handle(const char *caller, unsigned int line,
 			       const char *err_fn, struct buffer_head *bh,
 			       handle_t *handle, int err)
@@ -858,10 +856,8 @@ static void ext4_put_super(struct super_block *sb)
 	destroy_workqueue(sbi->dio_unwritten_wq);
 
 	lock_super(sb);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 	ext4_snapshot_destroy(sb);
-
 #endif
 	if (sb->s_dirt)
 		ext4_commit_super(sb, 1);
@@ -2257,10 +2253,10 @@ static void ext4_orphan_cleanup(struct super_block *sb,
 		return;
 	}
 
-	/* Check if feature set allows readwrite operations */
-	if (!ext4_feature_set_ok(sb, 0)) {
-		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup on readonly-"
-			       "compatible fs");
+	/* Check if feature set would not allow a r/w mount */
+ 	if (!ext4_feature_set_ok(sb, 0)) {
+		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup due to "
+			 "unknown ROCOMPAT features");
 		return;
 	}
 
@@ -3963,8 +3959,8 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		iput(journal_inode);
 		return NULL;
 	}
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (EXT4_SNAPSHOTS(sb) &&
 			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
 			EXT4_MIN_JOURNAL_BLOCKS) {

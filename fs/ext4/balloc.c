@@ -358,8 +358,8 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 	 */
 	return bh;
 }
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 /**
  * read_exclude_bitmap()
  * @sb:			super block

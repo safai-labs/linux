@@ -3068,6 +3068,7 @@ fix_extent_len:
 	ext4_ext_dirty(handle, inode, path + depth);
 	return err;
 }
+
 #else
 /*
  * This function is called by ext4_ext_map_blocks() from
@@ -3266,7 +3267,6 @@ fix_extent_len:
 	return err;
 }
 #endif
-
 static int ext4_convert_unwritten_extents_endio(handle_t *handle,
 					      struct inode *inode,
 					      struct ext4_ext_path *path)
@@ -3532,10 +3532,13 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 {
 	struct ext4_ext_path *path = NULL;
 	struct ext4_extent_header *eh;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	struct ext4_extent newex, *ex = NULL;
 	ext4_fsblk_t newblock = 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	ext4_fsblk_t oldblock = 0;
+#else
+	struct ext4_extent newex, *ex;
+	ext4_fsblk_t newblock;
 #endif
 	int err = 0, depth, ret;
 	unsigned int allocated = 0;
@@ -3645,8 +3648,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
 		goto out2;
 	}
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+
 	/*
 	 * two cases:
 	 * 1. the request block is found.
@@ -3698,8 +3701,8 @@ found:
 	
 	if (!(flags & EXT4_GET_BLOCKS_CREATE))
 		goto out;	
-#endif
 
+#endif
 	/*
 	 * Okay, we need to do block allocation.
 	 */
@@ -3739,7 +3742,6 @@ found:
 	/* Check if we can really insert (m_lblk)::(m_lblk + m_len) extent */
 	newex.ee_block = cpu_to_le32(map->m_lblk);
 	newex.ee_len = cpu_to_le16(map->m_len);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	if (oldblock) {
 		/* Overlap checking is not needed for MOW case. */
@@ -3764,10 +3766,11 @@ found:
 	else
 		/* disable in-core preallocation for non-regular files */
 		ar.flags = 0;
-
 	newblock = ext4_mb_new_blocks(handle, &ar, &err);
 	if (!newblock)
 		goto out2;
+	ext_debug("allocate new block: goal %llu, found %llu/%u\n",
+		  ar.goal, newblock, allocated);
 
 	/* try to insert new extent into found leaf and return */
 	ext4_ext_store_pblock(&newex, newblock);
@@ -3904,8 +3907,6 @@ out2:
 		ext4_ext_drop_refs(path);
 		kfree(path);
 	}
-	
-	ext_debug("ext4_ext_map_block: return \n");
 	return err ? err : allocated;
 }
 

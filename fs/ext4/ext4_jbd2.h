@@ -144,8 +144,8 @@
  */
 #define EXT4_MIN_JOURNAL_BLOCKS	32768U
 #define EXT4_BIG_JOURNAL_BLOCKS	(24*EXT4_MIN_JOURNAL_BLOCKS)
-#endif
 
+#endif
 #define EXT4_RESERVE_TRANS_BLOCKS	12U
 
 #define EXT4_INDEX_EXTRA_TRANS_BLOCKS	8
@@ -305,7 +305,6 @@ int __ext4_journal_get_write_access(const char *where, unsigned int line,
 				    handle_t *handle, struct buffer_head *bh);
 
 #endif
-
 int __ext4_forget(const char *where, unsigned int line, handle_t *handle,
 		  int is_metadata, struct inode *inode,
 		  struct buffer_head *bh, ext4_fsblk_t blocknr);
@@ -328,7 +327,6 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #define ext4_journal_get_undo_access(handle, bh) \
 	__ext4_journal_get_undo_access(__func__, __LINE__, (handle), (bh))
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 #define ext4_journal_get_write_access(handle, bh) \
 	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
@@ -384,13 +382,7 @@ handle_t *__ext4_journal_start(const char *where,
 
 #else
 handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks);
-
-static inline handle_t *ext4_journal_start(struct inode *inode, int nblocks)
-{
-	return ext4_journal_start_sb(inode->i_sb, nblocks);
-}
 #endif
-
 int __ext4_journal_stop(const char *where, unsigned int line, handle_t *handle);
 
 #define EXT4_NOJOURNAL_MAX_REF_COUNT ((unsigned long) 4096)
@@ -446,6 +438,13 @@ static inline void ext4_journal_release_buffer(handle_t *handle,
 {
 	if (ext4_handle_valid(handle))
 		jbd2_journal_release_buffer(handle, bh);
+}
+#endif
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+
+static inline handle_t *ext4_journal_start(struct inode *inode, int nblocks)
+{
+	return ext4_journal_start_sb(inode->i_sb, nblocks);
 }
 #endif
 
@@ -520,7 +519,6 @@ static inline int __ext4_journal_restart(const char *where,
 	__ext4_journal_restart(__func__, \
 			(ext4_handle_t *)(handle), (nblocks))
 #else
-
 static inline int ext4_journal_extend(handle_t *handle, int nblocks)
 {
 	if (ext4_handle_valid(handle))

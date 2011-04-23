@@ -17,7 +17,7 @@
 
 #include <linux/version.h>
 #include <linux/delay.h>
-#include "ext4_jbd2.h"
+#include "ext4.h"
 #include "snapshot_debug.h"
 
 
@@ -494,32 +494,6 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
 }
 #endif
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-
-/*
- * check if @inode data blocks should be moved-on-write
- */
-static inline int ext4_snapshot_should_move_data(struct inode *inode)
-{
-	if (!EXT4_SNAPSHOTS(inode->i_sb))
-		return 0;
-	if (EXT4_JOURNAL(inode) == NULL)
-		return 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	if (ext4_snapshot_excluded(inode))
-		return 0;
-#endif
-#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
-		return 0;
-#endif
-	/* when a data block is journaled, it is already COWed as metadata */
-	if (ext4_should_journal_data(inode))
-		return 0;
-	return 1;
-}
-
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* tests if the file system has an active snapshot */
 static inline int ext4_snapshot_active(struct ext4_sb_info *sbi)
@@ -692,9 +666,18 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 #endif
 
 #endif
+
+/* Is ext4 configured for snapshots support? */
+static inline int EXT4_SNAPSHOTS(struct super_block *sb)
+{
+	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+}
+
 #else /* CONFIG_EXT4_FS_SNAPSHOT */
 
 /* Snapshot NOP macros */
+#define EXT4_SNAPSHOTS(sb) (0)
 #define SNAPMAP_ISCOW(cmd)	(0)
 #define SNAPMAP_ISMOVE(cmd)     (0)
 #define SNAPMAP_ISSYNC(cmd)	(0)

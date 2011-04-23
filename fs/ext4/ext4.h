@@ -2485,17 +2485,6 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
 extern wait_queue_head_t ext4__ioend_wq[EXT4_WQ_HASH_SZ];
 extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
 
-/* Is ext4 configured for snapshots support? */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-static inline int EXT4_SNAPSHOTS(struct super_block *sb)
-{
-	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-}
-#else
-#define EXT4_SNAPSHOTS(sb) (0)
-#endif
-
 #endif	/* __KERNEL__ */
 
 #endif	/* _EXT4_H */

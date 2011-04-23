@@ -20,7 +20,7 @@
 #include <linux/fs.h>
 #include <linux/jbd2.h>
 #include "ext4.h"
-#include "snapshot_debug.h"
+#include "snapshot.h"
 
 #define EXT4_JOURNAL(inode)	(EXT4_SB((inode)->i_sb)->s_journal)
 
@@ -126,9 +126,14 @@
 /*
  * check for sufficient buffer and COW credits
  */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
 #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n)			\
 	((handle)->h_buffer_credits >= EXT4_SNAPSHOT_TRANS_BLOCKS(n) && \
 	 ((ext4_handle_t *)(handle))->h_user_credits >= (n))
+#else
+#define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
+	(handle->h_buffer_credits >= (n))
+#endif
 
 #define EXT4_RESERVE_COW_CREDITS	(EXT4_COW_CREDITS +		\
 					 EXT4_SNAPSHOT_CREDITS)
@@ -139,9 +144,6 @@
  */
 #define EXT4_MIN_JOURNAL_BLOCKS	32768U
 #define EXT4_BIG_JOURNAL_BLOCKS	(24*EXT4_MIN_JOURNAL_BLOCKS)
-#else
- #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
-	(handle->h_buffer_credits >= (n))
 #endif
 
 #define EXT4_RESERVE_TRANS_BLOCKS	12U
@@ -652,4 +654,29 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 	return 1;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+/*
+ * check if @inode data blocks should be moved-on-write
+ */
+static inline int ext4_snapshot_should_move_data(struct inode *inode)
+{
+	if (!EXT4_SNAPSHOTS(inode->i_sb))
+		return 0;
+	if (EXT4_JOURNAL(inode) == NULL)
+		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+	if (ext4_snapshot_excluded(inode))
+		return 0;
+#endif
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+		return 0;
+#endif
+	/* when a data block is journaled, it is already COWed as metadata */
+	if (ext4_should_journal_data(inode))
+		return 0;
+	return 1;
+}
+
+#endif
 #endif	/* _EXT4_JBD2_H */

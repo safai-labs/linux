@@ -216,7 +216,6 @@ struct ext4_allocation_request {
 				 EXT4_MAP_UNINIT)
 #endif
 
-
 struct ext4_map_blocks {
 	ext4_fsblk_t m_pblk;
 	ext4_lblk_t m_lblk;
@@ -458,7 +457,6 @@ struct flex_groups {
 			   EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
 			   EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL | EXT4_SNAPFILE_FL)
 #else
-
 #define EXT4_FL_USER_VISIBLE		0x004BDFFF /* User visible flags */
 #define EXT4_FL_USER_MODIFIABLE		0x004B80FF /* User modifiable flags */
 
@@ -734,7 +732,6 @@ struct ext4_inode {
 		struct {
 			__le32  l_i_version;
 		} linux1;
-
 		struct {
 			__u32  h_i_translator;
 		} hurd1;
@@ -933,13 +930,14 @@ struct ext4_inode_info {
 #endif
 
 	struct list_head i_orphan;	/* unlinked but open inodes */
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define i_snaplist i_orphan
 	/*
 	 * In-memory snapshot list overrides i_orphan to link snapshot inodes,
 	 * but unlike the real orphan list, the next snapshot inode number
 	 * is stored in i_next_snapshot_ino and not in i_dtime
 	 */
+#define i_snaplist i_orphan
 	__u32	i_next_snapshot_ino;
 
 #endif
@@ -1209,9 +1207,11 @@ struct ext4_super_block {
 	__le16  s_reserved_pad;
 	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
 	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
-	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
-	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
-	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
+	__le32	s_snapshot_id;		/* sequential ID of active snapshot */
+	__le64	s_snapshot_r_blocks_count; /* reserved blocks for active
+					      snapshot's future use */
+	__le32	s_snapshot_list;	/* inode number of the head of the
+					   on-disk snapshot list */
 #define EXT4_S_ERR_START offsetof(struct ext4_super_block, s_error_count)
 	__le32	s_error_count;		/* number of fs errors */
 	__le32	s_first_error_time;	/* first time an error happened */
@@ -1226,7 +1226,7 @@ struct ext4_super_block {
 	__u8	s_last_error_func[32];	/* function where the error happened */
 #define EXT4_S_ERR_END offsetof(struct ext4_super_block, s_mount_opts)
 	__u8	s_mount_opts[64];
-	__le32	s_reserved[112];        /* Padding to the end of the bloc */
+	__le32	s_reserved[112];        /* Padding to the end of the block */
 };
 
 #define EXT4_S_ERR_LEN (EXT4_S_ERR_END - EXT4_S_ERR_START)
@@ -1421,7 +1421,9 @@ enum {
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
 	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	EXT4_STATE_LAST
+#endif
 };
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
@@ -1445,9 +1447,11 @@ enum {
 #define EXT4_SNAPSTATE_MASK		\
 	((1UL << EXT4_SNAPSTATE_LAST) - 1)
 
-#endif
 
 /* atomic single bit funcs */
+#else
+
+#endif
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 static inline int ext4_test_inode_##name(struct inode *inode, int bit)	\
 {									\
@@ -1462,6 +1466,7 @@ static inline void ext4_clear_inode_##name(struct inode *inode, int bit) \
 	clear_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* non-atomic multi bit funcs */
 #define EXT4_INODE_FLAGS_FNS(name, field, offset)			\
 static inline int ext4_get_##name##_flags(struct inode *inode)		\
@@ -1479,11 +1484,14 @@ static inline void ext4_clear_##name##_flags(struct inode *inode, 	\
 	EXT4_I(inode)->i_##field &= ~(flags << (offset));		\
 }
 
+#endif
 EXT4_INODE_BIT_FNS(flag, flags, 0)
 #if (BITS_PER_LONG < 64)
 EXT4_INODE_BIT_FNS(state, state_flags, 0)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 EXT4_INODE_BIT_FNS(snapstate, state_flags, EXT4_STATE_LAST)
 EXT4_INODE_FLAGS_FNS(snapstate, state_flags, EXT4_STATE_LAST)
+#endif
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 {
@@ -1491,8 +1499,10 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 }
 #else
 EXT4_INODE_BIT_FNS(state, flags, 32)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 EXT4_INODE_BIT_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
 EXT4_INODE_FLAGS_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
+#endif
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 {
@@ -1612,6 +1622,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
  					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
  					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE)
 #endif
+
 /*
  * Default values for user and/or group using reserved blocks
  */
@@ -1866,8 +1877,8 @@ typedef struct {
 	__le32	key;
 	struct buffer_head *bh;
 } Indirect;
-#endif
 
+#endif
 /*
  * Function prototypes
  */
@@ -1914,7 +1925,6 @@ extern unsigned ext4_init_block_bitmap(struct super_block *sb,
 extern struct buffer_head *ext4_read_exclude_bitmap(struct super_block *sb,
 					       unsigned int block_group);
 #endif
-
 
 /* dir.c */
 extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
@@ -2021,12 +2031,12 @@ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
 extern qsize_t *ext4_get_reserved_space(struct inode *inode);
 extern void ext4_da_update_reserve_space(struct inode *inode,
 					int used, int quota_claim);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+
 /* snapshot_inode.c */
 extern int ext4_snapshot_readpage(struct file *file, struct page *page);
-#endif
 
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 extern int ext4_block_to_path(struct inode *inode,
 			      ext4_lblk_t i_block,
@@ -2053,8 +2063,8 @@ extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
 #define ext4_free_branches(handle, inode, bh, first, last, depth)	\
 	ext4_free_branches_cow((handle), (inode), (bh),		\
 				(first), (last), (depth), NULL)
-#endif
 
+#endif
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);

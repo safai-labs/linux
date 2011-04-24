@@ -1423,10 +1423,8 @@ enum {
 	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	EXT4_STATE_LAST
-#endif
 };
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * Snapshot dynamic state flags (starting at offset EXT4_STATE_LAST)
  * These flags are read by GETSNAPFLAGS ioctl and interpreted by the lssnap
@@ -1442,8 +1440,10 @@ enum {
 	EXT4_SNAPSTATE_OPEN = 6,	/* snapshot is mounted (o) */
 	EXT4_SNAPSTATE_TAGGED = 7,	/* snapshot is tagged  (t) */
 	EXT4_SNAPSTATE_LAST
+#endif
 };
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define EXT4_SNAPSTATE_MASK		\
 	((1UL << EXT4_SNAPSTATE_LAST) - 1)
 

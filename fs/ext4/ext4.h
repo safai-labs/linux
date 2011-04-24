@@ -1449,8 +1449,6 @@ enum {
 
 
 /* atomic single bit funcs */
-#else
-
 #endif
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 static inline int ext4_test_inode_##name(struct inode *inode, int bit)	\

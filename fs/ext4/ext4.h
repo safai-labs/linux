@@ -445,10 +445,8 @@ struct flex_groups {
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 
-/* User visible flags */
-#define EXT4_FL_USER_VISIBLE		0x014BDFFF
-/* User modifiable flags */
-#define EXT4_FL_USER_MODIFIABLE		0x014B80FF
+#define EXT4_FL_USER_VISIBLE		0x014BDFFF /* User visible flags */
+#define EXT4_FL_USER_MODIFIABLE		0x014B80FF /* User modifiable flags */
 
 /* Flags that should be inherited by new inodes from their parent. */
 #define EXT4_FL_INHERITED (EXT4_SECRM_FL | EXT4_UNRM_FL | EXT4_COMPR_FL |\
@@ -466,9 +464,6 @@ struct flex_groups {
 			   EXT4_NODUMP_FL | EXT4_NOATIME_FL |\
 			   EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
 			   EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL)
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-#define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
 #endif
 
 /* Flags that are appropriate for regular files (all but dir-specific ones). */
@@ -1575,13 +1570,13 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT  0x0080 /* Ext4 has snapshots */
-#endif
 #define EXT4_FEATURE_RO_COMPAT_HUGE_FILE        0x0008
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Ext4 has snapshots */
+#endif
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002

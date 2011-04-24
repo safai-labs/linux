@@ -170,6 +170,9 @@ flags_out:
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
 	case EXT4_IOC_GETSNAPFLAGS:
+		if (!EXT4_SNAPSHOTS(inode->i_sb))
+			return -EOPNOTSUPP;
+
 		ext4_snapshot_get_flags(inode, filp);
 		flags = ext4_get_snapstate_flags(inode);
 		return put_user(flags, (int __user *) arg);
@@ -179,6 +182,9 @@ flags_out:
 		struct ext4_iloc iloc;
 		unsigned int oldflags;
 		int err;
+
+		if (!EXT4_SNAPSHOTS(inode->i_sb))
+			return -EOPNOTSUPP;
 
 		if (!is_owner_or_cap(inode))
 			return -EACCES;

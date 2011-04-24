@@ -488,12 +488,6 @@ static int ext4_snapshot_create(struct inode *inode)
 	/* record the file system size in the snapshot inode disksize field */
 	SNAPSHOT_SET_BLOCKS(inode, snapshot_blocks);
 
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-		EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
-		/* set the 'has_snapshot' feature */
-		EXT4_SET_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
 	/* add snapshot list reference */
 	if (!igrab(inode)) {
@@ -1978,23 +1972,6 @@ int ext4_snapshot_load(struct super_block *sb, struct ext4_super_block *es,
 			es->s_snapshot_list = es->s_snapshot_inum;
 		/* try to load active snapshot */
 		load_ino = le32_to_cpu(es->s_snapshot_inum);
-	}
-
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
-		/*
-		 * When mounting an ext3 formatted volume as ext4, the
-		 * HAS_SNAPSHOT flag is set on first snapshot_take()
-		 * and after that the volume can no longer be mounted
-		 * as rw ext3 (only rw ext4 or ro ext3/ext2).
-		 * If we find a non-zero last_snapshot or snapshot_inum
-		 * and the HAS_SNAPSHOT flag is not set, we ignore them.
-		 */
-		if (load_ino)
-			snapshot_debug(1, "warning: has_snapshot feature not "
-					"set and last snapshot found (%u).\n",
-					load_ino);
-		return 0;
 	}
 
 	while (load_ino) {

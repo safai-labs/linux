@@ -857,7 +857,8 @@ static void ext4_put_super(struct super_block *sb)
 
 	lock_super(sb);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	ext4_snapshot_destroy(sb);
+	if (EXT4_SNAPSHOTS(sb))
+		ext4_snapshot_destroy(sb);
 #endif
 	if (sb->s_dirt)
 		ext4_commit_super(sb, 1);
@@ -3821,8 +3822,9 @@ no_journal:
 	};
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
-		/* XXX: how to fail mount/force read-only at this point? */
+	if (EXT4_SNAPSHOTS(sb) &&
+			ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
+		/* XXX: how can we fail and force read-only at this point? */
 		ext4_error(sb, "load snapshot failed\n");
 #endif
 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;

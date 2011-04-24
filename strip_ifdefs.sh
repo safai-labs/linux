@@ -5,7 +5,7 @@ BASE=ext4-next
 PATCH=ext4_snapshots.patch
 
 # re-create the strip_ifdefs branch from current branch
-(git branch | grep strip_ifdefs) && (git branch -d strip_ifdefs || exit 1)
+(git branch | grep strip_ifdefs) && (git branch -D strip_ifdefs || exit 1)
 git checkout -b strip_ifdefs || exit 1
 
 make clean SUBDIRS=fs/ext4

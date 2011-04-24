@@ -3,7 +3,7 @@
 BRANCH=extract_reverse_patches
 
 # re-create the branch from current head
-(git branch | grep $BRANCH) && (git branch -d $BRANCH || exit 1)
+(git branch | grep $BRANCH) && (git branch -D $BRANCH || exit 1)
 git checkout -b $BRANCH || exit 1
 
 gcc -o strip_ifdefs strip_ifdefs.c

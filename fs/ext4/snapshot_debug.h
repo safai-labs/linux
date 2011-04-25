@@ -20,8 +20,6 @@
 
 #define SNAPSHOT_INDENT_MAX 4
 #define SNAPSHOT_INDENT_STR "\t\t\t\t"
-#define KERN_LEVEL_STR "<%d>"
-#define SNAP_KERN_LEVEL(n) ((n)+2) /* 1 = KERN_ERR, ..., 5 = KERN_DEBUG */
 
 #define SNAPTEST_TAKE	0
 #define SNAPTEST_DELETE	1
@@ -65,8 +63,7 @@ extern u8 cow_cache_offset;
 	do {								\
 		if ((n) <= snapshot_enable_debug &&			\
 		    (l) <= SNAPSHOT_INDENT_MAX) {			\
-			printk(KERN_LEVEL_STR "snapshot: %s" f,		\
-				   SNAP_KERN_LEVEL(n),			\
+			printk(KERN_DEBUG "snapshot: %s" f,		\
 			       snapshot_indent - (l),			\
 				   ## a);				\
 		}							\

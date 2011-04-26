@@ -84,7 +84,6 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
 #define CONFIG_EXT4_FS_SNAPSHOT_CTL
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE
-#define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
@@ -287,9 +286,6 @@ struct ext4_io_submit {
 #define EXT4_UNDEL_DIR_INO	 6	/* Undelete directory inode */
 #define EXT4_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define EXT4_JOURNAL_INO	 8	/* Journal inode */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#define EXT4_EXCLUDE_INO		 9	/* Snapshot exclude inode */
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
 #define EXT4_EXCLUDE_INO_OLD		10	/* Old exclude inode */
 #endif
@@ -346,7 +342,12 @@ struct ext4_group_desc
 	__le16	bg_free_inodes_count_lo;/* Free inodes count */
 	__le16	bg_used_dirs_count_lo;	/* Directories count */
 	__le16	bg_flags;		/* EXT4_BG_flags (INODE_UNINIT, etc) */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	__le32	bg_exclude_bitmap_lo;	/* Exclude bitmap block */
+	__u32	bg_reserved[1];		/* Likely block/inode bitmap checksum */
+#else
 	__u32	bg_reserved[2];		/* Likely block/inode bitmap checksum */
+#endif
 	__le16  bg_itable_unused_lo;	/* Unused inodes count */
 	__le16  bg_checksum;		/* crc16(sb_uuid+group+desc) */
 	__le32	bg_block_bitmap_hi;	/* Blocks bitmap block MSB */
@@ -356,7 +357,12 @@ struct ext4_group_desc
 	__le16	bg_free_inodes_count_hi;/* Free inodes count MSB */
 	__le16	bg_used_dirs_count_hi;	/* Directories count MSB */
 	__le16  bg_itable_unused_hi;    /* Unused inodes count MSB */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	__le32	bg_exclude_bitmap_hi;	/* Exclude bitmap block MSB */
+	__u32	bg_reserved2[2];
+#else
 	__u32	bg_reserved2[3];
+#endif
 };
 
 /*
@@ -1422,9 +1428,6 @@ static inline int ext4_valid_inum(struct super_block *sb, unsigned long ino)
 	return ino == EXT4_ROOT_INO ||
 		ino == EXT4_JOURNAL_INO ||
 		ino == EXT4_RESIZE_INO ||
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-		ino == EXT4_EXCLUDE_INO ||
-#endif
 		(ino >= EXT4_FIRST_INO(sb) &&
 		 ino <= le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count));
 }
@@ -1582,7 +1585,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define EXT4_FEATURE_COMPAT_DIR_INDEX		0x0020
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_FEATURE_COMPAT_EXCLUDE_INODE	0x0080 /* Has exclude inode */
+#define EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP	0x0080 /* Has exclude bitmap */
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define EXT4_FEATURE_COMPAT_BIG_JOURNAL_OLD	0x1000 /* Old big journal */
@@ -2157,6 +2160,10 @@ extern ext4_fsblk_t ext4_block_bitmap(struct super_block *sb,
 				      struct ext4_group_desc *bg);
 extern ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
 				      struct ext4_group_desc *bg);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+extern ext4_fsblk_t ext4_exclude_bitmap(struct super_block *sb,
+				      struct ext4_group_desc *bg);
+#endif
 extern ext4_fsblk_t ext4_inode_table(struct super_block *sb,
 				     struct ext4_group_desc *bg);
 extern __u32 ext4_free_blks_count(struct super_block *sb,
@@ -2330,7 +2337,6 @@ struct ext4_group_info {
 	 * take and initialized lazily on first block group write access.
 	 * bg_cow_bitmap is protected by sb_bgl_lock().
 	 */
-	unsigned long bg_exclude_bitmap;/* Exclude bitmap cache */
 	unsigned long bg_cow_bitmap;	/* COW bitmap cache */
 #endif
 	ext4_grpblk_t	bb_counters[];	/* Nr of free power-of-two-block

@@ -113,6 +113,16 @@ ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_bitmap_hi) << 32 : 0);
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+ext4_fsblk_t ext4_exclude_bitmap(struct super_block *sb,
+			       struct ext4_group_desc *bg)
+{
+	return le32_to_cpu(bg->bg_exclude_bitmap_lo) |
+		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
+		 (ext4_fsblk_t)le32_to_cpu(bg->bg_exclude_bitmap_hi) << 32 : 0);
+}
+#endif
+
 ext4_fsblk_t ext4_inode_table(struct super_block *sb,
 			      struct ext4_group_desc *bg)
 {
@@ -2757,9 +2767,9 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 			return 0;
 		}
 		if (!EXT4_HAS_COMPAT_FEATURE(sb,
-					EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
 			ext4_msg(sb, KERN_ERR,
-				"exclude_inode feature is required "
+				"exclude_bitmap feature is required "
 				"for snapshots");
 			return 0;
 		}

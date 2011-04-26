@@ -26,11 +26,6 @@
 static int verify_group_input(struct super_block *sb,
 			      struct ext4_new_group_data *input)
 {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#ifdef CONFIG_EXT4_FS_DEBUG
-	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
-#endif
-#endif
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_super_block *es = sbi->s_es;
 	ext4_fsblk_t start = ext4_blocks_count(es);
@@ -48,25 +43,6 @@ static int verify_group_input(struct super_block *sb,
 	input->free_blocks_count = free_blocks_count =
 		input->blocks_count - 2 - overhead - sbi->s_itb_per_group;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	if (EXT4_HAS_COMPAT_FEATURE(sb, EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
-		/* reserve first free block for exclude bitmap */
-		itend++;
-		free_blocks_count--;
-		input->free_blocks_count = free_blocks_count;
-	}
-#ifdef CONFIG_EXT4_FS_DEBUG
-	if (active_snapshot &&
-			EXT4_I(active_snapshot)->i_flags & EXT4_UNRM_FL) {
-		/* assign all new blocks to active snapshot */
-		input->blocks_count -= free_blocks_count;
-		end -= free_blocks_count;
-		input->free_blocks_count = free_blocks_count = 0;
-		input->reserved_blocks = 0;
-	}
-#endif
-
-#endif
 	if (test_opt(sb, DEBUG))
 		printk(KERN_DEBUG "EXT4-fs: adding %s group %u: %u blocks "
 		       "(%d free, %u reserved)\n",
@@ -197,9 +173,6 @@ static int setup_new_group_blocks(struct super_block *sb,
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	ext4_fsblk_t start = ext4_group_first_block_no(sb, input->group);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	ext4_fsblk_t itb = sbi->s_itb_per_group;
-#endif
 	int reserved_gdb = ext4_bg_has_super(sb, input->group) ?
 		le16_to_cpu(sbi->s_es->s_reserved_gdt_blocks) : 0;
 	unsigned long gdblocks = ext4_bg_num_gdb(sb, input->group);
@@ -281,28 +254,15 @@ static int setup_new_group_blocks(struct super_block *sb,
 		   input->inode_bitmap - start);
 	ext4_set_bit(input->inode_bitmap - start, bh->b_data);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	if (EXT4_HAS_COMPAT_FEATURE(sb, EXT4_FEATURE_COMPAT_EXCLUDE_INODE))
-		/* Zero out exclude bitmap block following inode table */
-		itb++;
-#endif
 	/* Zero out all of the inode table blocks */
 	block = input->inode_table;
 	ext4_debug("clear inode table blocks %#04llx -> %#04llx\n",
 			block, sbi->s_itb_per_group);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	err = sb_issue_zeroout(sb, block, itb, GFP_NOFS);
-#else
 	err = sb_issue_zeroout(sb, block, sbi->s_itb_per_group, GFP_NOFS);
-#endif
 	if (err)
 		goto exit_bh;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	for (i = 0, bit = block - start; i < itb; i++, bit++)
-#else
 	for (i = 0, bit = input->inode_table - start;
 	     i < sbi->s_itb_per_group; i++, bit++)
-#endif
 		ext4_set_bit(bit, bh->b_data);
 
 	if ((err = extend_or_restart_transaction(handle, 2, bh)))
@@ -799,21 +759,19 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	struct buffer_head *primary = NULL;
 	struct ext4_group_desc *gdp;
 	struct inode *inode = NULL;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	struct ext4_group_info *grp;
-	struct inode *exclude_inode = NULL;
-	struct buffer_head *exclude_bh = NULL;
-	int dind_offset = input->group / SNAPSHOT_ADDR_PER_BLOCK;
-	int ind_offset = input->group % SNAPSHOT_ADDR_PER_BLOCK;
-	__le32 exclude_bitmap = 0;
-	int credits;
-#endif
 	handle_t *handle;
 	int gdb_off, gdb_num;
 	int err, err2;
 
 	gdb_num = input->group / EXT4_DESC_PER_BLOCK(sb);
 	gdb_off = input->group % EXT4_DESC_PER_BLOCK(sb);
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (EXT4_SNAPSHOTS(sb)) {
+		ext4_warning(sb, "Can't resize filesystem with snapshot");
+		return -EPERM;
+	}
+#endif
 
 	if (gdb_off == 0 && !EXT4_HAS_RO_COMPAT_FEATURE(sb,
 					EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER)) {
@@ -848,30 +806,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 		}
 	}
 
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	if (EXT4_HAS_COMPAT_FEATURE(sb,
-		EXT4_FEATURE_COMPAT_EXCLUDE_INODE)) {
-		exclude_inode = ext4_iget(sb, EXT4_EXCLUDE_INO);
-		if (IS_ERR(exclude_inode)) {
-			ext4_warning(sb, "Error opening exclude inode");
-			return PTR_ERR(exclude_inode);
-		}
-
-		/* exclude bitmap blocks addresses are exposed on the IND
-		   branch */
-		exclude_bh = ext4_bread(NULL, exclude_inode,
-					 EXT4_IND_BLOCK+dind_offset, 0, &err);
-		if (!exclude_bh) {
-			snapshot_debug(1, "failed to read exclude inode "
-				       "indirect[%d] block\n", dind_offset);
-			err = -EIO;
-			goto exit_put;
-		}
-		exclude_bitmap = ((__le32 *)exclude_bh->b_data)[ind_offset];
-	}
-
-#endif
 	if ((err = verify_group_input(sb, input)))
 		goto exit_put;
 
@@ -885,21 +819,9 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	 * are adding a group with superblock/GDT backups  we will also
 	 * modify each of the reserved GDT dindirect blocks.
 	 */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	credits = ext4_bg_has_super(sb, input->group) ?
-		3 + reserved_gdb : 4;
-	if (exclude_inode && !exclude_bitmap)
-		/*
-		 * we will also be modifying the exclude inode
-		 * and one of it's indirect blocks
-		 */
-		credits += 2;
-	handle = ext4_journal_start_sb(sb, credits);
-#else
 	handle = ext4_journal_start_sb(sb,
 				       ext4_bg_has_super(sb, input->group) ?
 				       3 + reserved_gdb : 4);
-#endif
 	if (IS_ERR(handle)) {
 		err = PTR_ERR(handle);
 		goto exit_put;
@@ -972,54 +894,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	if (err)
 		goto exit_journal;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	grp = ext4_get_group_info(sb, input->group);
-	if (!exclude_inode)
-		goto no_exclude_inode;
-	if (exclude_bitmap) {
-		/*
-		 * offline resize from a bigger size filesystem may leave
-		 * allocated exclude bitmap blocks of unused block groups
-		 */
-		snapshot_debug(2, "reusing old exclude bitmap #%d block (%u)\n",
-			       input->group, le32_to_cpu(exclude_bitmap));
-	} else {
-		/* set exclude bitmap block to first free block */
-		ext4_fsblk_t first_free =
-			input->inode_table + sbi->s_itb_per_group;
-		struct ext4_iloc iloc;
-		loff_t i_size;
-
-		err = ext4_journal_get_write_access(handle, exclude_bh);
-		if (err)
-			goto exit_journal;
-		err = ext4_reserve_inode_write(handle, exclude_inode, &iloc);
-		if (err)
-			goto exit_journal;
-
-		exclude_bitmap = cpu_to_le32(first_free);
-		((__le32 *)exclude_bh->b_data)[ind_offset] = exclude_bitmap;
-		snapshot_debug(2, "allocated new exclude bitmap #%u block "
-					"(%llu)\n", input->group, first_free);
-		ext4_handle_dirty_metadata(handle, NULL, exclude_bh);
-
-		/*
-		 * Update exclude inode size and blocks.
-		 * Online resize can only extend f/s and exclude inode.
-		 * Offline resize can shrink f/s but it doesn't shrink
-		 * exclude inode.
-		 */
-		i_size = SNAPSHOT_IBLOCK(input->group)
-				 << SNAPSHOT_BLOCK_SIZE_BITS;
-		i_size_write(exclude_inode, i_size);
-		EXT4_I(exclude_inode)->i_disksize = i_size;
-		exclude_inode->i_blocks += sb->s_blocksize >> 9;
-		ext4_mark_iloc_dirty(handle, exclude_inode, &iloc);
-	}
-	/* update exclude bitmap cache */
-	grp->bg_exclude_bitmap = le32_to_cpu(exclude_bitmap);
-no_exclude_inode:
-#endif
 	/*
 	 * Make the new blocks and inodes valid next.  We do this before
 	 * increasing the group count so that once the group is enabled,
@@ -1101,10 +975,6 @@ exit_journal:
 			       primary->b_size);
 	}
 exit_put:
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	brelse(exclude_bh);
-	iput(exclude_inode);
-#endif
 	iput(inode);
 	return err;
 } /* ext4_group_add */

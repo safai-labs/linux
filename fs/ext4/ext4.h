@@ -2070,14 +2070,6 @@ extern int ext4_orphan_add(handle_t *, struct inode *);
 extern int ext4_orphan_del(handle_t *, struct inode *);
 extern int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
 				__u32 start_minor_hash, __u32 *next_hash);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
-extern int ext4_inode_list_add(handle_t *handle, struct inode *inode,
-				__u32 *i_next, __le32 *s_last,
-				struct list_head *s_list, const char *name);
-extern int ext4_inode_list_del(handle_t *handle, struct inode *inode,
-				__u32 *i_next, __le32 *s_last,
-				struct list_head *s_list, const char *name);
-#endif
 
 /* resize.c */
 extern int ext4_group_add(struct super_block *sb,

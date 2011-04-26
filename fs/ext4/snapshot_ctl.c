@@ -1288,8 +1288,8 @@ static int ext4_snapshot_clean(handle_t *handle, struct inode *inode)
 
 		if (!ei->i_data[j])
 			continue;
-		ext4_free_branches_cow(handle, inode, NULL,
-				ei->i_data+j, ei->i_data+j+1, depth, NULL);
+		ext4_free_branches(handle, inode, NULL,
+				ei->i_data+j, ei->i_data+j+1, depth);
 		ei->i_data[j] = 0;
 	}
 	return 0;

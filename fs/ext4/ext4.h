@@ -2037,25 +2037,21 @@ extern int ext4_block_to_path(struct inode *inode,
 extern Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err);
+extern void ext4_free_branches(handle_t *handle, struct inode *inode,
+				struct buffer_head *parent_bh,
+				__le32 *first, __le32 *last,
+				int depth);
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int *pblocks);
+			   int *pfreed_blocks);
 
 #define ext4_free_data(handle, inode, bh, first, last)		\
-	ext4_free_data_cow(handle, inode, bh, first, last,		\
-			    NULL, 0, NULL, NULL)
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
-				    struct buffer_head *parent_bh,
-				    __le32 *first, __le32 *last,
-				    int depth, int *pblocks);
-
-#define ext4_free_branches(handle, inode, bh, first, last, depth)	\
-	ext4_free_branches_cow((handle), (inode), (bh),		\
-				(first), (last), (depth), NULL)
+	ext4_free_data_cow(handle, inode, bh, first, last,	\
+			    NULL, 0, NULL)
 
 #endif
 /* ioctl.c */

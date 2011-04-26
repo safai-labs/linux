@@ -222,7 +222,7 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		/* free blocks with or without consulting COW bitmap */
 		ext4_free_data_cow(handle, inode, partial->bh,
 				partial->p, partial->p + count,
-				cow_bitmap, bit, &freed_blocks, NULL);
+				cow_bitmap, bit, &freed_blocks);
 	}
 
 shrink_indirect_blocks:
@@ -263,6 +263,152 @@ return err;
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
 /*
+ * ext4_snapshot_count_blocks - count blocks and verify that
+ * snapshot blocks are excluded.
+ *	@inode:	snapshot we are merging
+ *	@block:	first block to test
+ *	@count:	no. of blocks to test
+ *	@pblocks: pointer to counter of blocks
+ *
+ * Return <0 on error or if blocks are not excluded.
+ */
+static int ext4_snapshot_count_blocks(struct inode *inode, ext4_fsblk_t block,
+				      unsigned long count, int *pblocks)
+{
+	int err;
+
+	/* test that blocks are excluded and update blocks counter */
+	err = ext4_snapshot_test_excluded(inode, block, count);
+	if (err)
+		return err;
+	*pblocks += count;
+	return 0;
+}
+
+/**
+ * ext4_snapshot_count_data - count blocks on an array of data blocks
+ * and verify that snapshot blocks are excluded.
+ *	@inode:	snapshot we are merging
+ *	@first:	array of block numbers
+ *	@last:	points immediately past the end of array
+ *	@pblocks: pointer to counter of branch blocks
+ *
+ * We accumulate contiguous runs of blocks to test they are excluded.
+ *
+ * Return <0 on error or if blocks are not excluded.
+ */
+static int ext4_snapshot_count_data(struct inode *inode,
+				    __le32 *first, __le32 *last,
+				    int *pblocks)
+{
+	ext4_fsblk_t block = 0;		/* Starting block # of a run */
+	unsigned long count = 0;	/* Number of blocks in the run */
+	__le32 *block_p = NULL;		/* Pointer into inode/ind
+					   corresponding to block */
+	ext4_fsblk_t nr;		/* Current block # */
+	__le32 *p;			/* Pointer into inode/ind
+					   for current block */
+	int err = 0;
+
+	for (p = first; p < last; p++) {
+		nr = le32_to_cpu(*p);
+		if (nr) {
+			/* accumulate blocks to test if they're contiguous */
+			if (count == 0) {
+				block = nr;
+				block_p = p;
+				count = 1;
+			} else if (nr == block + count) {
+				count++;
+			} else {
+				err = ext4_snapshot_count_blocks(inode,
+						block, count, pblocks);
+				if (err)
+					return err;
+				block = nr;
+				block_p = p;
+				count = 1;
+			}
+		}
+	}
+
+	if (count > 0)
+		err = ext4_snapshot_count_blocks(inode, block, count, pblocks);
+	return err;
+}
+
+/**
+ * ext4_snapshot_count_branches - count blocks on an array of branches
+ * and verify that snapshot blocks are excluded.
+ *	@inode:	snapshot we are merging
+ *	@first:	array of block numbers
+ *	@last:	pointer immediately past the end of array
+ *	@depth:	depth of the branches to free
+ *	@pblocks: pointer to counter of branch blocks
+ *
+ * Return <0 on error or if blocks are not excluded.
+ */
+static int ext4_snapshot_count_branches(struct inode *inode,
+			       __le32 *first, __le32 *last, int depth,
+			       int *pblocks)
+{
+	ext4_fsblk_t nr;
+	__le32 *p;
+	int err = 0;
+
+	if (depth--) {
+		struct buffer_head *bh;
+		int addr_per_block = EXT4_ADDR_PER_BLOCK(inode->i_sb);
+		p = last;
+		while (--p >= first) {
+			nr = le32_to_cpu(*p);
+			if (!nr)
+				continue;		/* A hole */
+
+			if (!ext4_data_block_valid(EXT4_SB(inode->i_sb),
+						   nr, 1)) {
+				EXT4_ERROR_INODE(inode,
+						 "invalid indirect mapped "
+						 "block %lu (level %d)",
+						 (unsigned long) nr, depth);
+				break;
+			}
+
+			/* Go read the buffer for the next level down */
+			bh = sb_bread(inode->i_sb, nr);
+
+			/*
+			 * A read failure? Report error and clear slot
+			 * (should be rare).
+			 */
+			if (!bh) {
+				EXT4_ERROR_INODE_BLOCK(inode, nr,
+						       "Read failure");
+				continue;
+			}
+
+			/* This counts the entire branch.  Bottom up. */
+			BUFFER_TRACE(bh, "count child branches");
+			err = ext4_snapshot_count_branches(inode,
+					(__le32 *)bh->b_data,
+					(__le32 *)bh->b_data + addr_per_block,
+					depth, pblocks);
+			if (err)
+				break;
+			/* Count the parent block */
+			err = ext4_snapshot_count_blocks(inode, nr, 1, pblocks);
+			if (err)
+				break;
+		}
+	} else {
+		/* We have reached the bottom of the tree. */
+		BUFFER_TRACE(parent_bh, "count data blocks");
+		err = ext4_snapshot_count_data(inode, first, last, pblocks);
+	}
+	return err;
+}
+
+/*
  * ext4_move_branches - move an array of branches
  * @handle: JBD handle for this transaction
  * @src:	inode we're moving blocks from
@@ -276,12 +422,13 @@ return err;
  * and stopping at the first branch that needs to be merged at higher level.
  * Called from ext4_snapshot_merge_blocks() under snapshot_mutex.
  * Returns the number of merged branches.
+ * Return <0 on error or if blocks are not excluded.
  */
 static int ext4_move_branches(handle_t *handle, struct inode *src,
 		__le32 *ps, __le32 *pd, int depth,
 		int count, int *pmoved)
 {
-	int i;
+	int i, err;
 
 	for (i = 0; i < count; i++, ps++, pd++) {
 		__le32 s = *ps, d = *pd;
@@ -294,8 +441,10 @@ static int ext4_move_branches(handle_t *handle, struct inode *src,
 			continue;
 
 		/* count moved blocks (and verify they are excluded) */
-		ext4_free_branches_cow(handle, src, NULL,
-				ps, ps+1, depth, pmoved);
+		err = ext4_snapshot_count_branches(src, ps, ps+1, depth,
+						   pmoved);
+		if (err)
+			return err;
 
 		/* move the entire branch from src to dst inode */
 		*pd = s;

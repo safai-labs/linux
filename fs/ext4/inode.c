@@ -4827,20 +4827,16 @@ no_top:
  * We release `count' blocks on disk, but (last - first) may be greater
  * than `count' because there can be holes in there.
  */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 /*
  * ext4_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
  * @bit:	bit number representing the @first block
- * @pblocks: 	pointer to counter of branch blocks
- *
- * If @pblocks is not NULL, don't free blocks, only update blocks counter and
- * test that blocks are excluded.
  */
 static int ext4_clear_blocks_cow(handle_t *handle, struct inode *inode,
 		struct buffer_head *bh, ext4_fsblk_t block_to_free,
 		unsigned long count, __le32 *first, __le32 *last,
-		const char *bitmap, int bit, int *pblocks)
+		const char *bitmap, int bit)
 #else
 static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 			     struct buffer_head *bh,
@@ -4853,17 +4849,6 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 	int	flags = EXT4_FREE_BLOCKS_FORGET | EXT4_FREE_BLOCKS_VALIDATED;
 	int	err;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-	if (pblocks) {
-		/* test that blocks are excluded and update blocks counter */
-		ext4_snapshot_test_excluded(handle, inode, block_to_free,
-						count);
-		if (is_handle_aborted(handle))
-			return 1;
-		*pblocks += count;
-		return 0;
-	}
-#endif
 	if (S_ISDIR(inode->i_mode) || S_ISLNK(inode->i_mode))
 		flags |= EXT4_FREE_BLOCKS_METADATA;
 
@@ -4910,7 +4895,7 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 		}
 	}
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 	for (p = first; p < last; p++) {
 		if (*p && bitmap && ext4_test_bit(bit + (p - first), bitmap))
 			/* don't free block used by older snapshot */
@@ -4945,22 +4930,18 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
  * @this_bh will be %NULL if @first and @last point into the inode's direct
  * block pointers.
  */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 /*
  * ext4_free_data_cow - free a list of data blocks (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
  * @bit:	bit number representing the @first block
  * @pfreed_blocks:	return number of freed blocks
- * @pblocks: 	pointer to counter of branch blocks
- *
- * If @pblocks is not NULL, don't free blocks, only update blocks counter and
- * test that blocks are excluded.
  */
 void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int *pblocks)
+			   int *pfreed_blocks)
 #else
 static void ext4_free_data(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
@@ -4977,11 +4958,6 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 					       for current block */
 	int err;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-	if (pblocks)
-		/* we're not actually deleting any blocks */
-		this_bh = NULL;
-#endif
 	if (this_bh) {				/* For indirect block */
 		BUFFER_TRACE(this_bh, "get_write_access");
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
@@ -4998,7 +4974,7 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 
 	for (p = first; p < last; p++) {
 		nr = le32_to_cpu(*p);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 		if (nr && bitmap && ext4_test_bit(bit + (p - first), bitmap))
 			/* don't free block used by older snapshot */
 			nr = 0;
@@ -5014,12 +4990,11 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 			} else if (nr == block_to_free + count) {
 				count++;
 			} else {
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 				if (ext4_clear_blocks_cow(handle, inode, this_bh,
 					       block_to_free, count,
 					       block_to_free_p, p, bitmap,
-					       bit + (block_to_free_p - first),
-							  pblocks))
+					       bit + (block_to_free_p - first)))
 					break;
 #else
 				if (ext4_clear_blocks(handle, inode, this_bh,
@@ -5039,13 +5014,11 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 		}
 	}
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 	if (count > 0)
 		ext4_clear_blocks_cow(handle, inode, this_bh,
 				block_to_free, count, block_to_free_p, p,
-				bitmap, bit + (block_to_free_p - first), pblocks);
-	if (pblocks)
-		return;
+				bitmap, bit + (block_to_free_p - first));
 #else
 	if (count > 0)
 		ext4_clear_blocks(handle, inode, this_bh, block_to_free,
@@ -5090,17 +5063,9 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
  *	appropriately.
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-/*
- *	ext4_free_branches_cow - free or exclude an array of branches
- *	@pblocks: 	pointer to counter of branch blocks
- *
- *	If @pblocks is not NULL, don't free blocks, only update blocks counter
- *	and test that blocks are excluded.
- */
-void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
+void ext4_free_branches(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,
-			       __le32 *first, __le32 *last, int depth,
-			       int *pblocks)
+			       __le32 *first, __le32 *last, int depth)
 #else
 static void ext4_free_branches(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,
@@ -5113,11 +5078,6 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
 	if (ext4_handle_is_aborted(handle))
 		return;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-	if (pblocks)
-		/* we're not actually deleting any blocks */
-		parent_bh = NULL;
-#endif
 	if (depth--) {
 		struct buffer_head *bh;
 		int addr_per_block = EXT4_ADDR_PER_BLOCK(inode->i_sb);
@@ -5151,27 +5111,10 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
 
 			/* This zaps the entire block.  Bottom up. */
 			BUFFER_TRACE(bh, "free child branches");
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-			ext4_free_branches_cow(handle, inode, bh,
-					(__le32 *)bh->b_data,
-					(__le32 *)bh->b_data + addr_per_block,
-					depth, pblocks);
-			if (pblocks) {
-				/* test that block is excluded and update
-				   blocks counter */
-				ext4_snapshot_test_excluded(handle, inode,
-								nr, 1);
-				if (is_handle_aborted(handle))
-					return;
-				*pblocks += 1;
-				continue;
-			}
-#else
 			ext4_free_branches(handle, inode, bh,
 					(__le32 *) bh->b_data,
 					(__le32 *) bh->b_data + addr_per_block,
 					depth);
-#endif
 			brelse(bh);
 
 			/*
@@ -5238,12 +5181,7 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
 	} else {
 		/* We have reached the bottom of the tree. */
 		BUFFER_TRACE(parent_bh, "free data blocks");
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-		ext4_free_data_cow(handle, inode, parent_bh, first, last,
-				    NULL, 0, NULL, pblocks);
-#else
 		ext4_free_data(handle, inode, parent_bh, first, last);
-#endif
 	}
 }
 

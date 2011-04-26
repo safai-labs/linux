@@ -14,9 +14,6 @@
  *
  *  Big-endian to little-endian byte-swapping/bitmaps by
  *        David S. Miller (davem@caip.rutgers.edu), 1995
- *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/module.h>
@@ -297,7 +294,6 @@ handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
 		}
 		return (handle_t *)handle;
 #else
-
 		return jbd2_journal_start(journal, nblocks);
 #endif
 	}
@@ -378,7 +374,6 @@ static void ext4_record_journal_errstr(struct super_block *sb,
 }
 
 #endif
-
 void ext4_journal_abort_handle(const char *caller, unsigned int line,
 			       const char *err_fn, struct buffer_head *bh,
 			       handle_t *handle, int err)
@@ -871,10 +866,9 @@ static void ext4_put_super(struct super_block *sb)
 	destroy_workqueue(sbi->dio_unwritten_wq);
 
 	lock_super(sb);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	ext4_snapshot_destroy(sb);
-
+	if (EXT4_SNAPSHOTS(sb))
+		ext4_snapshot_destroy(sb);
 #endif
 	if (sb->s_dirt)
 		ext4_commit_super(sb, 1);
@@ -2270,10 +2264,10 @@ static void ext4_orphan_cleanup(struct super_block *sb,
 		return;
 	}
 
-	/* Check if feature set allows readwrite operations */
-	if (!ext4_feature_set_ok(sb, 0)) {
-		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup on readonly-"
-			       "compatible fs");
+	/* Check if feature set would not allow a r/w mount */
+ 	if (!ext4_feature_set_ok(sb, 0)) {
+		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup due to "
+			 "unknown ROCOMPAT features");
 		return;
 	}
 
@@ -2752,18 +2746,11 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 	/* Enforce snapshots requirements: */
 	if (EXT4_SNAPSHOTS(sb)) {
 		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
-#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-					EXT4_FEATURE_INCOMPAT_EXTENTS|
-#endif
-					EXT4_FEATURE_INCOMPAT_FLEX_BG|
+					EXT4_FEATURE_INCOMPAT_META_BG|
 					EXT4_FEATURE_INCOMPAT_64BIT)) {
 			ext4_msg(sb, KERN_ERR,
 				"has_snapshot feature cannot be mixed with "
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-				"features: flex_bg, 64bit");
-#else
-				"features: flex_bg, extents, 64bit");
-#endif
+				"features: meta_bg, 64bit");
 			return 0;
 		}
 		if (!EXT4_HAS_COMPAT_FEATURE(sb,
@@ -3845,8 +3832,9 @@ no_journal:
 	};
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
-		/* XXX: how to fail mount/force read-only at this point? */
+	if (EXT4_SNAPSHOTS(sb) &&
+			ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
+		/* XXX: how can we fail and force read-only at this point? */
 		ext4_error(sb, "load snapshot failed\n");
 #endif
 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
@@ -3983,8 +3971,8 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		iput(journal_inode);
 		return NULL;
 	}
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (EXT4_SNAPSHOTS(sb) &&
 			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
 			EXT4_MIN_JOURNAL_BLOCKS) {

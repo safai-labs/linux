@@ -6,8 +6,7 @@
  * Laboratoire MASI - Institut Blaise Pascal
  * Universite Pierre et Marie Curie (Paris VI)
  *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Snapshot control API, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #include <linux/fs.h>
@@ -35,7 +34,6 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ext4_get_inode_flags(ei);
 		flags = ei->i_flags & EXT4_FL_USER_VISIBLE;
 		return put_user(flags, (int __user *) arg);
-
 	case EXT4_IOC_SETFLAGS: {
 		handle_t *handle = NULL;
 		int err, migrate = 0;
@@ -85,8 +83,8 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			if (!capable(CAP_SYS_RESOURCE))
 				goto flags_out;
 		}
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
+
 		/*
 		 * The SNAPFILE flag can only be changed on directories by
 		 * the relevant capability.
@@ -102,7 +100,7 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 		if (ext4_snapshot_file(inode) &&
 				((oldflags ^ flags) & EXT4_NODUMP_FL)) {
 			/* print snapshot inode map on chattr -d */
@@ -172,6 +170,9 @@ flags_out:
 	}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
 	case EXT4_IOC_GETSNAPFLAGS:
+		if (!EXT4_SNAPSHOTS(inode->i_sb))
+			return -EOPNOTSUPP;
+
 		ext4_snapshot_get_flags(inode, filp);
 		flags = ext4_get_snapstate_flags(inode);
 		return put_user(flags, (int __user *) arg);
@@ -181,6 +182,9 @@ flags_out:
 		struct ext4_iloc iloc;
 		unsigned int oldflags;
 		int err;
+
+		if (!EXT4_SNAPSHOTS(inode->i_sb))
+			return -EOPNOTSUPP;
 
 		if (!is_owner_or_cap(inode))
 			return -EACCES;

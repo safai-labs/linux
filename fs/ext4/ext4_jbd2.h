@@ -11,8 +11,7 @@
  *
  * Ext4-specific journaling extensions.
  *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Snapshot extra COW credits, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #ifndef _EXT4_JBD2_H
@@ -21,7 +20,7 @@
 #include <linux/fs.h>
 #include <linux/jbd2.h>
 #include "ext4.h"
-#include "snapshot_debug.h"
+#include "snapshot.h"
 
 #define EXT4_JOURNAL(inode)	(EXT4_SB((inode)->i_sb)->s_journal)
 
@@ -127,9 +126,14 @@
 /*
  * check for sufficient buffer and COW credits
  */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
 #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n)			\
 	((handle)->h_buffer_credits >= EXT4_SNAPSHOT_TRANS_BLOCKS(n) && \
 	 ((ext4_handle_t *)(handle))->h_user_credits >= (n))
+#else
+#define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
+	(handle->h_buffer_credits >= (n))
+#endif
 
 #define EXT4_RESERVE_COW_CREDITS	(EXT4_COW_CREDITS +		\
 					 EXT4_SNAPSHOT_CREDITS)
@@ -140,11 +144,8 @@
  */
 #define EXT4_MIN_JOURNAL_BLOCKS	32768U
 #define EXT4_BIG_JOURNAL_BLOCKS	(24*EXT4_MIN_JOURNAL_BLOCKS)
-#else
- #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
-	(handle->h_buffer_credits >= (n))
-#endif
 
+#endif
 #define EXT4_RESERVE_TRANS_BLOCKS	12U
 
 #define EXT4_INDEX_EXTRA_TRANS_BLOCKS	8
@@ -286,8 +287,14 @@ void ext4_journal_abort_handle(const char *caller, unsigned int line,
 			       const char *err_fn,
 		struct buffer_head *bh, handle_t *handle, int err);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+int __ext4_handle_get_bitmap_access(const char *where, unsigned int line,
+				    handle_t *handle, struct super_block *sb,
+				    ext4_group_t group, struct buffer_head *bh);
+#else
 int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 				   handle_t *handle, struct buffer_head *bh);
+#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
@@ -298,7 +305,6 @@ int __ext4_journal_get_write_access(const char *where, unsigned int line,
 				    handle_t *handle, struct buffer_head *bh);
 
 #endif
-
 int __ext4_forget(const char *where, unsigned int line, handle_t *handle,
 		  int is_metadata, struct inode *inode,
 		  struct buffer_head *bh, ext4_fsblk_t blocknr);
@@ -313,9 +319,14 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 int __ext4_handle_dirty_super(const char *where, unsigned int line,
 			      handle_t *handle, struct super_block *sb);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+#define ext4_handle_get_bitmap_access(handle, sb, group, bh) \
+	__ext4_handle_get_bitmap_access(__func__, __LINE__, \
+					(handle), (sb), (group), (bh))
+#else
 #define ext4_journal_get_undo_access(handle, bh) \
 	__ext4_journal_get_undo_access(__func__, __LINE__, (handle), (bh))
-
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 #define ext4_journal_get_write_access(handle, bh) \
 	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
@@ -340,7 +351,7 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 void __ext4_journal_trace(int debug, const char *fn, const char *caller,
 		ext4_handle_t *handle, int nblocks);
 
@@ -371,13 +382,7 @@ handle_t *__ext4_journal_start(const char *where,
 
 #else
 handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks);
-
-static inline handle_t *ext4_journal_start(struct inode *inode, int nblocks)
-{
-	return ext4_journal_start_sb(inode->i_sb, nblocks);
-}
 #endif
-
 int __ext4_journal_stop(const char *where, unsigned int line, handle_t *handle);
 
 #define EXT4_NOJOURNAL_MAX_REF_COUNT ((unsigned long) 4096)
@@ -433,6 +438,13 @@ static inline void ext4_journal_release_buffer(handle_t *handle,
 {
 	if (ext4_handle_valid(handle))
 		jbd2_journal_release_buffer(handle, bh);
+}
+#endif
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+
+static inline handle_t *ext4_journal_start(struct inode *inode, int nblocks)
+{
+	return ext4_journal_start_sb(inode->i_sb, nblocks);
 }
 #endif
 
@@ -507,7 +519,6 @@ static inline int __ext4_journal_restart(const char *where,
 	__ext4_journal_restart(__func__, \
 			(ext4_handle_t *)(handle), (nblocks))
 #else
-
 static inline int ext4_journal_extend(handle_t *handle, int nblocks)
 {
 	if (ext4_handle_valid(handle))
@@ -589,6 +600,8 @@ static inline int ext4_should_order_data(struct inode *inode)
 		/* snapshots enforce ordered data */
 		return 1;
 #endif
+	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
+		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
 		return 1;
 	return 0;
@@ -639,4 +652,29 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 	return 1;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+/*
+ * check if @inode data blocks should be moved-on-write
+ */
+static inline int ext4_snapshot_should_move_data(struct inode *inode)
+{
+	if (!EXT4_SNAPSHOTS(inode->i_sb))
+		return 0;
+	if (EXT4_JOURNAL(inode) == NULL)
+		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+	if (ext4_snapshot_excluded(inode))
+		return 0;
+#endif
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+		return 0;
+#endif
+	/* when a data block is journaled, it is already COWed as metadata */
+	if (ext4_should_journal_data(inode))
+		return 0;
+	return 1;
+}
+
+#endif
 #endif	/* _EXT4_JBD2_H */

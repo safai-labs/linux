@@ -84,7 +84,16 @@ config EXT4_DEBUG
 	  If you select Y here, then you will be able to turn on debugging
 	  with a command such as "echo 1 > /sys/kernel/debug/ext4/mballoc-debug"
 
-config EXT4_FS_DEBUG
+config EXT4_FS_SNAPSHOT
+	bool "snapshot support"
+	depends on EXT4_FS
+	default y
+	help
+	  Built-in snapshots support for ext4. Requires the features
+	  has_snapshot and exclude_inode and requires that block size
+	  in equal to system page size.
+
+config EXT4_FS_SNAPSHOT_DEBUG
 	bool "snapshot debugging support"
 	depends on EXT4_FS_SNAPSHOT
 	depends on EXT4_DEBUG
@@ -92,13 +101,6 @@ config EXT4_FS_DEBUG
 	help
 	  Control snapshot debug level via debugfs entry /ext4/snapshot-debug.
 	  Control snapshot unit tests via debugfs entries /ext4/test-XXX.
-
-config EXT4_FS_SNAPSHOT
-	bool "snapshot support"
-	depends on EXT4_FS
-	default y
-	help
-	  If you say N here, then Ext4 will be identical to Ext3.
 
 config EXT4_FS_SNAPSHOT_HOOKS_JBD
 	bool "snapshot hooks - inside JBD hooks"
@@ -109,6 +111,18 @@ config EXT4_FS_SNAPSHOT_HOOKS_JBD
 	  namely, one of the ext4_journal_get_XXX_access() functions.
 	  We use these journal hooks to call the snapshot API,
 	  before every meta data buffer write.
+
+config EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+	bool "snapshot hooks - block bitmap access"
+	depends on EXT4_FS_SNAPSHOT
+	default y
+	help
+	  The API ext4_handle_get_bitmap_access() is used instead of
+	  ext4_journal_get_write_access(), before modifying a block bitmap
+	  while allocating or deleting blocks. the bitmap access API is
+	  used to initialize the COW bitmap for that group.
+	  The old ext4_journal_get_undo_access() API was removed because it
+	  is not being used in the code.
 
 config EXT4_FS_SNAPSHOT_HOOKS_DELETE
 	bool "snapshot hooks - delete blocks"
@@ -194,15 +208,6 @@ config EXT4_FS_SNAPSHOT_FILE_HUGE
 	  of just one.  The extra 3 triple indirect blocks are stored in-place
 	  of direct blocks, which are not in use by snapshot files.
 
-config EXT4_FS_SNAPSHOT_FILE_OLD
-	bool "snapshot file - migrate old on-disk format"
-	depends on EXT4_FS_SNAPSHOT_FILE
-	default y
-	help
-	  Snapshot flags and super block field positions have changed.
-	  When old has_snapshot flag is set, copy fields to new position,
-	  clear old flags and fields and set new flags on mount time.
-
 config EXT4_FS_SNAPSHOT_BLOCK
 	bool "snapshot block operations"
 	depends on EXT4_FS_SNAPSHOT_FILE
@@ -222,6 +227,25 @@ config EXT4_FS_SNAPSHOT_BLOCK_COW
 	help
 	  Implementation of copying blocks into a snapshot file.
 	  This mechanism is used to copy-on-write metadata blocks to snapshot.
+
+config EXT4_FS_SNAPSHOT_BLOCK_MOVE
+	bool "snapshot block operation - move blocks to snapshot"
+	depends on EXT4_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Implementation of moving blocks into a snapshot file.
+	  The move block command maps an allocated blocks to the snapshot file,
+	  allocating only the indirect blocks when needed.
+	  This mechanism is used to move-on-write data blocks to snapshot.
+
+config EXT4_FS_SNAPSHOT_BLOCK_BITMAP
+	bool "snapshot block operation - copy block bitmap to snapshot"
+	depends on EXT4_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  The snapshot copy of the file system block bitmap is called the COW
+	  bitmap and it is used to check if a block was allocated at the time
+	  that the snapshot was taken.
 
 config EXT4_FS_SNAPSHOT_JOURNAL
 	bool "snapshot journaled"
@@ -317,7 +341,6 @@ config EXT4_FS_SNAPSHOT_LIST
 	  We make use of this fact to overload the in-memory inode field
 	  ext4_inode_info.i_orphan for the chaining of snapshots.
 
-
 config EXT4_FS_SNAPSHOT_LIST_READ
 	bool "snapshot list - read through to previous snapshot"
 	depends on EXT4_FS_SNAPSHOT_LIST
@@ -336,7 +359,6 @@ config EXT4_FS_SNAPSHOT_RACE
 	help
 	  Resolve snapshot race conditions
 
-
 config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	bool "snapshot race conditions - concurrent COW bitmap operations"
 	depends on EXT4_FS_SNAPSHOT_RACE
@@ -349,7 +371,6 @@ config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	  wait (in msleep(1) loop), until the COW bitmap cache is uptodate.
 	  The COWing task copies the bitmap block into the new COW bitmap block
 	  and updates the COW bitmap cache with the new block number.
-
 
 config EXT4_FS_SNAPSHOT_RACE_COW
 	bool "snapshot race conditions - concurrent COW operations"
@@ -371,7 +392,6 @@ config EXT4_FS_SNAPSHOT_RACE_COW
 	  buffer_new flag is cleared and then copies the 'new' buffer directly
 	  into the snapshot file page.
 
-
 config EXT4_FS_SNAPSHOT_RACE_READ
 	bool "snapshot race conditions - tracked reads"
 	depends on EXT4_FS_SNAPSHOT_RACE
@@ -389,6 +409,14 @@ config EXT4_FS_SNAPSHOT_RACE_READ
 	  (again, in msleep(1) loop), until the pending COW operation is
 	  completed, so the COWing task cannot be starved by reader tasks.
 
+config EXT4_FS_SNAPSHOT_CTL
+	bool "snapshot control"
+	depends on EXT4_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Snapshot control with chattr -X.
+	  Take/delete snapshot with chattr -X +/-S.
+	  Enable/disable snapshot with chattr -X +/-n.
 
 config EXT4_FS_SNAPSHOT_CTL_INIT
 	bool "snapshot control - init new snapshot"
@@ -429,33 +457,6 @@ config EXT4_FS_SNAPSHOT_CTL_DUMP
 	help
 	  Use chattr -d to print the blocks map of a snapshot file.
 	  Snapshot debugging should be enabled.
-config EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	bool "snapshot block operation - move blocks to snapshot"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  Implementation of moving blocks into a snapshot file.
-	  The move block command maps an allocated blocks to the snapshot file,
-	  allocating only the indirect blocks when needed.
-	  This mechanism is used to move-on-write data blocks to snapshot.
-
-config EXT4_FS_SNAPSHOT_BLOCK_BITMAP
-	bool "snapshot block operation - copy block bitmap to snapshot"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  The snapshot copy of the file system block bitmap is called the COW
-	  bitmap and it is used to check if a block was allocated at the time
-	  that the snapshot was taken.
-
-config EXT4_FS_SNAPSHOT_CTL
-	bool "snapshot control"
-	depends on EXT4_FS_SNAPSHOT_FILE
-	default y
-	help
-	  Snapshot control with chattr -X.
-	  Take/delete snapshot with chattr -X +/-S.
-	  Enable/disable snapshot with chattr -X +/-n.
 
 config EXT4_FS_SNAPSHOT_EXCLUDE
 	bool "snapshot exclude"
@@ -467,16 +468,6 @@ config EXT4_FS_SNAPSHOT_EXCLUDE
 	  allocated inside the snapshot image (no snapshots of snapshot files).
 	  Excluding snapshot file blocks is essential for efficient cleanup
 	  of deleted snapshot files.
-
-config EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
-	bool "snapshot exclude - migrate old exclude inode"
-	depends on EXT4_FS_SNAPSHOT_EXCLUDE
-	default y
-	help
-	  Exclude inode number has changed from 10 to 9.  The exclude_inode
-	  flag has also changed.  When old exclude_inode flag is set,
-	  copy inode 10 to 9, clear inode 10 and clear old exclude_inode flag.
-	  (new exclude_inode flag is set during migration of super block).
 
 config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	bool "snapshot exclude - the exclude bitmap"

@@ -21,8 +21,7 @@
  *
  *  Assorted race fixes, rewrite of ext4_get_block() by Al Viro, 2000
  *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
+ *  Snapshot inode extentions, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #include <linux/module.h>
@@ -50,7 +49,7 @@
 #include "xattr.h"
 #include "acl.h"
 #include "ext4_extents.h"
-#include "ext4.h"
+
 #include <trace/events/ext4.h>
 #include "snapshot.h"
 
@@ -746,13 +745,11 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 	if (IS_COWING(handle)) {
 		/*
-		 * This hint is used to avoid circular locking dependency:
-		 * inode->i_data_sem => grp->alloc_sem => 
-		 *   active_snapshot->i_data_sem/1 => grp->alloc_sem
-		 *
-		 * By avoiding to allocate from last block group, taking
-		 * down_read(&grp->alloc_sem) can be avoided in
-		 * ext4_mb_load_buddy().
+		 * This hint is used to tell the allocator not to fail
+		 * on quota limits and allow allocation from blocks which
+		 * are reserved for snapshots.
+		 * Failing allocation during COW operations would result
+		 * in I/O error, which is not desirable.
 		 */
 		ar.flags = EXT4_MB_HINT_COWING;
 	} else if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
@@ -1141,6 +1138,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	struct buffer_head *sbh = NULL;
 #endif
+
 	J_ASSERT(!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)));
 	J_ASSERT(handle != NULL || (flags & EXT4_GET_BLOCKS_CREATE) == 0);
 	depth = ext4_block_to_path(inode, map->m_lblk, offsets,
@@ -1325,7 +1323,6 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	ext4_update_inode_fsync_trans(handle, inode, 1);
 #endif
 got_it:
-
 	map->m_flags |= EXT4_MAP_MAPPED;
 	map->m_pblk = le32_to_cpu(chain[depth-1].key);
 	map->m_len = count;
@@ -1582,8 +1579,8 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		BUG_ON(!ext4_snapshot_is_active(inode));
 		cowing = 1;
 	}
-
 #endif
+
 	map->m_flags = 0;
 	ext_debug("ext4_map_blocks(): inode %lu, flag %d, max_blocks %u,"
 		  "logical block %lu\n", inode->i_ino, flags, map->m_len,
@@ -1715,12 +1712,10 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		ext4_clear_inode_state(inode, EXT4_STATE_DELALLOC_RESERVED);
 
 	up_write((&EXT4_I(inode)->i_data_sem));
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/* Clear EXT4_MAP_REMAP, it is not needed any more. */
 	map->m_flags &= ~EXT4_MAP_REMAP; 
 #endif
-
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
 		int ret = check_block_validity(inode, map);
 		if (ret != 0)
@@ -1788,7 +1783,11 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
 		handle = ext4_journal_start(inode, dio_credits);
 		if (IS_ERR(handle)) {
 			ret = PTR_ERR(handle);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 			goto out;
+#else
+			return ret;
+#endif
 		}
 		started = 1;
 	}
@@ -1809,7 +1808,9 @@ static int _ext4_get_block(struct inode *inode, sector_t iblock,
 		bh->b_size = inode->i_sb->s_blocksize * map.m_len;
 		ret = 0;
 	}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 out:
+#endif
 	if (started)
 		ext4_journal_stop(handle);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
@@ -2069,8 +2070,8 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 			set_buffer_partial_write(bh);
 	}
 }
-#endif
 
+#endif
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create);
 static int ext4_write_begin(struct file *file, struct address_space *mapping,
@@ -2610,8 +2611,12 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 				}
 
 				/* redirty page if block allocation undone */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 				if (buffer_delay(bh) || buffer_unwritten(bh) ||
 				    buffer_remap(bh))
+#else
+				if (buffer_delay(bh) || buffer_unwritten(bh))
+#endif
 					redirty_page = 1;
 				bh = bh->b_this_page;
 				block_start += bh->b_size;
@@ -3086,14 +3091,13 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (ext4_snapshot_should_move_data(inode))
 		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
-#endif
 
+#endif
 	/*
 	 * first, we need to know whether the block is allocated already
 	 * preallocated blocks are unmapped but should treated
 	 * the same as allocated blocks.
 	 */
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	ret = ext4_map_blocks(handle, inode, &map, flags);
 #else
@@ -3104,7 +3108,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	if (ret == 0) {
 		if (buffer_delay(bh))
 			return 0; /* Not sure this could or should happen */
-
 		/*
 		 * XXX: __block_write_begin() unmaps passed block, is it OK?
 		 */
@@ -3116,7 +3119,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 		map_bh(bh, inode->i_sb, invalid_block);
 		set_buffer_new(bh);
 		set_buffer_delay(bh);
-		goto out;
+		return 0;
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
@@ -3139,8 +3142,6 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 		set_buffer_new(bh);
 		set_buffer_mapped(bh);
 	}
-
-out:
 	return 0;
 }
 
@@ -4007,7 +4008,6 @@ static sector_t ext4_bmap(struct address_space *mapping, sector_t block)
 
 	return generic_block_bmap(mapping, block, ext4_get_block);
 }
-
 
 static int ext4_readpage(struct file *file, struct page *page)
 {
@@ -4910,14 +4910,17 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 		}
 	}
 
-	for (p = first; p < last; p++) {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
+	for (p = first; p < last; p++) {
 		if (*p && bitmap && ext4_test_bit(bit + (p - first), bitmap))
 			/* don't free block used by older snapshot */
 			continue;
-#endif
 		*p = 0;
 	}
+#else
+	for (p = first; p < last; p++)
+		*p = 0;
+#endif
 
 	ext4_free_blocks(handle, inode, 0, block_to_free, count, flags);
 	return 0;
@@ -5307,8 +5310,8 @@ void ext4_truncate(struct inode *inode)
 				"truncated!\n", inode->i_ino);
 		return;
 	}
-#endif
 
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
 	/* prevent truncate of files on snapshot list */
 	if (ext4_snapshot_list(inode)) {
@@ -5316,8 +5319,8 @@ void ext4_truncate(struct inode *inode)
 				inode->i_generation);
 		return;
 	}
-#endif
 
+#endif
 	if (!ext4_can_truncate(inode))
 		return;
 
@@ -5454,8 +5457,8 @@ do_indirects:
 			i_data[i] = 0;
 		}
 	}
-#endif
 
+#endif
 	up_write(&ei->i_data_sem);
 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
 	ext4_mark_inode_dirty(handle, inode);
@@ -5685,8 +5688,13 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
 	} while (cmpxchg(&ei->i_flags, old_fl, new_fl) != old_fl);
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 			struct ext4_inode_info *ei)
+#else
+static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
+			struct ext4_inode_info *ei)
+#endif
 {
 	blkcnt_t i_blocks ;
 	struct inode *inode = &(ei->vfs_inode);
@@ -5737,23 +5745,6 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	if (ret < 0)
 		goto bad_inode;
 	raw_inode = ext4_raw_inode(&iloc);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
-	/* Migrate old to new exclude inode on first iget */
-	if (ino == EXT4_EXCLUDE_INO && EXT4_HAS_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD)) {
-		/* both inodes are on the same block */
-		char *old_inode = ((char *)raw_inode +
-			(EXT4_EXCLUDE_INO_OLD - EXT4_EXCLUDE_INO) *
-			EXT4_INODE_SIZE(inode->i_sb));
-
-		/* copy old exclude inode */
-		memcpy((char *)raw_inode, old_inode,
-				EXT4_INODE_SIZE(inode->i_sb));
-		/* clear old exclude inode */
-		memset(old_inode, 0, EXT4_INODE_SIZE(inode->i_sb));
-		/* inode block will be marked dirty outside this function */
-	}
-#endif
 	inode->i_mode = le16_to_cpu(raw_inode->i_mode);
 	inode->i_uid = (uid_t)le16_to_cpu(raw_inode->i_uid_low);
 	inode->i_gid = (gid_t)le16_to_cpu(raw_inode->i_gid_low);
@@ -5989,6 +5980,7 @@ static int ext4_inode_blocks_set(handle_t *handle,
 	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE))
 		return -EFBIG;
 #endif
+
 	if (i_blocks <= 0xffffffffffffULL) {
 		/*
 		 * i_blocks can be represented in a 48 bit variable

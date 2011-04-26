@@ -3,7 +3,7 @@
  *
  * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
- * Copyright (C) 2008-2010 CTERA Networks
+ * Copyright (C) 2008-2011 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your
@@ -13,9 +13,10 @@
  */
 
 #include <linux/statfs.h>
+#include "ext4_jbd2.h"
 #include "snapshot.h"
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * General snapshot locking semantics:
  *
@@ -487,12 +488,6 @@ static int ext4_snapshot_create(struct inode *inode)
 	/* record the file system size in the snapshot inode disksize field */
 	SNAPSHOT_SET_BLOCKS(inode, snapshot_blocks);
 
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-		EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT))
-		/* set the 'has_snapshot' feature */
-		EXT4_SET_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
 	/* add snapshot list reference */
 	if (!igrab(inode)) {
@@ -666,7 +661,7 @@ alloc_inode_blocks:
 				SNAPMAP_WRITE);
 next_snapshot:
 	if (!bmap_blk || !imap_blk || !inode_blk || err < 0) {
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 		ext4_fsblk_t blk0 = iloc.block_group *
 			EXT4_BLOCKS_PER_GROUP(sb);
 		snapshot_debug(1, "failed to allocate block/inode bitmap "
@@ -890,7 +885,7 @@ int ext4_snapshot_take(struct inode *inode)
 	freeze_super(sb);
 	lock_super(sb);
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	if (snapshot_enable_test[SNAPTEST_TAKE]) {
 		snapshot_debug(1, "taking snapshot (%u) ...\n",
 				inode->i_generation);
@@ -1889,20 +1884,6 @@ static int ext4_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 		max_groups *= EXT4_DESC_PER_BLOCK(sb);
 	}
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
-	if (create && EXT4_HAS_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD)) {
-		/* journal exclude inode migration done inside ext4_iget */
-		err = ext4_journal_get_write_access(handle, sbi->s_sbh);
-		EXT4_CLEAR_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD);
-		if (!err)
-		  err = ext4_handle_dirty_metadata(handle, NULL, sbi->s_sbh);
-		if (!err)
-			err = ext4_mark_inode_dirty(handle, inode);
-	}
-
-#endif
 	/*
 	 * Init exclude bitmap blocks for all existing block groups and
 	 * allocate indirect blocks for all reserved block groups.
@@ -1979,53 +1960,6 @@ int ext4_snapshot_load(struct super_block *sb, struct ext4_super_block *es,
 	}
 #endif
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-	/* Migrate super block on-disk format */
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD) &&
-			!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
-		u64 snapshot_r_blocks;
-
-		/* Copy snapshot fields to new positions */
-		es->s_snapshot_inum = es->s_snapshot_inum_old;
-		active_ino = le32_to_cpu(es->s_snapshot_inum);
-		es->s_snapshot_id = es->s_snapshot_id_old;
-		snapshot_r_blocks = le32_to_cpu(es->s_snapshot_r_blocks_old);
-		es->s_snapshot_r_blocks_count = cpu_to_le64(snapshot_r_blocks);
-		es->s_snapshot_list = es->s_snapshot_list_old;
-		/* Clear old snapshot fields */
-		es->s_snapshot_inum_old = 0;
-		es->s_snapshot_id_old = 0;
-		es->s_snapshot_r_blocks_old = 0;
-		es->s_snapshot_list_old = 0;
-		/* Copy snapshot flags to new positions */
-		EXT4_SET_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-		if (EXT4_HAS_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD))
-			EXT4_SET_COMPAT_FEATURE(sb,
-					EXT4_FEATURE_COMPAT_EXCLUDE_INODE);
-		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD))
-			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_SNAPSHOT);
-		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD))
-			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
-		/* Clear old snapshot flags */
-		EXT4_CLEAR_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD|
-				EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD|
-				EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD|
-				EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD);
-		/* Clear deprecated big journal flag */
-		EXT4_CLEAR_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_COMPAT_BIG_JOURNAL_OLD);
-		EXT4_CLEAR_FLAGS(sb, EXT4_FLAGS_BIG_JOURNAL);
-		/* Keep old exclude inode flag b/c inode was not moved yet */
-	}
-
-#endif
 	/* init COW bitmap and exclude bitmap cache */
 	err = ext4_snapshot_init_bitmap_cache(sb, !read_only);
 	if (err)
@@ -2038,23 +1972,6 @@ int ext4_snapshot_load(struct super_block *sb, struct ext4_super_block *es,
 			es->s_snapshot_list = es->s_snapshot_inum;
 		/* try to load active snapshot */
 		load_ino = le32_to_cpu(es->s_snapshot_inum);
-	}
-
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
-		/*
-		 * When mounting an ext3 formatted volume as ext4, the
-		 * HAS_SNAPSHOT flag is set on first snapshot_take()
-		 * and after that the volume can no longer be mounted
-		 * as rw ext3 (only rw ext4 or ro ext3/ext2).
-		 * If we find a non-zero last_snapshot or snapshot_inum
-		 * and the HAS_SNAPSHOT flag is not set, we ignore them.
-		 */
-		if (load_ino)
-			snapshot_debug(1, "warning: has_snapshot feature not "
-					"set and last snapshot found (%u).\n",
-					load_ino);
-		return 0;
 	}
 
 	while (load_ino) {

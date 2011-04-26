@@ -2677,7 +2677,7 @@ static void __init ext4_create_debugfs_entry(void)
 						  S_IRUGO | S_IWUSR,
 						  debugfs_dir,
 						  &mb_enable_debug);
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_DEBUG
 	if (debugfs_dir)
 		ext4_snapshot_create_debugfs_entry(debugfs_dir);
 #endif
@@ -2685,7 +2685,7 @@ static void __init ext4_create_debugfs_entry(void)
 
 static void ext4_remove_debugfs_entry(void)
 {
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_DEBUG
 	ext4_snapshot_remove_debugfs_entry();
 #endif
 	debugfs_remove(debugfs_debug);
@@ -2753,7 +2753,6 @@ static struct inode dummy_exclude_inode = {
 };
 #endif
 
-
 /*
  * Check quota and mark chosen space (ac->ac_b_ex) non-free in bitmaps
  * Returns 0 if success or error code
@@ -2772,7 +2771,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	struct buffer_head *exclude_bitmap_bh = NULL;
 #endif
-
 
 	BUG_ON(ac->ac_status != AC_STATUS_FOUND);
 	BUG_ON(ac->ac_b_ex.fe_len <= 0);
@@ -2800,13 +2798,17 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 
 #endif
-
 	err = -EIO;
 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
 	if (!bitmap_bh)
 		goto out_err;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+	err = ext4_handle_get_bitmap_access(handle, sb, ac->ac_b_ex.fe_group,
+			bitmap_bh);
+#else
 	err = ext4_journal_get_write_access(handle, bitmap_bh);
+#endif
 	if (err)
 		goto out_err;
 
@@ -2869,7 +2871,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	gdp->bg_checksum = ext4_group_desc_csum(sbi, ac->ac_b_ex.fe_group, gdp);
 
 	ext4_unlock_group(sb, ac->ac_b_ex.fe_group);
-
 	percpu_counter_sub(&sbi->s_freeblocks_counter, ac->ac_b_ex.fe_len);
 	/*
 	 * Now reduce the dirty block count also. Should not go negative
@@ -3271,7 +3272,6 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 		ext4_discard_preallocations(ac->ac_inode);
 	}
 #endif
-
 	/* only data can be preallocated */
 	if (!(ac->ac_flags & EXT4_MB_HINT_DATA))
 		return 0;
@@ -4309,7 +4309,7 @@ static int ext4_mb_discard_preallocations(struct super_block *sb, int needed)
  * it tries to use preallocation first, then falls back
  * to usual allocation
  */
-ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle, 
+ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
 				struct ext4_allocation_request *ar, int *errp)
 {
 	int freed;
@@ -4551,11 +4551,17 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  * @inode:		inode
  * @block:		start physical block to free
  * @count:		number of blocks to count
- * @metadata:		Are these metadata blocks
+ * @metadata: 		Are these metadata blocks
  */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
 			struct inode *inode, struct buffer_head *bh,
 			ext4_fsblk_t block, unsigned long count, int flags)
+#else
+void ext4_free_blocks(handle_t *handle, struct inode *inode,
+		      struct buffer_head *bh, ext4_fsblk_t block,
+		      unsigned long count, int flags)
+#endif
 {
 	struct buffer_head *bitmap_bh = NULL;
 	struct super_block *sb = inode->i_sb;
@@ -4687,9 +4693,12 @@ do_more:
 	overflow += count - maxblocks;
 	count = maxblocks;
 #endif
-
 	BUFFER_TRACE(bitmap_bh, "getting write access");
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+	err = ext4_handle_get_bitmap_access(handle, sb, block_group, bitmap_bh);
+#else
 	err = ext4_journal_get_write_access(handle, bitmap_bh);
+#endif
 	if (err)
 		goto error_return;
 
@@ -4900,7 +4909,11 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
 	}
 
 	BUFFER_TRACE(bitmap_bh, "getting write access");
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+	err = ext4_handle_get_bitmap_access(handle, sb, block_group, bitmap_bh);
+#else
 	err = ext4_journal_get_write_access(handle, bitmap_bh);
+#endif
 	if (err)
 		goto error_return;
 

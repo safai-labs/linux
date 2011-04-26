@@ -11,9 +11,6 @@
  *  linux/include/linux/minix_fs.h
  *
  *  Copyright (C) 1991, 1992  Linus Torvalds
- *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #ifndef _EXT4_H
@@ -48,9 +45,10 @@
 #define CONFIG_EXT4_FS_XATTR
 #define CONFIG_EXT4_FS_SECURITY
 #define CONFIG_EXT4_DEBUG
-#define CONFIG_EXT4_FS_DEBUG
 #define CONFIG_EXT4_FS_SNAPSHOT
+#define CONFIG_EXT4_FS_SNAPSHOT_DEBUG
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+#define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 #define CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DIO
@@ -60,7 +58,6 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_STORE
 #define CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-#define CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 #define CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 #define CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
@@ -84,7 +81,6 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
 #define CONFIG_EXT4_FS_SNAPSHOT_CTL
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE
-#define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
 #define CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
@@ -219,7 +215,6 @@ struct ext4_allocation_request {
 				 EXT4_MAP_UNINIT)
 #endif
 
-
 struct ext4_map_blocks {
 	ext4_fsblk_t m_pblk;
 	ext4_lblk_t m_lblk;
@@ -286,8 +281,13 @@ struct ext4_io_submit {
 #define EXT4_UNDEL_DIR_INO	 6	/* Undelete directory inode */
 #define EXT4_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define EXT4_JOURNAL_INO	 8	/* Journal inode */
+<<<<<<< HEAD
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
 #define EXT4_EXCLUDE_INO_OLD		10	/* Old exclude inode */
+=======
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
+#define EXT4_EXCLUDE_INO		 9	/* Snapshot exclude inode */
+>>>>>>> 0cd71469e1ff8e2972151079fb4b6dcbb7649c18
 #endif
 
 /* First non-reserved inode for old ext4 filesystems */
@@ -459,10 +459,8 @@ struct flex_groups {
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 
-/* User visible flags */
-#define EXT4_FL_USER_VISIBLE		0x014BDFFF
-/* User modifiable flags */
-#define EXT4_FL_USER_MODIFIABLE		0x014B80FF
+#define EXT4_FL_USER_VISIBLE		0x014BDFFF /* User visible flags */
+#define EXT4_FL_USER_MODIFIABLE		0x014B80FF /* User modifiable flags */
 
 /* Flags that should be inherited by new inodes from their parent. */
 #define EXT4_FL_INHERITED (EXT4_SECRM_FL | EXT4_UNRM_FL | EXT4_COMPR_FL |\
@@ -471,7 +469,6 @@ struct flex_groups {
 			   EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
 			   EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL | EXT4_SNAPFILE_FL)
 #else
-
 #define EXT4_FL_USER_VISIBLE		0x004BDFFF /* User visible flags */
 #define EXT4_FL_USER_MODIFIABLE		0x004B80FF /* User modifiable flags */
 
@@ -481,12 +478,6 @@ struct flex_groups {
 			   EXT4_NODUMP_FL | EXT4_NOATIME_FL |\
 			   EXT4_NOCOMPR_FL | EXT4_JOURNAL_DATA_FL |\
 			   EXT4_NOTAIL_FL | EXT4_DIRSYNC_FL)
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-#define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
 #endif
 
 /* Flags that are appropriate for regular files (all but dir-specific ones). */
@@ -750,7 +741,6 @@ struct ext4_inode {
 		struct {
 			__le32  l_i_version;
 		} linux1;
-
 		struct {
 			__u32  h_i_translator;
 		} hurd1;
@@ -949,13 +939,14 @@ struct ext4_inode_info {
 #endif
 
 	struct list_head i_orphan;	/* unlinked but open inodes */
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define i_snaplist i_orphan
 	/*
 	 * In-memory snapshot list overrides i_orphan to link snapshot inodes,
 	 * but unlike the real orphan list, the next snapshot inode number
 	 * is stored in i_next_snapshot_ino and not in i_dtime
 	 */
+#define i_snaplist i_orphan
 	__u32	i_next_snapshot_ino;
 
 #endif
@@ -1052,17 +1043,15 @@ struct ext4_inode_info {
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define EXT4_FLAGS_IS_SNAPSHOT		0x0010 /* Is a snapshot image */
-#define EXT4_FLAGS_FIX_SNAPSHOT	0x0020 /* Corrupted snapshot */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
+#define EXT4_FLAGS_FIX_SNAPSHOT		0x0020 /* Corrupted snapshot */
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
-#define EXT4_FLAGS_BIG_JOURNAL		0x1000  /* Old big journal */
+
 #define EXT4_SET_FLAGS(sb, mask) \
 	EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
 #define EXT4_CLEAR_FLAGS(sb, mask) \
 	EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
 #define EXT4_TEST_FLAGS(sb, mask) \
 	(EXT4_SB(sb)->s_es->s_flags & cpu_to_le32(mask))
-#endif
 #endif
 
 /*
@@ -1227,9 +1216,11 @@ struct ext4_super_block {
 	__le16  s_reserved_pad;
 	__le64	s_kbytes_written;	/* nr of lifetime kilobytes written */
 	__le32	s_snapshot_inum;	/* Inode number of active snapshot */
-	__le32	s_snapshot_id;		/* Sequential ID of active snapshot */
-	__le64	s_snapshot_r_blocks_count; /* Reserved for active snapshot */
-	__le32	s_snapshot_list;	/* start of list of snapshot inodes */
+	__le32	s_snapshot_id;		/* sequential ID of active snapshot */
+	__le64	s_snapshot_r_blocks_count; /* reserved blocks for active
+					      snapshot's future use */
+	__le32	s_snapshot_list;	/* inode number of the head of the
+					   on-disk snapshot list */
 #define EXT4_S_ERR_START offsetof(struct ext4_super_block, s_error_count)
 	__le32	s_error_count;		/* number of fs errors */
 	__le32	s_first_error_time;	/* first time an error happened */
@@ -1244,16 +1235,7 @@ struct ext4_super_block {
 	__u8	s_last_error_func[32];	/* function where the error happened */
 #define EXT4_S_ERR_END offsetof(struct ext4_super_block, s_mount_opts)
 	__u8	s_mount_opts[64];
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-	__u32	s_reserved[108];	/* Padding to the end of the block */
-	/* old snapshot field positions */
-/*3F0*/	__le32	s_snapshot_list_old;	/* Old snapshot list head */
-	__le32	s_snapshot_r_blocks_old;/* Old reserved for snapshot */
-	__le32	s_snapshot_id_old;	/* Old active snapshot ID */
-	__le32	s_snapshot_inum_old;	/* Old active snapshot inode */
-#else
-	__le32	s_reserved[112];        /* Padding to the end of the bloc */
-#endif
+	__le32	s_reserved[112];        /* Padding to the end of the block */
 };
 
 #define EXT4_S_ERR_LEN (EXT4_S_ERR_END - EXT4_S_ERR_START)
@@ -1445,10 +1427,10 @@ enum {
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
 	EXT4_STATE_DELALLOC_RESERVED,	/* blks already reserved for delalloc */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	EXT4_STATE_LAST
 };
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * Snapshot dynamic state flags (starting at offset EXT4_STATE_LAST)
  * These flags are read by GETSNAPFLAGS ioctl and interpreted by the lssnap
@@ -1464,14 +1446,16 @@ enum {
 	EXT4_SNAPSTATE_OPEN = 6,	/* snapshot is mounted (o) */
 	EXT4_SNAPSTATE_TAGGED = 7,	/* snapshot is tagged  (t) */
 	EXT4_SNAPSTATE_LAST
+#endif
 };
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define EXT4_SNAPSTATE_MASK		\
 	((1UL << EXT4_SNAPSTATE_LAST) - 1)
 
-#endif
 
 /* atomic single bit funcs */
+#endif
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 static inline int ext4_test_inode_##name(struct inode *inode, int bit)	\
 {									\
@@ -1486,6 +1470,7 @@ static inline void ext4_clear_inode_##name(struct inode *inode, int bit) \
 	clear_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* non-atomic multi bit funcs */
 #define EXT4_INODE_FLAGS_FNS(name, field, offset)			\
 static inline int ext4_get_##name##_flags(struct inode *inode)		\
@@ -1503,11 +1488,14 @@ static inline void ext4_clear_##name##_flags(struct inode *inode, 	\
 	EXT4_I(inode)->i_##field &= ~(flags << (offset));		\
 }
 
+#endif
 EXT4_INODE_BIT_FNS(flag, flags, 0)
 #if (BITS_PER_LONG < 64)
 EXT4_INODE_BIT_FNS(state, state_flags, 0)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 EXT4_INODE_BIT_FNS(snapstate, state_flags, EXT4_STATE_LAST)
 EXT4_INODE_FLAGS_FNS(snapstate, state_flags, EXT4_STATE_LAST)
+#endif
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 {
@@ -1515,8 +1503,10 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 }
 #else
 EXT4_INODE_BIT_FNS(state, flags, 32)
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 EXT4_INODE_BIT_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
 EXT4_INODE_FLAGS_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
+#endif
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 {
@@ -1587,26 +1577,16 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP	0x0080 /* Has exclude bitmap */
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_COMPAT_BIG_JOURNAL_OLD	0x1000 /* Old big journal */
-#define EXT4_FEATURE_COMPAT_EXCLUDE_INODE_OLD	0x2000 /* Old exclude inode */
-#endif
 
 #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
 #define EXT4_FEATURE_RO_COMPAT_LARGE_FILE	0x0002
 #define EXT4_FEATURE_RO_COMPAT_BTREE_DIR	0x0004
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT  0x0080 /* Ext4 has snapshots */
-#endif
 #define EXT4_FEATURE_RO_COMPAT_HUGE_FILE        0x0008
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
-#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD 0x1000 /* Old has snapshots */
-#define EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD	0x2000 /* Old is snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD 0x4000 /* Old fix snapshot */
-#define EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD	0x8000 /* Old fix exclude */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Ext4 has snapshots */
 #endif
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
@@ -1629,30 +1609,24 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 					 EXT4_FEATURE_INCOMPAT_64BIT| \
 					 EXT4_FEATURE_INCOMPAT_FLEX_BG)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_OLD
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
-					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
+ 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
 					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
-					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_IS_SNAPSHOT_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_FIX_SNAPSHOT_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_FIX_EXCLUDE_OLD| \
-					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
-					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
-					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
-					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
-					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE)
+ 					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
+ 					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
+ 					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
+ 					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
+ 					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE)
 #else
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
-					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \
-					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR)
+ 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
+ 					 EXT4_FEATURE_RO_COMPAT_GDT_CSUM| \
+ 					 EXT4_FEATURE_RO_COMPAT_DIR_NLINK | \
+ 					 EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE | \
+ 					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR |\
+ 					 EXT4_FEATURE_RO_COMPAT_HUGE_FILE)
 #endif
-#else
-#define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
-					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-					 EXT4_FEATURE_RO_COMPAT_BTREE_DIR)
-#endif
+
 /*
  * Default values for user and/or group using reserved blocks
  */
@@ -1907,8 +1881,8 @@ typedef struct {
 	__le32	key;
 	struct buffer_head *bh;
 } Indirect;
-#endif
 
+#endif
 /*
  * Function prototypes
  */
@@ -1956,7 +1930,6 @@ extern struct buffer_head *ext4_read_exclude_bitmap(struct super_block *sb,
 					       unsigned int block_group);
 #endif
 
-
 /* dir.c */
 extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
 				  struct file *,
@@ -2001,6 +1974,7 @@ extern int ext4_mb_reserve_blocks(struct super_block *, int);
 extern void ext4_discard_preallocations(struct inode *);
 extern int __init ext4_init_mballoc(void);
 extern void ext4_exit_mballoc(void);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DELETE
 extern void __ext4_free_blocks(const char *where, unsigned int line,
 			       handle_t *handle,  struct inode *inode,
 			       struct buffer_head *bh, ext4_fsblk_t block,
@@ -2008,6 +1982,11 @@ extern void __ext4_free_blocks(const char *where, unsigned int line,
 #define ext4_free_blocks(handle, inode, bh, block, count, flags) \
 	__ext4_free_blocks(__func__, __LINE__ , (handle), (inode), (bh), \
 			   (block), (count), (flags))
+#else
+extern void ext4_free_blocks(handle_t *handle, struct inode *inode,
+			     struct buffer_head *bh, ext4_fsblk_t block,
+			     unsigned long count, int flags);
+#endif
 extern int ext4_mb_add_groupinfo(struct super_block *sb,
 		ext4_group_t i, struct ext4_group_desc *desc);
 extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
@@ -2026,8 +2005,10 @@ struct buffer_head *ext4_bread(handle_t *, struct inode *,
 int ext4_get_block(struct inode *inode, sector_t iblock,
 				struct buffer_head *bh_result, int create);
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 extern blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 		struct ext4_inode_info *ei);
+#endif
 extern struct inode *ext4_iget(struct super_block *, unsigned long);
 extern int  ext4_write_inode(struct inode *, struct writeback_control *);
 extern int  ext4_setattr(struct dentry *, struct iattr *);
@@ -2054,12 +2035,12 @@ extern int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf);
 extern qsize_t *ext4_get_reserved_space(struct inode *inode);
 extern void ext4_da_update_reserve_space(struct inode *inode,
 					int used, int quota_claim);
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+
 /* snapshot_inode.c */
 extern int ext4_snapshot_readpage(struct file *file, struct page *page);
-#endif
 
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 extern int ext4_block_to_path(struct inode *inode,
 			      ext4_lblk_t i_block,
@@ -2086,8 +2067,8 @@ extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
 #define ext4_free_branches(handle, inode, bh, first, last, depth)	\
 	ext4_free_branches_cow((handle), (inode), (bh),		\
 				(first), (last), (depth), NULL)
-#endif
 
+#endif
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);
@@ -2522,17 +2503,6 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
 					     EXT4_WQ_HASH_SZ])
 extern wait_queue_head_t ext4__ioend_wq[EXT4_WQ_HASH_SZ];
 extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
-
-/* Is ext4 configured for snapshots support? */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-static inline int EXT4_SNAPSHOTS(struct super_block *sb)
-{
-	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-}
-#else
-#define EXT4_SNAPSHOTS(sb) (0)
-#endif
 
 #endif	/* __KERNEL__ */
 

@@ -3,7 +3,7 @@
  *
  * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
- * Copyright (C) 2008-2010 CTERA Networks
+ * Copyright (C) 2008-2011 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your
@@ -17,7 +17,7 @@
 
 #include <linux/version.h>
 #include <linux/delay.h>
-#include "ext4_jbd2.h"
+#include "ext4.h"
 #include "snapshot_debug.h"
 
 
@@ -138,7 +138,7 @@ static inline int ext4_test_mow_tid(struct inode *inode)
 static inline void snapshot_size_extend(struct inode *inode,
 			ext4_fsblk_t blocks)
 {
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
 	ext4_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
 
@@ -200,17 +200,17 @@ extern int ext4_snapshot_read_block_bitmap(struct super_block *sb,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 extern int ext4_snapshot_test_and_cow(const char *where,
 		handle_t *handle, struct inode *inode,
-		struct buffer_head *bh, int cow);
+		ext4_fsblk_t block, struct buffer_head *bh, int cow);
 
 /*
  * test if a metadata block should be COWed
  * and if it should, copy the block to the active snapshot
  */
-#define ext4_snapshot_cow(handle, inode, bh, cow)		\
+#define ext4_snapshot_cow(handle, inode, block, bh, cow)	\
 	ext4_snapshot_test_and_cow(__func__, handle, inode,	\
-			bh, cow)
+			block, bh, cow)
 #else
-#define ext4_snapshot_cow(handle, inode, bh, cow) 0
+#define ext4_snapshot_cow(handle, inode, block, bh, cow) 0
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
@@ -246,22 +246,7 @@ extern int ext4_snapshot_test_and_move(const char *where,
 static inline int ext4_snapshot_get_write_access(handle_t *handle,
 		struct inode *inode, struct buffer_head *bh)
 {
-	return ext4_snapshot_cow(handle, inode, bh, 1);
-}
-
-/*
- * called from ext4_journal_get_undo_access(),
- * which is called for group bitmap block from
- * ext4_add_groupblocks() before adding blocks to existing group.
- *
- * Return values:
- * = 0 - block was COWed or doesn't need to be COWed
- * < 0 - error
- */
-static inline int ext4_snapshot_get_undo_access(handle_t *handle,
-		struct buffer_head *bh)
-{
-	return ext4_snapshot_cow(handle, NULL, bh, 1);
+	return ext4_snapshot_cow(handle, inode, bh->b_blocknr, bh, 1);
 }
 
 /*
@@ -274,13 +259,50 @@ static inline int ext4_snapshot_get_undo_access(handle_t *handle,
 static inline int ext4_snapshot_get_create_access(handle_t *handle,
 		struct buffer_head *bh)
 {
+	int err;
+
+	/* Should block be COWed? */
+	err = ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 0);
 	/*
-	 * This block shouldn't need to be COWed if get_delete_access() was
+	 * A new block shouldn't need to be COWed if get_delete_access() was
 	 * called for all deleted blocks.  However, it may need to be COWed
 	 * if fsck was run and if it had freed some blocks without moving them
 	 * to snapshot.  In the latter case, -EIO will be returned.
 	 */
-	return ext4_snapshot_cow(handle, NULL, bh, 0);
+	if (err > 0)
+		err = -EIO;
+	return err;
+}
+
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
+/*
+ * get_bitmap_access() is called before modifying a block bitmap.
+ * this call initializes the COW bitmap for @group.
+ *
+ * Return values:
+ * = 0 - COW bitmap is initialized
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
+		struct super_block *sb, ext4_group_t group,
+		struct buffer_head *bh)
+{
+	/*
+	 * With flex_bg, block bitmap may reside in a different group than
+	 * the group it describes, so we need to init both COW bitmaps:
+	 * 1. init the COW bitmap for @group by testing
+	 *    if the first block in the group should be COWed
+	 */
+	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
+		int err = ext4_snapshot_cow(handle, NULL,
+				ext4_group_first_block_no(sb, group),
+				NULL, 0);
+		if (err < 0)
+			return err;
+	}
+	/* 2. COW the block bitmap itself, which may be in another group */
+	return ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 1);
 }
 
 #endif
@@ -472,32 +494,6 @@ static inline int ext4_snapshot_excluded(struct inode *inode)
 }
 #endif
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-
-/*
- * check if @inode data blocks should be moved-on-write
- */
-static inline int ext4_snapshot_should_move_data(struct inode *inode)
-{
-	if (!EXT4_SNAPSHOTS(inode->i_sb))
-		return 0;
-	if (EXT4_JOURNAL(inode) == NULL)
-		return 0;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-	if (ext4_snapshot_excluded(inode))
-		return 0;
-#endif
-#ifndef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
-	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
-		return 0;
-#endif
-	/* when a data block is journaled, it is already COWed as metadata */
-	if (ext4_should_journal_data(inode))
-		return 0;
-	return 1;
-}
-
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /* tests if the file system has an active snapshot */
 static inline int ext4_snapshot_active(struct ext4_sb_info *sbi)
@@ -624,7 +620,7 @@ extern int start_buffer_tracked_read(struct buffer_head *bh);
 extern void cancel_buffer_tracked_read(struct buffer_head *bh);
 extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
 
 #define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)
@@ -670,9 +666,18 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 #endif
 
 #endif
+
+/* Is ext4 configured for snapshots support? */
+static inline int EXT4_SNAPSHOTS(struct super_block *sb)
+{
+	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+}
+
 #else /* CONFIG_EXT4_FS_SNAPSHOT */
 
 /* Snapshot NOP macros */
+#define EXT4_SNAPSHOTS(sb) (0)
 #define SNAPMAP_ISCOW(cmd)	(0)
 #define SNAPMAP_ISMOVE(cmd)     (0)
 #define SNAPMAP_ISSYNC(cmd)	(0)

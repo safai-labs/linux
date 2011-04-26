@@ -16,8 +16,6 @@
  *
  *  64-bit file support on 64-bit platforms by Jakub Jelinek
  *	(jj@sunsite.ms.mff.cuni.cz)
- *
- *  Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/time.h>
@@ -177,8 +175,8 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 		 * allow only read-only access to snapshot files
 		 */
 		return -EPERM;
-#endif
 
+#endif
 	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
 		     !(sb->s_flags & MS_RDONLY))) {
 		sbi->s_mount_flags |= EXT4_MF_MNTDIR_SAMPLED;

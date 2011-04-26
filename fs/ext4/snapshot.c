@@ -3,7 +3,7 @@
  *
  * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
- * Copyright (C) 2008-2010 CTERA Networks
+ * Copyright (C) 2008-2011 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your
@@ -223,9 +223,7 @@ ext4_snapshot_init_cow_bitmap(struct super_block *sb,
 	 * changes to block bitmap are the new active snapshot blocks,
 	 * because before allocating/freeing any other blocks a task
 	 * must first get_write_access() on the bitmap and get here.
-	 * FIXME: for non-first flex_bg group, we will not init COW bitmap.
 	 */
-#warning fixme: need to init flex_bg cow bitmap before get_write_access
 	ext4_lock_group(sb, block_group);
 
 	/*
@@ -561,7 +559,7 @@ out:
  * COW functions
  */
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 static void
 __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 		struct super_block *sb, struct inode *inode,
@@ -624,7 +622,7 @@ void init_ext4_snapshot_cow_cache(void)
 	return;
 found:
 	cow_tid_offset = pos - (char *)NULL;
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	cow_cache_offset = cow_tid_offset;
 #endif
 }
@@ -744,20 +742,23 @@ static inline void ext4_snapshot_cow_end(const char *where,
  * @where:	name of caller function
  * @handle:	JBD handle
  * @inode:	owner of blocks (NULL for global metadata blocks)
+ * @block:	address of metadata block
  * @bh:		buffer head of metadata block
- * @cow:	if false, return -EIO if block needs to be COWed
+ * @cow:	if false, return 1 if block needs to be COWed
  *
  * Return values:
+ * = 1 - @block needs to be COWed
  * = 0 - @block was COWed or doesn't need to be COWed
  * < 0 - error
  */
 int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
-		struct inode *inode, struct buffer_head *bh, int cow)
+		struct inode *inode, ext4_fsblk_t block,
+		struct buffer_head *bh, int cow)
 {
 	struct super_block *sb = handle->h_transaction->t_journal->j_private;
 	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
 	struct buffer_head *sbh = NULL;
-	ext4_fsblk_t block = bh->b_blocknr, blk = 0;
+	ext4_fsblk_t blk = 0;
 	int err = 0, clear = 0, count = 1;
 
 	if (!active_snapshot)
@@ -838,11 +839,12 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	}
 
 	/* block needs to be COWed */
-	err = -EIO;
+	err = 1;
 	if (!cow)
 		/* don't COW - we were just checking */
 		goto out;
 
+	err = -EIO;
 	/* make sure we hold an uptodate source buffer */
 	if (!bh || !buffer_mapped(bh))
 		goto out;
@@ -986,7 +988,7 @@ int ext4_snapshot_test_and_move(const char *where, handle_t *handle,
 		goto out;
 	}
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 	if (inode == NULL &&
 		!(EXT4_I(active_snapshot)->i_flags & EXT4_UNRM_FL)) {
 		/*

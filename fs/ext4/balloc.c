@@ -9,9 +9,6 @@
  *  Enhanced block allocation by Stephen Tweedie (sct@redhat.com), 1993
  *  Big-endian to little-endian byte-swapping/bitmaps by
  *        David S. Miller (davem@caip.rutgers.edu), 1995
- *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 #include <linux/time.h>
@@ -361,8 +358,8 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 	 */
 	return bh;
 }
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 /**
  * read_exclude_bitmap()
  * @sb:			super block

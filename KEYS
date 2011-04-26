@@ -2,7 +2,6 @@ cleanup_merge
 cleanup_shrink
 cleanup
 exclude_bitmap
-exclude_inode_old
 exclude_inode
 exclude
 race_read
@@ -27,16 +26,17 @@ block_bitmap
 block_move
 block_cow
 block
-file_old
 file_huge
 file_store
 file_perm
 file_read
 file
+hooks_extent
 hooks_dio
 hooks_data
 hooks_delete
+hooks_bitmap
 hooks_jbd
 hooks
 debug
-main
+snapshot

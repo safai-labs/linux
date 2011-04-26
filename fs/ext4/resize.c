@@ -6,9 +6,6 @@
  * Copyright (C) 2001, 2002 Andreas Dilger <adilger@clusterfs.com>
  *
  * This could probably be made into a module, because it is not often in use.
- *
- * Copyright (C) 2008-2010 CTERA Networks
- * Added snapshot support, Amir Goldstein <amir73il@users.sf.net>, 2008
  */
 
 
@@ -240,7 +237,7 @@ static int setup_new_group_blocks(struct super_block *sb,
 	/* Zero out all of the reserved backup group descriptor table blocks */
 	ext4_debug("clear inode table blocks %#04llx -> %#04llx\n",
 			block, sbi->s_itb_per_group);
-	err = sb_issue_zeroout(sb, gdblocks + start, reserved_gdb,
+	err = sb_issue_zeroout(sb, gdblocks + start + 1, reserved_gdb,
 			       GFP_NOFS);
 	if (err)
 		goto exit_bh;

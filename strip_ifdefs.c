@@ -1,11 +1,28 @@
+/*
+ * strip_ifdefs.c - strip fake snapshot ifdefs from next4/ext4/e2fsprogs
+ *
+ * examples:
+ * # strip_ifdefs a/fs/ext4/file.c b/fs/ext4/file.c file_perm
+ *
+ * strips the code under ifdef SNAPSHOT_FILE_PERM from file.c
+ *
+ * # strip_ifdefs a/fs/ext4/ext4.h b/fs/ext4/ext4.h snapshot y
+ *
+ * strips all SNAPSHOT_* ifdefs from ext4.h, keeps the code under
+ * ifdef SNAPSHOT_* and strips the code under ifndef SNAPSHOT_*
+ * (SNAPSHOT ifdefs are stripped from C files, but not from h files)
+ *
+ * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
+ * Copyright (C) 2008-2011 CTERA Networks
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 
-#define MAINKEY_NEXT3 "CONFIG_NEXT3_FS_SNAPSHOT"
-#define MAINKEY_EXT4 "CONFIG_EXT4_FS_SNAPSHOT"
-#define MAINKEY_E2FS "EXT2FS_SNAPSHOT"
+#define MAINKEY_NEXT3 "CONFIG_NEXT3_FS_SNAPSHOT_"
+#define MAINKEY_EXT4 "CONFIG_EXT4_FS_SNAPSHOT_"
+#define MAINKEY_E2FS "EXT2FS_SNAPSHOT_"
 #define MAX_KEY 20
 
 #define LINE_SIZE 1024
@@ -47,8 +64,9 @@ int main(int argc, char *argv[])
 	const char *module = "next3";
 	char *key = NULL;
 	int len, keylen, keytokens;
-	int ifdefno = 0, lineno = 0, nested = 0, hold = 0;
-	int snapshot = 0, config = 0, debug = 0, makefile = 0;
+	int ifdefno = 0, lineno = 0;
+	int nested = 0, hold = 0, snapshot = 0;
+      	int config = 0, debug = 0, makefile = 0, hfile = 0;
 	enum filter filter = 0, strip = FILTER_DEFINED;
 
 	if (argc < 3)
@@ -68,6 +86,8 @@ int main(int argc, char *argv[])
 		filetype++;
 	else
 		filetype = "";
+	if (*filetype == 'h')
+		hfile = 1;
 
 	if (!strcmp(argv[2], "-"))
 		outfile = stdout;
@@ -117,7 +137,6 @@ int main(int argc, char *argv[])
 		MAINKEY = MAINKEY_E2FS;
 		MAINKEY_LEN = strlen(MAINKEY);
 	}
-
 	if (!strcmp(filename+1, "config"))
 		/* strip config NEXT3_FS_SNAPSHOT_xxx */
 		config = 1;
@@ -140,6 +159,14 @@ int main(int argc, char *argv[])
 		if (!strncmp(filename, "snapshot_debug", 14))
 			exit(0);
 	}
+
+	if (!key && !(strip > 0 && (hfile || config)))
+		/*
+		 * remove _ suffix from main key
+		 * leave it to keep MAIN ifdefs in h files
+		 * and in Kconfig when stipping fake ifdefs
+		 */
+		MAINKEY_LEN--;
 
 	fprintf(stderr, "stripping SNAPSHOT%s%s%s from file %s...\n",
 			key ? "_" : "", key ? : "", 
@@ -171,22 +198,12 @@ int main(int argc, char *argv[])
 				hold = 1;
 				continue;
 			} else if (!strncmp(line, "config ", 7)) {
-				if (debug) {
-					if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-15) &&
-						!strncmp(line+MAINKEY_LEN-8, "DEBUG", 5)) {
-						/* strip debug config */
-						hold = 0;
-						filter = FILTER_UNDEFINED;
-					} else {
-						/* stop filtering debug config */
-						filter = FILTER_NONE;
-					}
-				} else if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-7)) {
-					if (!key)
+				if (!strncmp(line+7, MAINKEY+7, MAINKEY_LEN-7)) {
+					if (!key && strip > 0)
 						/* discard all snapshot sub configs */
 						break;
 					snapshot = 1;
-					if (!strncmp(line+MAINKEY_LEN+1, key, keylen)) {
+					if (!key || !strncmp(line+MAINKEY_LEN, key, keylen)) {
 						/* start filtering snapshot sub config */
 						if (filter)
 							exit_error("nested snapshot sub config",
@@ -213,7 +230,7 @@ int main(int argc, char *argv[])
 						printf("%s", line+3);
 				} else if (key) {
 				       	if (!strncmp(line+1, "depends on ", 11) && 
-						!strncmp(line+12+MAINKEY_LEN+1, key, keylen))
+						!strncmp(line+12+MAINKEY_LEN, key, keylen))
 						exit_error("snapshot sub config dependecy",
 								filename, lineno, line);
 				} 
@@ -222,13 +239,17 @@ int main(int argc, char *argv[])
 				hold = 0;
 				fputs("\n", outfile);
 			}
-		} else if (debug) {
-			/* strip lines with "snapshot_debug" */
-			if (strstr(line, "snapshot_debug"))
-				continue;
 		} else if (makefile) {
 			/* strip snapshot files from makefile */
-			if (!key && strip < 0 && strstr(line, "snapshot.o"))
+			if (!key && strip < 0 && strstr(line, "snapshot"))
+				continue;
+			if (debug && strip < 0 && strstr(line, "snapshot_debug.o"))
+				continue;
+			/* strip default config options */
+			if (!key && strip > 0 &&
+					(strstr(line+14, "?=") ||
+					!strncmp(line, "if", 2) ||
+					!strncmp(line, "endif", 5)))
 				continue;
 		} else if (!strncmp(line, " *", 2) || !strncmp(line, "*/", 2)) {
 			if (!key && strip < 0) {
@@ -258,15 +279,17 @@ int main(int argc, char *argv[])
 				continue;
 
 			/* strip off snapshot file includes */
-			if (!key && strip < 0 &&
-					!strncmp(line+1, "include", 7) &&
-					!strncmp(line+10, "snapshot.h", 10))
-				continue;
+			if (strip < 0 && !strncmp(line+1, "include", 7)) {
+				if (!key && !strncmp(line+10, "snapshot.h", 10))
+					continue;
+				if (debug && !strncmp(line+10, "snapshot_debug.h", 15))
+					continue;
+			}
 
 			/* filter define MAINKEY */
 			if (!strncmp(line+1, "define", 6) &&
 				!strncmp(line+8, MAINKEY, MAINKEY_LEN) &&
-				(!key || !strncmp(line+8+MAINKEY_LEN+1, key, keylen)))
+				(!key || !strncmp(line+8+MAINKEY_LEN, key, keylen)))
 				continue;
 
 			/* filter ifdef/ifndef MAINKEY */
@@ -285,19 +308,19 @@ int main(int argc, char *argv[])
 				} else if (nested < 0) {
 					exit_error("nested non-snapshot ifdef inside snapshot patch",
 							filename, lineno, line);
-				} else if (*filetype == 'h' && ifdefno == 1 && line[3] == 'n') {
+				} else if (hfile && ifdefno == 1 && line[3] == 'n') {
 					/* ignore first ifndef in h files */
 					nested--;
 				} else if (!strncmp(ifdef, MAINKEY, MAINKEY_LEN)) {
-					/* snapshot ifdef */
+					/* snapshot* ifdef in C file of snapshot_* ifdef in h file */
 					if (!snapshot)
 						/* set first snapshot nesting level */
 						snapshot = nested;
 					if (filter == FILTER_UNDEFINED ||
-							(filter && !key && strip == FILTER_UNDEFINED))
+							(filter && !key && strip < 0))
 						exit_error("snapshot ifdef nested inside snapshot ifndef",
 								filename, lineno, line);
-					if (!key || !strncmp(ifdef+MAINKEY_LEN+1, key, keylen))
+					if (!key || !strncmp(ifdef+MAINKEY_LEN, key, keylen))
 						/* filter snapshot ifdefs that match key */
 						filter = (line[3] == 'n' ? -strip : strip);
 					if (filter)
@@ -321,7 +344,7 @@ int main(int argc, char *argv[])
 				}
 			} else if (!strncmp(line+1, "endif", 5)) {
 				if (!nested) {
-					if (*filetype == 'h' || len > 7)
+					if (hfile || len > 7)
 						/* ignore unbalanced last endif in h files */
 						ifdefno = -1;
 					else
@@ -337,7 +360,7 @@ int main(int argc, char *argv[])
 						snapshot = 0;
 					if (filter) {
 						if (!key && snapshot &&
-								(strip == FILTER_DEFINED || nested > snapshot))
+							(strip > 0 || nested > snapshot))
 							filter = FILTER_DEFINED;
 						else
 							filter = FILTER_NONE;

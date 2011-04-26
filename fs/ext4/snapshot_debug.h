@@ -3,7 +3,7 @@
  *
  * Written by Amir Goldstein <amir73il@users.sf.net>, 2008
  *
- * Copyright (C) 2008-2010 CTERA Networks
+ * Copyright (C) 2008-2011 CTERA Networks
  *
  * This file is part of the Linux kernel and is made available under
  * the terms of the GNU General Public License, version 2, or at your
@@ -15,13 +15,11 @@
 #ifndef _LINUX_EXT4_SNAPSHOT_DEBUG_H
 #define _LINUX_EXT4_SNAPSHOT_DEBUG_H
 
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 #include <linux/delay.h>
 
 #define SNAPSHOT_INDENT_MAX 4
 #define SNAPSHOT_INDENT_STR "\t\t\t\t"
-#define KERN_LEVEL_STR "<%d>"
-#define SNAP_KERN_LEVEL(n) ((n)+2) /* 1 = KERN_ERR, ..., 5 = KERN_DEBUG */
 
 #define SNAPTEST_TAKE	0
 #define SNAPTEST_DELETE	1
@@ -65,8 +63,7 @@ extern u8 cow_cache_offset;
 	do {								\
 		if ((n) <= snapshot_enable_debug &&			\
 		    (l) <= SNAPSHOT_INDENT_MAX) {			\
-			printk(KERN_LEVEL_STR "snapshot: %s" f,		\
-				   SNAP_KERN_LEVEL(n),			\
+			printk(KERN_DEBUG "snapshot: %s" f,		\
 			       snapshot_indent - (l),			\
 				   ## a);				\
 		}							\
@@ -97,7 +94,7 @@ extern void ext4_snapshot_remove_debugfs_entry(void);
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
-#ifdef CONFIG_EXT4_FS_DEBUG
+#ifdef CONFIG_EXT4_DEBUG
 extern void ext4_snapshot_dump(int n, struct inode *inode);
 #else
 #define ext4_snapshot_dump(n, i)

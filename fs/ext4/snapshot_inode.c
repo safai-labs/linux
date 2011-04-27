@@ -893,6 +893,7 @@ static int ext4_snapshot_is_bitmap(struct super_block *sb,
 		ext4_fsblk_t block, ext4_group_t *bitmap_group)
 {
 	ext4_group_t group = SNAPSHOT_BLOCK_GROUP(block);
+	ext4_group_t ngroups = ext4_get_groups_count(sb);
 	int flex_groups = ext4_flex_bg_size(EXT4_SB(sb));
 	int i, is_bitmap;
 
@@ -909,7 +910,7 @@ static int ext4_snapshot_is_bitmap(struct super_block *sb,
 			(group % flex_groups) != 0)
 		flex_groups = 1;
 
-	for (i = 0; i < flex_groups; i++, group++) {
+	for (i = 0; i < flex_groups && group < ngroups; i++, group++) {
 		is_bitmap = ext4_snapshot_is_group_bitmap(sb, block, group);
 		if (is_bitmap)
 			break;

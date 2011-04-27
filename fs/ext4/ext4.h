@@ -281,17 +281,9 @@ struct ext4_io_submit {
 #define EXT4_UNDEL_DIR_INO	 6	/* Undelete directory inode */
 #define EXT4_RESIZE_INO		 7	/* Reserved group descriptors inode */
 #define EXT4_JOURNAL_INO	 8	/* Journal inode */
-<<<<<<< HEAD
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE_OLD
-#define EXT4_EXCLUDE_INO_OLD		10	/* Old exclude inode */
-=======
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-#define EXT4_EXCLUDE_INO		 9	/* Snapshot exclude inode */
->>>>>>> 0cd71469e1ff8e2972151079fb4b6dcbb7649c18
-#endif
 
 /* First non-reserved inode for old ext4 filesystems */
-#define EXT4_GOOD_OLD_FIRST_INO	11
+#define EXT4_GOOD_OLD_FIRST_INO	9
 
 /*
  * Maximal count of links to a file
@@ -378,6 +370,7 @@ struct flex_groups {
 #define EXT4_BG_INODE_UNINIT	0x0001 /* Inode table/bitmap not in use */
 #define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
 #define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
+#define EXT4_BG_EXCLUDE_UNINIT	0x0008 /* Exclude bitmap not in use */
 
 /*
  * Macro-instructions used to manage group descriptors

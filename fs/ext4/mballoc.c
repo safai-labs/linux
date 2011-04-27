@@ -2743,16 +2743,6 @@ void ext4_exit_mballoc(void)
 	ext4_remove_debugfs_entry();
 }
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-/*
- * dummy exclude inode is passed to ext4_journal_get_write_access_inode()
- * to ensure that exclude bitmap will not be COWed.
- */
-static struct inode dummy_exclude_inode = {
-	.i_ino = EXT4_EXCLUDE_INO
-};
-#endif
-
 /*
  * Check quota and mark chosen space (ac->ac_b_ex) non-free in bitmaps
  * Returns 0 if success or error code
@@ -2781,19 +2771,14 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (ext4_snapshot_excluded(ac->ac_inode)) {
 		/*
-		 * allocating blocks for excluded file - try to read exclude
-		 * bitmap
+		 * try to read exclude bitmap
 		 */
-		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, 
+		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb,
 							ac->ac_b_ex.fe_group);
-		if (exclude_bitmap_bh) {
-			err = ext4_journal_get_write_access_inode(
-					handle, &dummy_exclude_inode,
-					exclude_bitmap_bh);
-			if (err) {
-				brelse(exclude_bitmap_bh);
-				goto out_err;
-			}
+		err = ext4_journal_get_write_access(handle, exclude_bitmap_bh);
+		if (err) {
+			brelse(exclude_bitmap_bh);
+			goto out_err;
 		}
 	}
 
@@ -2888,9 +2873,9 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 
 	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-		if (!err && exclude_bitmap_bh)
-			err = ext4_handle_dirty_metadata(handle, NULL,
-						     exclude_bitmap_bh);
+	if (!err && exclude_bitmap_bh)
+		err = ext4_handle_dirty_metadata(handle, NULL,
+					     exclude_bitmap_bh);
 #endif
 	if (err)
 		goto out_err;
@@ -4721,8 +4706,7 @@ do_more:
 	brelse(exclude_bitmap_bh);
 	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh) {
-		err = ext4_journal_get_write_access_inode(
-			handle, &dummy_exclude_inode, exclude_bitmap_bh);
+		err = ext4_journal_get_write_access( handle, exclude_bitmap_bh);
 		if (err)
 			goto error_return;
 		exclude_bitmap_dirty = 0;

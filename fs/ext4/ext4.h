@@ -370,7 +370,9 @@ struct flex_groups {
 #define EXT4_BG_INODE_UNINIT	0x0001 /* Inode table/bitmap not in use */
 #define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
 #define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define EXT4_BG_EXCLUDE_UNINIT	0x0008 /* Exclude bitmap not in use */
+#endif
 
 /*
  * Macro-instructions used to manage group descriptors

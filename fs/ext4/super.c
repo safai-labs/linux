@@ -2162,7 +2162,9 @@ static int ext4_check_descriptors(struct super_block *sb,
 	ext4_fsblk_t block_bitmap;
 	ext4_fsblk_t inode_bitmap;
 	ext4_fsblk_t inode_table;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	ext4_fsblk_t exclude_bitmap;
+#endif
 	int flexbg_flag = 0;
 	ext4_group_t i, grp = sbi->s_groups_count;
 
@@ -2206,13 +2208,21 @@ static int ext4_check_descriptors(struct super_block *sb,
 			       "(block %llu)!", i, inode_table);
 			return 0;
 		}
-		exclude_bitmap = ext4_exclude_bitmap(sb, gdp);
-		if (exclude_bitmap < first_block || exclude_bitmap > last_block) {
-			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
-			       "Exclude bitmap for group %u not in group "
-			       "(block %llu)!", i, exclude_bitmap);
-			return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+		if (EXT4_HAS_COMPAT_FEATURE(sb,
+		    EXT4_FEATURE_COMPAT_EXCLUDE_BITAMP)) {
+			exclude_bitmap = ext4_exclude_bitmap(sb, gdp);
+			if (exclude_bitmap < first_block ||
+			    exclude_bitmap > last_block) {
+				ext4_msg(sb, KERN_ERR,
+					 "ext4_check_descriptors: "
+					 "Exclude bitmap for group %u "
+					 "not in group (block %llu)!",
+					 i, exclude_bitmap);
+				return 0;
+			}
 		}
+#endif
 
 		ext4_lock_group(sb, i);
 		if (!ext4_group_desc_csum_verify(sbi, i, gdp)) {

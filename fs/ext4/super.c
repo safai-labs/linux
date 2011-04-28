@@ -114,6 +114,10 @@ ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
 ext4_fsblk_t ext4_exclude_bitmap(struct super_block *sb,
 			       struct ext4_group_desc *bg)
 {
+	if (!EXT4_HAS_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP))
+		return 0;
+
 	return le32_to_cpu(bg->bg_exclude_bitmap_lo) |
 		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_exclude_bitmap_hi) << 32 : 0);
@@ -2762,6 +2766,7 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 				"features: meta_bg, 64bit");
 			return 0;
 		}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 		if (!EXT4_HAS_COMPAT_FEATURE(sb,
 					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
 			ext4_msg(sb, KERN_ERR,
@@ -2769,6 +2774,7 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 				"for snapshots");
 			return 0;
 		}
+#endif
 		if (EXT4_TEST_FLAGS(sb, EXT4_FLAGS_IS_SNAPSHOT)) {
 			ext4_msg(sb, KERN_ERR,
 				"A snapshot image must be mounted read-only. "

@@ -1892,7 +1892,7 @@ int ext4_snapshot_load(struct super_block *sb, struct ext4_super_block *es,
 {
 	__u32 active_ino = le32_to_cpu(es->s_snapshot_inum);
 	__u32 load_ino = le32_to_cpu(es->s_snapshot_list);
-	int err, num = 0, snapshot_id = 0;
+	int err = 0, num = 0, snapshot_id = 0;
 	int has_active = 0;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

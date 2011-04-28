@@ -1567,11 +1567,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define EXT4_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define EXT4_FEATURE_COMPAT_DIR_INDEX		0x0020
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-/*
- * 0x0080 is reserved for exclude inode in next3 so that
- * next3 can be migrate to ext4 with snapshot
- */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP	0x0100 /* Has exclude bitmap */
 #endif
 

@@ -42,7 +42,7 @@ int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
 					 handle_t *handle, struct inode *inode,
-					 struct buffer_head *bh)
+					 struct buffer_head *bh, int exclude)
 #else
 int __ext4_journal_get_write_access(const char *where, unsigned int line,
 				    handle_t *handle, struct buffer_head *bh)
@@ -53,7 +53,7 @@ int __ext4_journal_get_write_access(const char *where, unsigned int line,
 	if (ext4_handle_valid(handle)) {
 		err = jbd2_journal_get_write_access(handle, bh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
-		if (!err)
+		if (!err && !exclude)
 			err = ext4_snapshot_get_write_access(handle, inode, bh);
 #endif
 		if (err)

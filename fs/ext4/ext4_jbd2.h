@@ -299,7 +299,7 @@ int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
 					 handle_t *handle, struct inode *inode,
-					 struct buffer_head *bh);
+					 struct buffer_head *bh, int exclude);
 #else
 int __ext4_journal_get_write_access(const char *where, unsigned int line,
 				    handle_t *handle, struct buffer_head *bh);
@@ -328,12 +328,15 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 	__ext4_journal_get_undo_access(__func__, __LINE__, (handle), (bh))
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
+#define ext4_journal_get_write_access_exclude(handle, bh) \
+	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
+						 (handle), NULL, (bh), 1)
 #define ext4_journal_get_write_access(handle, bh) \
 	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
-						 (handle), NULL, (bh))
+						 (handle), NULL, (bh), 0)
 #define ext4_journal_get_write_access_inode(handle, inode, bh) \
 	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
-						(handle), (inode), (bh))
+						(handle), (inode), (bh), 0)
 #else
 #define ext4_journal_get_write_access(handle, bh) \
 	__ext4_journal_get_write_access(__func__, __LINE__, (handle), (bh))

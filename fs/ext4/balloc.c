@@ -375,7 +375,7 @@ unsigned ext4_init_exclude_bitmap(struct super_block *sb, struct buffer_head *bh
 	if (!ext4_group_desc_csum_verify(EXT4_SB(sb), block_group, gdp)) {
 		ext4_error(sb, "Checksum bad for group %u",
 				block_group);
-		memset(bh->b_data, 0xff, sb->s_blocksize);
+		memset(bh->b_data, 0, sb->s_blocksize);
 		return 0;
 	}
 	memset(bh->b_data, 0, sb->s_blocksize);

@@ -2775,7 +2775,8 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 		 */
 		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb,
 							ac->ac_b_ex.fe_group);
-		err = ext4_journal_get_write_access(handle, exclude_bitmap_bh);
+		err = ext4_journal_get_write_access_exclude(handle,
+							    exclude_bitmap_bh);
 		if (err) {
 			brelse(exclude_bitmap_bh);
 			goto out_err;
@@ -4706,7 +4707,8 @@ do_more:
 	brelse(exclude_bitmap_bh);
 	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (exclude_bitmap_bh) {
-		err = ext4_journal_get_write_access( handle, exclude_bitmap_bh);
+		err = ext4_journal_get_write_access_exclude(handle,
+							    exclude_bitmap_bh);
 		if (err)
 			goto error_return;
 		exclude_bitmap_dirty = 0;

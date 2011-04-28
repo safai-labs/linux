@@ -283,7 +283,7 @@ struct ext4_io_submit {
 #define EXT4_JOURNAL_INO	 8	/* Journal inode */
 
 /* First non-reserved inode for old ext4 filesystems */
-#define EXT4_GOOD_OLD_FIRST_INO	9
+#define EXT4_GOOD_OLD_FIRST_INO	11
 
 /*
  * Maximal count of links to a file
@@ -1568,7 +1568,11 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define EXT4_FEATURE_COMPAT_DIR_INDEX		0x0020
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP	0x0080 /* Has exclude bitmap */
+/*
+ * 0x0080 is reserved for exclude inode in next3 so that
+ * next3 can be migrate to ext4 with snapshot
+ */
+#define EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP	0x0100 /* Has exclude bitmap */
 #endif
 
 #define EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER	0x0001
@@ -2302,11 +2306,7 @@ struct ext4_group_info {
 #endif
 	struct rw_semaphore alloc_sem;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-/*
-	 * Fast cache for location of exclude/COW bitmap blocks.
-	 * Exclude bitmap blocks are allocated offline by mke2fs/tune2fs.
-	 * Location of exclude bitmap blocks is read from exclude inode to
-	 * initialize bg_exclude_bitmap on mount time.
+	/*
 	 * bg_cow_bitmap is reset to zero on mount time and on every snapshot
 	 * take and initialized lazily on first block group write access.
 	 * bg_cow_bitmap is protected by sb_bgl_lock().

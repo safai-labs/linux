@@ -878,7 +878,7 @@ static int ext4_snapshot_is_group_bitmap(struct super_block *sb,
 	bitmap_blk = ext4_inode_bitmap(sb, gdp);
 	if (bitmap_blk == block)
 		return INODE_BITMAP;
-	bitmap_blk = grp->bg_exclude_bitmap;
+	bitmap_blk = ext4_exclude_bitmap(sb, gdp);
 	if (bitmap_blk == block)
 		return EXCLUDE_BITMAP;
 	return 0;

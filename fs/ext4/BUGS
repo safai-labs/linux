@@ -139,3 +139,26 @@ Mar 30 11:03:13 qalab kernel: [21001.300547]  [<ffffffff8117e711>] sys_ioctl+0xa
 Mar 30 11:03:13 qalab kernel: [21001.300552]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
 Mar 30 11:03:13 qalab kernel: [21001.300555] INFO: lockdep is turned off.
 
+
+Analyzed-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+
+     freeze                  truncate              kjournald
+                                                 
+                    |  ext4_ext_truncate     |          
+    freeze_super()  |   starts a handle      |
+    sets s_frozen   |                        |
+                    |  ext4_ext_truncate     |
+                    |  holds i_data_sem      |
+  ext4_freeze()     |                        |   commit_transaction()
+   wait for updates |                        |   waits for i_data_sem  
+                    |  ext4_free_blocks      |          
+                    |  calls dquot_free_block| 
+                    |                        |
+                    |  dquot_free_block call |
+                    |  ext4_dirty_inode      | 
+                    |                        | 
+                    |  ext4_dirty_inode      |  
+                    |  trys to start a handle|
+                    |                        | 
+                    |  block due to s_frozen |
+

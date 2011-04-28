@@ -508,7 +508,8 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 		return 0;
 
 	if (exclude)
-		err = ext4_journal_get_write_access(handle, exclude_bitmap_bh);
+		err = ext4_journal_get_write_access_exclude(handle,
+							    exclude_bitmap_bh);
 	if (err)
 		goto out;
 
@@ -767,13 +768,6 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 
 	ext4_snapshot_trace_cow(where, handle, sb, inode, bh, block, 1, cow);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_INODE
-	if (inode && ext4_snapshot_exclude_inode(inode)) {
-		snapshot_debug_hl(4, "exclude bitmap update - "
-				  "skip block cow!\n");
-		return 0;
-	}
-#endif
 	if (IS_COWING(handle)) {
 		/* avoid recursion on active snapshot updates */
 		WARN_ON(inode && inode != active_snapshot);

@@ -2768,13 +2768,16 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	sb = ac->ac_sb;
 	sbi = EXT4_SB(sb);
 
+	err = -EIO;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (ext4_snapshot_excluded(ac->ac_inode)) {
+	if (EXT4_SNAPSHOTS(sb) && ext4_snapshot_excluded(ac->ac_inode)) {
 		/*
 		 * try to read exclude bitmap
 		 */
 		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb,
 							ac->ac_b_ex.fe_group);
+		if (!exclude_bitmap_bh)
+			goto out_err;
 		err = ext4_journal_get_write_access_exclude(handle,
 							    exclude_bitmap_bh);
 		if (err) {
@@ -2784,7 +2787,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 
 #endif
-	err = -EIO;
 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
 	if (!bitmap_bh)
 		goto out_err;
@@ -4704,11 +4706,15 @@ do_more:
 	 * try to read exclude bitmap and if it fails
 	 * skip the exclude bitmap update
 	 */
-	brelse(exclude_bitmap_bh);
-	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
-	if (exclude_bitmap_bh) {
+	if (EXT4_SNAPSHOTS(sb)) {
+		brelse(exclude_bitmap_bh);
+		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
+		if (!exclude_bitmap_bh) {
+			err = -EIO;
+			goto error_return;
+		}
 		err = ext4_journal_get_write_access_exclude(handle,
-							    exclude_bitmap_bh);
+						    exclude_bitmap_bh);
 		if (err)
 			goto error_return;
 		exclude_bitmap_dirty = 0;

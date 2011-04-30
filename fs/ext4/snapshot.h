@@ -181,7 +181,7 @@ static inline void snapshot_size_truncate(struct inode *inode,
 #define SNAPMAP_ISMOVE(cmd)	((cmd) & EXT4_GET_BLOCKS_MOVE)
 #define SNAPMAP_ISSYNC(cmd)	((cmd) & EXT4_GET_BLOCKS_SYNC)
 
-#define IS_COWING(handle) ((ext4_handle_t *)(handle))->h_cowing
+#define IS_COWING(handle) (((ext4_handle_t *)(handle))->h_cowing)
 
 /* snapshot.c */
 
@@ -329,8 +329,8 @@ static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
  * < 0 - error
  */
 static inline int ext4_snapshot_get_move_access(handle_t *handle,
-						struct inode *inode, 
-						ext4_fsblk_t block, 
+						struct inode *inode,
+						ext4_fsblk_t block,
 						int *pcount, int move)
 {
 	return ext4_snapshot_move(handle, inode, block, pcount, move);

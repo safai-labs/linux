@@ -547,7 +547,8 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 	}
 
 	if (exclude && excluded) {
-		err = ext4_handle_dirty_metadata(handle, NULL, exclude_bitmap_bh);
+		err = ext4_handle_dirty_metadata(handle,
+						 NULL, exclude_bitmap_bh);
 		trace_cow_add(handle, excluded, excluded);
 	}
 out:

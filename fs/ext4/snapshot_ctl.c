@@ -86,7 +86,8 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 		 * Set up the jbd2_inode - we are about to file_inode soon...
 		 */
 		if (!ei->jinode) {
-			struct jbd2_inode *jinode = jbd2_alloc_inode(GFP_KERNEL);
+			struct jbd2_inode *jinode;
+			jinode = jbd2_alloc_inode(GFP_KERNEL);
 
 			spin_lock(&inode->i_lock);
 			if (!ei->jinode) {
@@ -204,7 +205,7 @@ static int ext4_snapshot_delete(struct inode *inode);
 void ext4_snapshot_get_flags(struct inode *inode, struct file *filp)
 {
 	unsigned int open_count = filp->f_path.dentry->d_count;
-	
+
 	/*
 	 * 1 count for ioctl (lsattr)
 	 * greater count means the snapshot is open by user (mounted?)

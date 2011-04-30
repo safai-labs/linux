@@ -491,7 +491,7 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 	if (!(flags & 1UL<<EXT4_SNAPSTATE_LIST))
-	  	/* snapshot not on the list - read/write access denied */
+		/* snapshot not on the list - read/write access denied */
 		return -EPERM;
 #endif
 
@@ -609,7 +609,7 @@ get_block:
 	if (err < 0)
 		return err;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-		if (!prev_snapshot) {
+	if (!prev_snapshot) {
 		/*
 		 * Possible read through to block device.
 		 * Start tracked read before checking if block is mapped to
@@ -634,7 +634,7 @@ get_block:
 	snapshot_debug(4, "ext4_snapshot_read_through(%lld): block = "
 		       "(%lld), err = %d\n prev_snapshot = %u",
 		       (long long)iblock, map.m_pblk, err,
-		       prev_snapshot ? prev_snapshot ->i_generation : 0);
+		       prev_snapshot ? prev_snapshot->i_generation : 0);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 	/* if it's not a hole - cancel tracked read before we deadlock
 	 * on pending COW */

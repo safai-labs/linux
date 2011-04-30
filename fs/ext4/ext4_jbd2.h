@@ -195,11 +195,11 @@ struct ext4_handle_s {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	/* Number of buffers requested by user:
 	 * (before adding the COW credits factor) */
-	unsigned int	h_base_credits:	14;
+	unsigned int	h_base_credits:14;
 
 	/* Number of buffers the user is allowed to dirty:
 	 * (counts only buffers dirtied when !h_cowing) */
-	unsigned int	h_user_credits:	14;
+	unsigned int	h_user_credits:14;
 #endif
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
@@ -474,7 +474,7 @@ static inline int __ext4_journal_extend(const char *where,
 {
 	int lower, missing = 0;
 	int err = 0;
-	
+
 	if (ext4_handle_valid((handle_t *)handle)) {
 		lower = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits +
 				nblocks);

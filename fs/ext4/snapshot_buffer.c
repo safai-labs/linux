@@ -82,10 +82,10 @@ static void buffer_io_error(struct buffer_head *bh)
  */
 void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh)
 {
-	static sector_t blocknr = 0;
-	static int maxcount = 0;
+	static sector_t blocknr;
+	static int maxcount;
 	static int maxbit = 1;
-	static int maxorder = 0;
+	static int maxorder;
 	int count = atomic_read(&bh->b_count) & 0x0000ffff;
 
 	BUG_ON(count < 0);

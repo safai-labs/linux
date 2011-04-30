@@ -3126,7 +3126,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	if (map.m_flags & EXT4_MAP_REMAP) {
 		ret = ext4_da_reserve_space(inode, iblock);
 		if (ret < 0)
-			return ret;	
+			return ret;
 	}
 #endif
 	map_bh(bh, inode->i_sb, map.m_pblk);

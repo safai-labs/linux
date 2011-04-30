@@ -2,7 +2,6 @@ cleanup_merge
 cleanup_shrink
 cleanup
 exclude_bitmap
-exclude_inode
 exclude
 race_read
 race_cow
@@ -37,6 +36,5 @@ hooks_data
 hooks_delete
 hooks_bitmap
 hooks_jbd
-hooks
 debug
 snapshot

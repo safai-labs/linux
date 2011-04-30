@@ -622,7 +622,7 @@ static inline struct buffer_head *
 ext4_sb_bread(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
-	
+
 	bh = __bread(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
 		__ext4_trace_bh_count(fn, bh);
@@ -633,7 +633,7 @@ static inline struct buffer_head *
 ext4_sb_getblk(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
-	
+
 	bh = __getblk(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
 		__ext4_trace_bh_count(fn, bh);

@@ -573,7 +573,7 @@ static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
 				bit, block_group);
 		err = -EIO;
 	}
-	
+
 	brelse(exclude_bitmap_bh);
 #endif
 	brelse(bitmap_bh);

@@ -1236,7 +1236,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		count = map->m_len;
 	} else
 		count = ext4_blks_to_allocate(partial, indirect_blks,
-				     	      map->m_len, blocks_to_boundary);
+					      map->m_len, blocks_to_boundary);
 #else
 	count = ext4_blks_to_allocate(partial, indirect_blks,
 				      map->m_len, blocks_to_boundary);

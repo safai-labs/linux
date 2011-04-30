@@ -659,7 +659,7 @@ struct ext4_new_group_data {
 #define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
 #define EXT4_GET_BLOCKS_DELAY_CREATE		0x0200
 	/* remap the request blocks */
-#define EXT4_GET_BLOCKS_REMAP			0x0400	
+#define EXT4_GET_BLOCKS_REMAP			0x0400
 #endif
 
 /*

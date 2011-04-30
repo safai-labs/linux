@@ -432,9 +432,9 @@ int ext4_mb_test_bit_range(int bit, void *addr, int *pcount)
 
 	ret = mb_test_bit(bit, addr);
 	if (ret)
-		i = mb_find_next_zero_bit(addr, bit + *pcount, bit); 
+		i = mb_find_next_zero_bit(addr, bit + *pcount, bit);
 	else
-		i = mb_find_next_bit(addr, bit + *pcount, bit); 
+		i = mb_find_next_bit(addr, bit + *pcount, bit);
 	*pcount = i - bit;
 	return ret ? 1 : 0;
 }

@@ -640,7 +640,7 @@ struct ext4_new_group_data {
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
- * snapshot_map_blocks() flags passed to ext4_map_blocks() for mapping 
+ * snapshot_map_blocks() flags passed to ext4_map_blocks() for mapping
  * blocks to snapshot.
  */
 	/* handle COW race conditions */
@@ -1994,7 +1994,7 @@ extern int ext4_mb_add_groupinfo(struct super_block *sb,
 		ext4_group_t i, struct ext4_group_desc *desc);
 extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW 
-extern int ext4_mb_test_bit_range(int bit, void *addr,int *pcount);
+extern int ext4_mb_test_bit_range(int bit, void *addr, int *pcount);
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 void ext4_mb_discard_all_preallocations(struct super_block *sb);

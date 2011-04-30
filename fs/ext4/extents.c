@@ -3698,9 +3698,9 @@ found:
 			ex = path[depth].p_ext;
 		}
 	}
-	
+
 	if (!(flags & EXT4_GET_BLOCKS_CREATE))
-		goto out;	
+		goto out;
 
 #endif
 	/*
@@ -3710,7 +3710,7 @@ found:
 	/* find neighbour allocated blocks */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	/*
-	 * TODO MOW case needs further consideration. 
+	 * TODO MOW case needs further consideration.
 	 */
 #endif
 	ar.lleft = map->m_lblk;
@@ -3823,7 +3823,7 @@ found:
 			err = ext4_split_extents(handle, inode, map,
 					path, flags | EXT4_GET_BLOCKS_PRE_IO);
 			if (err < 0) {
-				goto out;	
+				goto out;
 			}
 
 			/* extent tree may be changed. */
@@ -3847,9 +3847,10 @@ found:
 				err = ext4_ext_dirty(handle, inode, path + depth);
 			}
 		}
-		
+
 	} else
-		err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
+		err = ext4_ext_insert_extent(handle, inode,
+					     path, &newex, flags);
 #else
 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
 #endif

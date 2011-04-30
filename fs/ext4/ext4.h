@@ -2447,8 +2447,8 @@ enum ext4_state_bits {
 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
 	  = BH_JBDPrivateStart,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	BH_Remap,	/* Data block need to be remapped, 
-			 * now used by snapshot to do mow 
+	BH_Remap,	/* Data block need to be remapped,
+			 * now used by snapshot to do mow
 			 */
 	BH_Partial_Write,	/* Buffer should be uptodate before write */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ

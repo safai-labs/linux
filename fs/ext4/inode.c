@@ -2030,7 +2030,7 @@ static void ext4_truncate_failed_write(struct inode *inode)
 	truncate_inode_pages(inode->i_mapping, inode->i_size);
 	ext4_truncate(inode);
 }
- 
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
  * Prepare for snapshot.

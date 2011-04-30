@@ -3990,7 +3990,7 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		iput(journal_inode);
 		return NULL;
 	}
-	
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (EXT4_SNAPSHOTS(sb) &&
 			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <

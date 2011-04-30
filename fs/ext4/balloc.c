@@ -361,13 +361,15 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 /* Initializes an uninitialized exclude bitmap if given, and returns 0 */
-unsigned ext4_init_exclude_bitmap(struct super_block *sb, struct buffer_head *bh,
-		 ext4_group_t block_group, struct ext4_group_desc *gdp)
+unsigned ext4_init_exclude_bitmap(struct super_block *sb,
+				  struct buffer_head *bh,
+				  ext4_group_t block_group,
+				  struct ext4_group_desc *gdp)
 {
 	if (!bh)
 		/* we can return no. of blocks in exclude bitmap */
 		return 0;
-	
+
 	J_ASSERT_BH(bh, buffer_locked(bh));
 	memset(bh->b_data, 0, sb->s_blocksize);
 	return 0;

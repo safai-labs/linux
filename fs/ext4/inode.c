@@ -1334,8 +1334,8 @@ got_it:
 cleanup:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operation on failure to alloc snapshot block */
-	if(SNAPMAP_ISCOW(flags)) {
-		if (err < 0 && sbh )
+	if( SNAPMAP_ISCOW(flags)) {
+		if (err < 0 && sbh)
 			ext4_snapshot_end_pending_cow(sbh);
 		brelse(sbh);
 	}
@@ -5014,8 +5014,8 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 				count++;
 			} else {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-				if (ext4_clear_blocks_cow(handle, inode, this_bh,
-					       block_to_free, count,
+				if (ext4_clear_blocks_cow(handle, inode,
+					       this_bh, block_to_free, count,
 					       block_to_free_p, p, bitmap,
 					       bit + (block_to_free_p - first),
 							  pblocks))
@@ -5042,7 +5042,8 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 	if (count > 0)
 		ext4_clear_blocks_cow(handle, inode, this_bh,
 				block_to_free, count, block_to_free_p, p,
-				bitmap, bit + (block_to_free_p - first), pblocks);
+				bitmap, bit + (block_to_free_p - first),
+				pblocks);
 	if (pblocks)
 		return;
 #else

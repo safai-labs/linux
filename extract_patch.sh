@@ -19,13 +19,15 @@ done
 
 git checkout $BRANCH
 
-#guilt-push
-for f in $( ls fs/ext4/*[^tmp] ) ; do
-	mv -f $f.tmp $f|| exit 1
-	rm -f $f.tmp
-done
+rm fs/ext4/BUGS.tmp
+rm fs/ext4/TODO.tmp
 
-rm -f fs/ext4/*.tmp
+#guilt-push
+for f in $( ls fs/ext4/*.tmp ) ; do
+	file=${f%%.tmp}
+	mv -f $f $file|| exit 1
+	git add $file
+done
 
 if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 	echo 'reverse patch $PATCH~ does not exist'

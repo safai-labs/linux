@@ -1481,7 +1481,7 @@ static inline void ext4_set_##name##_flags(struct inode *inode,		\
 {									\
 	EXT4_I(inode)->i_##field |= (flags << (offset));		\
 }									\
-static inline void ext4_clear_##name##_flags(struct inode *inode, 	\
+static inline void ext4_clear_##name##_flags(struct inode *inode,	\
 						unsigned long flags)	\
 {									\
 	EXT4_I(inode)->i_##field &= ~(flags << (offset));		\

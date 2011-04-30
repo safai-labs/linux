@@ -1042,9 +1042,13 @@ struct ext4_inode_info {
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
 
 #define EXT4_SET_FLAGS(sb, mask) \
-	EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask)
+	do { \
+		EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask); \
+	} while (0)
 #define EXT4_CLEAR_FLAGS(sb, mask) \
-	EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask)
+	do { \
+		EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask); \
+	} while (0)
 #define EXT4_TEST_FLAGS(sb, mask) \
 	(EXT4_SB(sb)->s_es->s_flags & cpu_to_le32(mask))
 #endif

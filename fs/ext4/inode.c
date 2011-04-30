@@ -1825,7 +1825,7 @@ out:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
- * ext4_get_block_mow is used when a block may be needed to be snapshotted. 
+ * ext4_get_block_mow is used when a block may be needed to be snapshotted.
  */
 int ext4_get_block_mow(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)

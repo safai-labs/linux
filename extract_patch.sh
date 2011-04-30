@@ -8,7 +8,7 @@ CHECKPATCH=./scripts/checkpatch.pl
 
 echo extracting patch $PATCH...
 
-git checkout $RBRANCH~$2
+git checkout $RBRANCH~$2 || exit 1
 
 echo $PATCH >> .git/patches/$BRANCH/series
 
@@ -17,16 +17,16 @@ for f in $( ls fs/ext4/* ) ; do
 	cp -f $f $f.tmp|| exit 1
 done
 
-git checkout $BRANCH
+git checkout $BRANCH || exit 1
 
-rm fs/ext4/BUGS.tmp
-rm fs/ext4/TODO.tmp
+rm -f fs/ext4/BUGS.tmp
+rm -f fs/ext4/TODO.tmp
 
 #guilt-push
 for f in $( ls fs/ext4/*.tmp ) ; do
 	file=${f%%.tmp}
 	mv -f $f $file|| exit 1
-	git add $file
+	git add $file || exit 1
 done
 
 if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then

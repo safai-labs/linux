@@ -3653,9 +3653,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	/*
 	 * two cases:
 	 * 1. the request block is found.
-	 *    a. If EXT4_GET_BLOCKS_CREATE is not set, we will test 
+	 *    a. If EXT4_GET_BLOCKS_CREATE is not set, we will test
 	 *       if MOW is needed.
-	 *    b. If EXT4_GET_BLOCKS_CREATE is set. MOW will be done 
+	 *    b. If EXT4_GET_BLOCKS_CREATE is set. MOW will be done
 	 *       if MOW is needed.
 	 *
 	 * 2. the request block is not found, EXT4_GET_BLOCKS_CREATE
@@ -3719,7 +3719,7 @@ found:
 		goto out2;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	ar.lright = map->m_lblk + allocated;
-#else	
+#else
 	ar.lright = map->m_lblk;
 #endif
 	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright);
@@ -3816,15 +3816,14 @@ found:
 					"ext4_snapshot_get_move_access", NULL,
 					handle, err);
 		} else {
-			/* 
+			/*
 			 * Move to snapshot successfully.
 			 * TODO merge extent after finishing MOW
 			 */
 			err = ext4_split_extents(handle, inode, map,
 					path, flags | EXT4_GET_BLOCKS_PRE_IO);
-			if (err < 0) {
+			if (err < 0)
 				goto out;
-			}
 
 			/* extent tree may be changed. */
 			depth = ext_depth(inode);

@@ -1041,15 +1041,15 @@ struct ext4_inode_info {
 #define EXT4_FLAGS_FIX_SNAPSHOT		0x0020 /* Corrupted snapshot */
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
 
-#define EXT4_SET_FLAGS(sb, mask) \
-	do { \
+#define EXT4_SET_FLAGS(sb, mask)				 \
+	do {							 \
 		EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask); \
 	} while (0)
-#define EXT4_CLEAR_FLAGS(sb, mask) \
-	do { \
-		EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask); \
+#define EXT4_CLEAR_FLAGS(sb, mask)				 \
+	do {							 \
+		EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask);\
 	} while (0)
-#define EXT4_TEST_FLAGS(sb, mask) \
+#define EXT4_TEST_FLAGS(sb, mask)				 \
 	(EXT4_SB(sb)->s_es->s_flags & cpu_to_le32(mask))
 #endif
 
@@ -1464,7 +1464,7 @@ static inline void ext4_set_inode_##name(struct inode *inode, int bit)	\
 {									\
 	set_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }									\
-static inline void ext4_clear_inode_##name(struct inode *inode, int bit) \
+static inline void ext4_clear_inode_##name(struct inode *inode, int bit)\
 {									\
 	clear_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }

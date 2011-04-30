@@ -1160,7 +1160,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			 * test if first_block should be moved to snapshot?
 			 */
 			err = ext4_snapshot_get_move_access(handle, inode,
-							    first_block, 
+							    first_block,
 							    &map->m_len, 0);
 			if (err < 0) {
 				/* cleanup the whole chain and exit */
@@ -1279,15 +1279,15 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (map->m_flags & EXT4_MAP_REMAP) {
-		map->m_len = count; 
+		map->m_len = count;
 		/* move old block to snapshot */
 		err = ext4_snapshot_get_move_access(handle, inode,
 						    le32_to_cpu(*(partial->p)),
 						    &map->m_len, 1);
 		if (err <= 0) {
-                        /* failed to move to snapshot - abort! */
-                        err = err ? : -EIO;
-                        ext4_journal_abort_handle(__func__, __LINE__,
+			/* failed to move to snapshot - abort! */
+			err = err ? : -EIO;
+			ext4_journal_abort_handle(__func__, __LINE__,
 					"ext4_snapshot_get_move_access", NULL,
 					handle, err);
 			goto cleanup;
@@ -1714,7 +1714,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	up_write((&EXT4_I(inode)->i_data_sem));
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/* Clear EXT4_MAP_REMAP, it is not needed any more. */
-	map->m_flags &= ~EXT4_MAP_REMAP; 
+	map->m_flags &= ~EXT4_MAP_REMAP;
 #endif
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
 		int ret = check_block_validity(inode, map);

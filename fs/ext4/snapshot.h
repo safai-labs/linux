@@ -53,7 +53,7 @@
 #define SNAPSHOT_BLOCK_GROUP_OFFSET(block)			\
 	((block)&(SNAPSHOT_BLOCKS_PER_GROUP-1))
 #define SNAPSHOT_BLOCK_TUPLE(block)				\
-	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block), 	\
+	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block),	\
 	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP(block)
 #define SNAPSHOT_IND_PER_BLOCK_GROUP_BITS			\
 	(SNAPSHOT_BLOCKS_PER_GROUP_BITS-SNAPSHOT_ADDR_PER_BLOCK_BITS)
@@ -100,8 +100,10 @@
 	snapshot_size_truncate((inode), 1)
 /* Removed snapshot i_size and i_disksize are 0, since all blocks were freed */
 #define SNAPSHOT_SET_REMOVED(inode)				\
-	EXT4_I(inode)->i_disksize = 0;				\
-	snapshot_size_truncate((inode), 0)
+	do {							\
+		EXT4_I(inode)->i_disksize = 0;			\
+		snapshot_size_truncate((inode), 0);		\
+	} while (0)
 
 #define SNAPSHOT_TRANSACTION_ID(sb)				\
 	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)

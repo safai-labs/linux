@@ -3236,7 +3236,7 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 	ext4_fsblk_t goal_block;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/* 
+	/*
 	 * All inode preallocations allocated before the time when the
 	 * active snapshot is taken need to be discarded, otherwise blocks
 	 * maybe used by both a regular file and the snapshot file that we

@@ -1621,7 +1621,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	if (retval > 0 && (map->m_flags & EXT4_MAP_REMAP) &&
 	    (flags & EXT4_GET_BLOCKS_PRE_IO)) {
 		/*
-		 * If mow is needed on the requested block and 
+		 * If mow is needed on the requested block and
 		 * request comes from async-direct-io-write path,
 		 * we return an unmapped buffer to fall back to buffered I/O.
 		 */

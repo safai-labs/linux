@@ -5633,7 +5633,7 @@ int ext4_get_inode_loc(struct inode *inode, struct ext4_iloc *iloc)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 	int in_mem = (!EXT4_SNAPSHOTS(inode->i_sb) &&
 		!ext4_test_inode_state(inode, EXT4_STATE_XATTR));
-	
+
 	/*
 	 * We have all inode's data except xattrs in memory here,
 	 * but we must always read-in the entire inode block for COW.

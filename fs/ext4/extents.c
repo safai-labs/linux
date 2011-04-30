@@ -2868,7 +2868,7 @@ fix_extent_len:
  * to an uninitialized extent or when do mow to an initialized extent.
  *
  *
- * Splitting an initialized/uninitalized extent may result in splitting 
+ * Splitting an initialized/uninitalized extent may result in splitting
  * the extent into multiple intialized/unintialized extents (up to three),
  * repectively.
  * There are three possibilities:
@@ -2918,8 +2918,8 @@ static int ext4_split_extents(handle_t *handle,
 	ee_len = ext4_ext_get_actual_len(ex);
 	allocated = ee_len - (map->m_lblk - ee_block);
 	newblock = map->m_lblk - ee_block + ext4_ext_pblock(ex);
-	
-	uninitialized = ext4_ext_is_uninitialized(ex); 
+
+	uninitialized = ext4_ext_is_uninitialized(ex);
 
 	ex2 = ex;
 	orig_ex.ee_block = ex->ee_block;

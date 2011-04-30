@@ -1993,7 +1993,7 @@ extern void ext4_free_blocks(handle_t *handle, struct inode *inode,
 extern int ext4_mb_add_groupinfo(struct super_block *sb,
 		ext4_group_t i, struct ext4_group_desc *desc);
 extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 extern int ext4_mb_test_bit_range(int bit, void *addr, int *pcount);
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA

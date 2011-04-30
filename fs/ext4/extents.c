@@ -2933,10 +2933,10 @@ static int ext4_split_extents(handle_t *handle,
 	may_zeroout = ee_block + ee_len <= eof_block;
 
 	/*
- 	 * If the uninitialized extent begins at the same logical
- 	 * block where the write begins, and the write completely
- 	 * covers the extent, then we don't need to split it.
- 	 */
+	 * If the uninitialized extent begins at the same logical
+	 * block where the write begins, and the write completely
+	 * covers the extent, then we don't need to split it.
+	 */
 	if ((map->m_lblk == ee_block) && (allocated <= map->m_len))
 		return allocated;
 
@@ -3843,7 +3843,8 @@ found:
 			if (!err) {
 				/* splice new blocks to the inode*/
 				ext4_ext_store_pblock(ex, newblock);
-				err = ext4_ext_dirty(handle, inode, path + depth);
+				err = ext4_ext_dirty(handle, inode,
+						     path + depth);
 			}
 		}
 

@@ -109,7 +109,7 @@
 static inline int ext4_snapshot_active(struct ext4_sb_info *sbi);
 
 /**
- * set transaction ID for active snapshot 
+ * set transaction ID for active snapshot
  *
  * this function is called after freeze_super() returns but before
  * calling unfreeze_super() to record the tid at time when a snapshot is

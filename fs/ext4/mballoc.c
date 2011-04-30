@@ -420,7 +420,7 @@ static inline int mb_find_next_bit(void *addr, int max, int start)
 	return ret;
 }
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 /*
  * Find the largest range of set or clear bits.
  * Return 1 for set bits and 0 for clear bits.
@@ -4729,15 +4729,15 @@ do_more:
 	}
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if(exclude_bitmap_bh) {
+	if (exclude_bitmap_bh) {
 		int i;
-		if(excluded_file)
+		if (excluded_file)
 			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
 						  bit + count, bit) - bit;
 		else
 			i = mb_find_next_bit(exclude_bitmap_bh->b_data,
 					     bit + count, bit) - bit;
-		if(i < count) {
+		if (i < count) {
 			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
 			ext4_error(sb, "%sexcluded file (ino=%lu)"
 				   " block [%d/%u] was %sexcluded!"
@@ -4746,7 +4746,7 @@ do_more:
 				   inode ? inode->i_ino : 0,
 				   bit + i, block_group,
 				   excluded_block ? "" : "not ");
-			if(!excluded_file)
+			if (!excluded_file)
 				excluded_block = 1;
 		}
 	}

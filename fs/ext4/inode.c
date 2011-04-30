@@ -995,7 +995,7 @@ failed:
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
 static int ext4_splice_branch_cow(handle_t *handle, struct inode *inode,
-			long block, Indirect *where, int num, int blks, int flags)
+		long block, Indirect *where, int num, int blks, int flags)
 #else
 static int ext4_splice_branch(handle_t *handle, struct inode *inode,
 			      ext4_lblk_t block, Indirect *where, int num,
@@ -1334,8 +1334,7 @@ got_it:
 cleanup:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operation on failure to alloc snapshot block */
-	if(SNAPMAP_ISCOW(flags))
-	{
+	if(SNAPMAP_ISCOW(flags)) {
 		if (err < 0 && sbh )
 			ext4_snapshot_end_pending_cow(sbh);
 		brelse(sbh);
@@ -4832,7 +4831,7 @@ no_top:
  * ext4_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
  * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
  * @bit:	bit number representing the @first block
- * @pblocks: 	pointer to counter of branch blocks
+ * @pblocks:	pointer to counter of branch blocks
  *
  * If @pblocks is not NULL, don't free blocks, only update blocks counter and
  * test that blocks are excluded.
@@ -4948,10 +4947,10 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 /*
  * ext4_free_data_cow - free a list of data blocks (consult COW bitmap)
- * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
- * @bit:	bit number representing the @first block
- * @pfreed_blocks:	return number of freed blocks
- * @pblocks: 	pointer to counter of branch blocks
+ * @bitmap:	   COW bitmap to consult when shrinking deleted snapshot
+ * @bit:	   bit number representing the @first block
+ * @pfreed_blocks: return number of freed blocks
+ * @pblocks:	   pointer to counter of branch blocks
  *
  * If @pblocks is not NULL, don't free blocks, only update blocks counter and
  * test that blocks are excluded.
@@ -5092,7 +5091,7 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 /*
  *	ext4_free_branches_cow - free or exclude an array of branches
- *	@pblocks: 	pointer to counter of branch blocks
+ *	@pblocks: pointer to counter of branch blocks
  *
  *	If @pblocks is not NULL, don't free blocks, only update blocks counter
  *	and test that blocks are excluded.

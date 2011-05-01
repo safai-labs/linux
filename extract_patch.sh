@@ -34,17 +34,17 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 fi
 
 #Correct mail subject header.
-echo '[PATCH ' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
-if [ $3 != '' ]; then
-echo 'RFC ' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+echo '[PATCH ' >> .git/patches/$BRANCH/$PATCH~ || exit 1
+if [ $3 = y ]; then
+echo 'RFC ' >> .git/patches/$BRANCH/$PATCH~ || exit 1
 if
-echo '$2/40]' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+echo '$2/40]' >> .git/patches/$BRANCH/$PATCH~ || exit 1
 
-cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$RPATCH~ 
+cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$PATCH~ 
 #Add Signed-off-by lines.
-echo '' >> .git/patches/$BRANCH/$RPATCH~ ||exit 1
-echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
-echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+echo '' >> .git/patches/$BRANCH/$PATCH~ ||exit 1
+echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BRANCH/$PATCH~ || exit 1
 
 #guilt-refresh
 git commit -a -F .git/patches/$BRANCH/$RPATCH~

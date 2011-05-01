@@ -26,6 +26,6 @@ rm -f fs/ext4/*.tmp
 NO=1
 for key in $( tac KEYS ) ; do
 	git checkout $WORK_BRANCH
-	./extract_patch.sh $key $NO
+	./extract_patch.sh $key $NO $RFC
 	NO=`expr $NO + 1`
 done

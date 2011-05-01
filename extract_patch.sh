@@ -33,12 +33,20 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 	echo 'reverse patch $PATCH~ does not exist'
 fi
 
+#Correct mail subject header.
+echo '[PATCH ' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+if [ $3 != '' ]; then
+echo 'RFC ' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+if
+echo '$2/40]' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+
+cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$RPATCH~ 
 #Add Signed-off-by lines.
-echo '' >> .git/patches/$RBRANCH/$RPATCH~ 
-echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$RBRANCH/$RPATCH~
-echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$RBRANCH/$RPATCH~
+echo '' >> .git/patches/$BRANCH/$RPATCH~ ||exit 1
+echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
+echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BRANCH/$RPATCH~ || exit 1
 
 #guilt-refresh
-git commit -a -F .git/patches/$RBRANCH/$RPATCH~
+git commit -a -F .git/patches/$BRANCH/$RPATCH~
 git show > .git/patches/$BRANCH/$PATCH
 $CHECKPATCH .git/patches/$BRANCH/$PATCH >>ext4_snapshot_patches_check

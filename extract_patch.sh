@@ -33,7 +33,7 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 	echo 'reverse patch $PATCH~ does not exist'
 fi
 
-cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$PATCH~ 
+cat .git/patches/$RBRANCH/$RPATCH~ > .git/patches/$BRANCH/$PATCH~ 
 #Add Signed-off-by lines.
 echo '' >> .git/patches/$BRANCH/$PATCH~ ||exit 1
 echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BRANCH/$PATCH~ || exit 1

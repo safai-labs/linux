@@ -33,13 +33,6 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 	echo 'reverse patch $PATCH~ does not exist'
 fi
 
-#Correct mail subject header.
-if [ $3 = y ]; then
-echo -e "[PATCH RFC $2/40] \c" > .git/patches/$BRANCH/$PATCH~ || exit 1
-else
-echo -e "[PATCH $2/40] \c" >> .git/patches/$BRANCH/$PATCH~ || exit 1
-fi
-
 cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$PATCH~ 
 #Add Signed-off-by lines.
 echo '' >> .git/patches/$BRANCH/$PATCH~ ||exit 1

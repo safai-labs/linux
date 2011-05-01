@@ -370,7 +370,7 @@ extern int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
  * Called from ext4_snapshot_test_and_{cow,move}() when copying/moving
  * blocks to active snapshot.
  *
- * On error handle is aborted.
+ * Return <0 on error.
  */
 #define ext4_snapshot_exclude_blocks(handle, sb, block, count) \
 	ext4_snapshot_test_and_exclude(__func__, (handle), (sb), \
@@ -379,13 +379,13 @@ extern int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 /*
  * ext4_snapshot_test_excluded() - test that snapshot blocks are excluded
  *
- * Called from ext4_snapshot_clean(), ext4_free_branches_cow() and
- * ext4_clear_blocks_cow() under snapshot_mutex.
+ * Called from ext4_count_branches() and
+ * ext4_count_blocks() under snapshot_mutex.
  *
- * On error handle is aborted.
+ * Return <0 on error or if snapshot blocks are not excluded.
  */
-#define ext4_snapshot_test_excluded(handle, inode, block, count) \
-	ext4_snapshot_test_and_exclude(__func__, (handle), (inode)->i_sb, \
+#define ext4_snapshot_test_excluded(inode, block, count) \
+	ext4_snapshot_test_and_exclude(__func__, NULL, (inode)->i_sb, \
 			(block), (count), 0)
 
 #endif

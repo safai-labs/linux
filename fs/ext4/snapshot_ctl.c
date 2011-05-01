@@ -140,6 +140,169 @@ static void ext4_snapshot_reset_bitmap_cache(struct super_block *sb)
 #define ext4_snapshot_reset_bitmap_cache(sb, init) 0
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
+/*
+ * A modified version of ext4_orphan_add(), used to add a snapshot inode
+ * to the head of the on-disk and in-memory lists.
+ * in-memory i_orphan list field is overloaded, because inodes on snapshots
+ * list cannot be unlinked nor truncated.
+ */
+static int ext4_inode_list_add(handle_t *handle, struct inode *inode,
+		__u32 *i_next, __le32 *s_last,
+		struct list_head *s_list, const char *name)
+{
+	struct super_block *sb = inode->i_sb;
+	struct ext4_iloc iloc;
+	int err = 0, rc;
+
+	if (!ext4_handle_valid(handle))
+		return 0;
+
+	mutex_lock(&EXT4_SB(sb)->s_orphan_lock);
+	if (!list_empty(&EXT4_I(inode)->i_orphan))
+		goto out_unlock;
+
+	BUFFER_TRACE(EXT4_SB(sb)->s_sbh, "get_write_access");
+	err = ext4_journal_get_write_access(handle, EXT4_SB(sb)->s_sbh);
+	if (err)
+		goto out_unlock;
+
+	err = ext4_reserve_inode_write(handle, inode, &iloc);
+	if (err)
+		goto out_unlock;
+
+	snapshot_debug(4, "add inode %lu to %s list\n",
+			inode->i_ino, name);
+
+	/* Insert this inode at the head of the on-disk inode list... */
+	*i_next = le32_to_cpu(*s_last);
+	*s_last = cpu_to_le32(inode->i_ino);
+	err = ext4_handle_dirty_metadata(handle, NULL, EXT4_SB(sb)->s_sbh);
+	rc = ext4_mark_iloc_dirty(handle, inode, &iloc);
+	if (!err)
+		err = rc;
+
+	/* Only add to the head of the in-memory list if all the
+	 * previous operations succeeded. */
+	if (!err)
+		list_add(&EXT4_I(inode)->i_orphan, s_list);
+
+	snapshot_debug(4, "last_%s will point to inode %lu\n",
+			name, inode->i_ino);
+	snapshot_debug(4, "%s inode %lu will point to inode %d\n",
+			name, inode->i_ino, *i_next);
+out_unlock:
+	mutex_unlock(&EXT4_SB(sb)->s_orphan_lock);
+	ext4_std_error(inode->i_sb, err);
+	return err;
+}
+
+static int ext4_snapshot_list_add(handle_t *handle, struct inode *inode)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+
+	return ext4_inode_list_add(handle, inode, &NEXT_SNAPSHOT(inode),
+			&sbi->s_es->s_snapshot_list,
+			&sbi->s_snapshot_list, "snapshot");
+}
+
+#define NEXT_INODE_OFFSET (((char *)inode)-((char *)i_next))
+#define NEXT_INODE(i_prev) (*(__u32 *)(((char *)i_prev)-NEXT_INODE_OFFSET))
+
+/*
+ * A modified version of ext4_orphan_del(), used to remove a snapshot inode
+ * from the on-disk and in-memory lists.
+ * in-memory i_orphan list field is overloaded, because inodes on snapshots
+ * list cannot be unlinked nor truncated.
+ */
+static int ext4_inode_list_del(handle_t *handle, struct inode *inode,
+		__u32 *i_next, __le32 *s_last,
+		struct list_head *s_list, const char *name)
+{
+	struct list_head *prev;
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	struct ext4_sb_info *sbi;
+	__u32 ino_next;
+	struct ext4_iloc iloc;
+	int err = 0;
+
+	/* ext4_handle_valid() assumes a valid handle_t pointer */
+	if (handle && !ext4_handle_valid(handle))
+		return 0;
+
+	mutex_lock(&EXT4_SB(inode->i_sb)->s_orphan_lock);
+	if (list_empty(&ei->i_orphan))
+		goto out;
+
+	ino_next = *i_next;
+	prev = ei->i_orphan.prev;
+	sbi = EXT4_SB(inode->i_sb);
+
+	snapshot_debug(4, "remove inode %lu from %s list\n", inode->i_ino,
+		       name);
+
+	list_del_init(&ei->i_orphan);
+
+	/* If we're on an error path, we may not have a valid
+	 * transaction handle with which to update the orphan list on
+	 * disk, but we still need to remove the inode from the linked
+	 * list in memory. */
+	if (sbi->s_journal && !handle)
+		goto out;
+
+	err = ext4_reserve_inode_write(handle, inode, &iloc);
+	if (err)
+		goto out_err;
+
+	if (prev == s_list) {
+		snapshot_debug(4, "last_%s will point to inode %lu\n", name,
+					   (long unsigned int)ino_next);
+		BUFFER_TRACE(sbi->s_sbh, "get_write_access");
+		err = ext4_journal_get_write_access(handle, sbi->s_sbh);
+		if (err)
+			goto out_brelse;
+		*s_last = cpu_to_le32(ino_next);
+		err = ext4_handle_dirty_metadata(handle, NULL, sbi->s_sbh);
+	} else {
+		struct ext4_iloc iloc2;
+		struct inode *i_prev =
+			&list_entry(prev, struct ext4_inode_info, i_orphan)->vfs_inode;
+
+		snapshot_debug(4, "%s inode %lu will point to inode %lu\n",
+			  name, i_prev->i_ino, (long unsigned int)ino_next);
+		err = ext4_reserve_inode_write(handle, i_prev, &iloc2);
+		if (err)
+			goto out_brelse;
+		NEXT_INODE(i_prev) = ino_next;
+		err = ext4_mark_iloc_dirty(handle, i_prev, &iloc2);
+	}
+	if (err)
+		goto out_brelse;
+	*i_next = 0;
+	err = ext4_mark_iloc_dirty(handle, inode, &iloc);
+
+out_err:
+	ext4_std_error(inode->i_sb, err);
+out:
+	mutex_unlock(&EXT4_SB(inode->i_sb)->s_orphan_lock);
+	return err;
+
+out_brelse:
+	brelse(iloc.bh);
+	goto out_err;
+}
+
+static int ext4_snapshot_list_del(handle_t *handle, struct inode *inode)
+{
+	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
+
+	return ext4_inode_list_del(handle, inode, &NEXT_SNAPSHOT(inode),
+			&sbi->s_es->s_snapshot_list,
+			&sbi->s_snapshot_list, "snapshot");
+}
+
+
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL
 /*
  * Snapshot control functions
@@ -502,9 +665,7 @@ static int ext4_snapshot_create(struct inode *inode)
 	 * Finally, if snapshot_create() or snapshot_take() has failed,
 	 * snapshot_update() will remove it from the in-memory and on-disk list.
 	 */
-	err = ext4_inode_list_add(handle, inode, &NEXT_SNAPSHOT(inode),
-			&sbi->s_es->s_snapshot_list,
-			list, "snapshot");
+	err = ext4_snapshot_list_add(handle, inode);
 	/* add snapshot list reference */
 	if (err) {
 		snapshot_debug(1, "failed to add snapshot (%u) to list\n",
@@ -1128,8 +1289,8 @@ static int ext4_snapshot_clean(handle_t *handle, struct inode *inode)
 
 		if (!ei->i_data[j])
 			continue;
-		ext4_free_branches_cow(handle, inode, NULL,
-				ei->i_data+j, ei->i_data+j+1, depth, NULL);
+		ext4_free_branches(handle, inode, NULL,
+				ei->i_data+j, ei->i_data+j+1, depth);
 		ei->i_data[j] = 0;
 	}
 	return 0;
@@ -1284,10 +1445,7 @@ static int ext4_snapshot_remove(struct inode *inode)
 		goto out_handle;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
-	err = ext4_inode_list_del(handle, inode, &NEXT_SNAPSHOT(inode),
-				  &sbi->s_es->s_snapshot_list,
-				  &EXT4_SB(inode->i_sb)->s_snapshot_list,
-				  "snapshot");
+	err = ext4_snapshot_list_del(handle, inode);
 	if (err)
 		goto out_handle;
 	/* remove snapshot list reference - taken on snapshot_create() */
@@ -1735,7 +1893,7 @@ int ext4_snapshot_load(struct super_block *sb, struct ext4_super_block *es,
 {
 	__u32 active_ino = le32_to_cpu(es->s_snapshot_inum);
 	__u32 load_ino = le32_to_cpu(es->s_snapshot_list);
-	int err, num = 0, snapshot_id = 0;
+	int err = 0, num = 0, snapshot_id = 0;
 	int has_active = 0;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

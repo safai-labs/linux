@@ -34,11 +34,11 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 fi
 
 #Correct mail subject header.
-echo "[PATCH " >> .git/patches/$BRANCH/$PATCH~ || exit 1
 if [ $3 = y ]; then
-echo "RFC " >> .git/patches/$BRANCH/$PATCH~ || exit 1
-if
-echo "$2/40]" >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo "[PATCH RFC $2/40] " >> .git/patches/$BRANCH/$PATCH~ || exit 1
+else
+echo "[PATCH $2/40] " >> .git/patches/$BRANCH/$PATCH~ || exit 1
+fi
 
 cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$PATCH~ 
 #Add Signed-off-by lines.
@@ -50,3 +50,4 @@ echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BR
 git commit -a -F .git/patches/$BRANCH/$RPATCH~
 git show > .git/patches/$BRANCH/$PATCH
 $CHECKPATCH .git/patches/$BRANCH/$PATCH >>ext4_snapshot_patches_check
+

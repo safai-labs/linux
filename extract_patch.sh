@@ -33,7 +33,12 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 	echo 'reverse patch $PATCH~ does not exist'
 fi
 
+#Add Signed-off-by lines.
+echo '' >> .git/patches/$RBRANCH/$RPATCH~ 
+echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$RBRANCH/$RPATCH~
+echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$RBRANCH/$RPATCH~
+
 #guilt-refresh
-git commit -a -s -F .git/patches/$RBRANCH/$RPATCH~
+git commit -a -F .git/patches/$RBRANCH/$RPATCH~
 git show > .git/patches/$BRANCH/$PATCH
 $CHECKPATCH .git/patches/$BRANCH/$PATCH >>ext4_snapshot_patches_check

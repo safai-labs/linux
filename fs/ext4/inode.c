@@ -1220,7 +1220,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 	/*
 	 * Okay, we need to do block allocation.
-	 */
+	*/
 	goal = ext4_find_goal(inode, map->m_lblk, partial);
 
 	/* the number of blocks need to allocate for [d,t]indirect blocks */
@@ -4989,7 +4989,6 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 			} else if (nr == block_to_free + count) {
 				count++;
 			} else {
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 				if (ext4_clear_blocks_cow(handle, inode,
 					       this_bh, block_to_free, count,
@@ -5628,7 +5627,7 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
-			struct ext4_inode_info *ei)
+			  struct ext4_inode_info *ei)
 #else
 static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 			struct ext4_inode_info *ei)
@@ -5644,7 +5643,7 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 			ext4_snapshot_file(inode)) {
 #else
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				       EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
 #endif
 		/* we are using combined 48 bit field */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
@@ -5982,8 +5981,8 @@ static int ext4_do_update_inode(handle_t *handle,
 		struct super_block *sb = inode->i_sb;
 		if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_LARGE_FILE) ||
-				 EXT4_SB(sb)->s_es->s_rev_level ==
-				 cpu_to_le32(EXT4_GOOD_OLD_REV)) {
+				EXT4_SB(sb)->s_es->s_rev_level ==
+				cpu_to_le32(EXT4_GOOD_OLD_REV)) {
 			/* If this is the first large file
 			 * created, add a flag to the superblock.
 			 */

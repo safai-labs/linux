@@ -1464,7 +1464,7 @@ static inline void ext4_set_inode_##name(struct inode *inode, int bit)	\
 {									\
 	set_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }									\
-static inline void ext4_clear_inode_##name(struct inode *inode, int bit)\
+static inline void ext4_clear_inode_##name(struct inode *inode, int bit) \
 {									\
 	clear_bit(bit + (offset), &EXT4_I(inode)->i_##field);		\
 }

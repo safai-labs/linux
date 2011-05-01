@@ -35,7 +35,7 @@ fi
 
 #Correct mail subject header.
 if [ $3 = y ]; then
-echo -e "[PATCH RFC $2/40] \c" >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo -e "[PATCH RFC $2/40] \c" > .git/patches/$BRANCH/$PATCH~ || exit 1
 else
 echo -e "[PATCH $2/40] \c" >> .git/patches/$BRANCH/$PATCH~ || exit 1
 fi

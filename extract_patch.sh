@@ -35,9 +35,9 @@ fi
 
 #Correct mail subject header.
 if [ $3 = y ]; then
-echo "[PATCH RFC $2/40] " >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo -e "[PATCH RFC $2/40] \c" >> .git/patches/$BRANCH/$PATCH~ || exit 1
 else
-echo "[PATCH $2/40] " >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo -e "[PATCH $2/40] \c" >> .git/patches/$BRANCH/$PATCH~ || exit 1
 fi
 
 cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$PATCH~ 
@@ -47,7 +47,7 @@ echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BR
 echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BRANCH/$PATCH~ || exit 1
 
 #guilt-refresh
-git commit -a -F .git/patches/$BRANCH/$RPATCH~
+git commit -a -F .git/patches/$BRANCH/$PATCH~
 git show > .git/patches/$BRANCH/$PATCH
 $CHECKPATCH .git/patches/$BRANCH/$PATCH >>ext4_snapshot_patches_check
 

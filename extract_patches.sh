@@ -3,6 +3,7 @@ BASE=ext4-next
 RBRANCH=extract_reverse_patches
 BRANCH=ext4-snapshot-patches
 WORK_BRANCH=for-ext4
+RFC=y
 
 # re-create the branch from current head
 (git branch | grep $BRANCH) && (git branch -D $BRANCH || exit 1)

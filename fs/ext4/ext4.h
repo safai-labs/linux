@@ -1992,9 +1992,6 @@ extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 extern int ext4_mb_test_bit_range(int bit, void *addr, int *pcount);
 #endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-void ext4_mb_discard_all_preallocations(struct super_block *sb);
-#endif
 
 /* inode.c */
 struct buffer_head *ext4_getblk(handle_t *, struct inode *,

@@ -34,11 +34,11 @@ if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
 fi
 
 #Correct mail subject header.
-echo '[PATCH ' >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo "[PATCH " >> .git/patches/$BRANCH/$PATCH~ || exit 1
 if [ $3 = y ]; then
-echo 'RFC ' >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo "RFC " >> .git/patches/$BRANCH/$PATCH~ || exit 1
 if
-echo '$2/40]' >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo "$2/40]" >> .git/patches/$BRANCH/$PATCH~ || exit 1
 
 cat .git/patches/$RBRANCH/$RPATCH~ >> .git/patches/$BRANCH/$PATCH~ 
 #Add Signed-off-by lines.

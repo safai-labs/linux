@@ -5630,7 +5630,7 @@ blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 			  struct ext4_inode_info *ei)
 #else
 static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
-			struct ext4_inode_info *ei)
+				 struct ext4_inode_info *ei)
 #endif
 {
 	blkcnt_t i_blocks ;

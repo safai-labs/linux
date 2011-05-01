@@ -1524,7 +1524,7 @@ static int ext4_snapshot_shrink(struct inode *start, struct inode *end,
 		SNAPSHOT_SET_DISABLED(inode);
 		if (ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_DELETED) &&
 		    !(ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK) &&
-		      ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE))) {
+		    ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE))) {
 			/* mark snapshot shrunk */
 			err = ext4_reserve_inode_write(handle, inode, &iloc);
 			ext4_set_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK);

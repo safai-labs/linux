@@ -265,8 +265,9 @@ static int ext4_inode_list_del(handle_t *handle, struct inode *inode,
 		err = ext4_handle_dirty_metadata(handle, NULL, sbi->s_sbh);
 	} else {
 		struct ext4_iloc iloc2;
-		struct inode *i_prev =
-			&list_entry(prev, struct ext4_inode_info, i_orphan)->vfs_inode;
+		struct inode *i_prev;
+		i_prev = &list_entry(prev, struct ext4_inode_info,
+				     i_orphan)->vfs_inode;
 
 		snapshot_debug(4, "%s inode %lu will point to inode %lu\n",
 			  name, i_prev->i_ino, (long unsigned int)ino_next);

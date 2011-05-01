@@ -763,13 +763,14 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	gdb_num = input->group / EXT4_DESC_PER_BLOCK(sb);
 	gdb_off = input->group % EXT4_DESC_PER_BLOCK(sb);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-	if (EXT4_SNAPSHOTS(sb)) {
-		ext4_warning(sb, "Can't resize filesystem with snapshot");
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	if (EXT4_HAS_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+		ext4_warning(sb, "Can't resize filesystem with exclude bitmap");
 		return -EPERM;
 	}
-#endif
 
+#endif
 	if (gdb_off == 0 && !EXT4_HAS_RO_COMPAT_FEATURE(sb,
 					EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER)) {
 		ext4_warning(sb, "Can't resize non-sparse filesystem further");
@@ -802,6 +803,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 			return PTR_ERR(inode);
 		}
 	}
+
 
 	if ((err = verify_group_input(sb, input)))
 		goto exit_put;

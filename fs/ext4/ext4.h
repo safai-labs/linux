@@ -370,7 +370,9 @@ struct flex_groups {
 #define EXT4_BG_INODE_UNINIT	0x0001 /* Inode table/bitmap not in use */
 #define EXT4_BG_BLOCK_UNINIT	0x0002 /* Block bitmap not in use */
 #define EXT4_BG_INODE_ZEROED	0x0004 /* On-disk itable initialized to zero */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define EXT4_BG_EXCLUDE_UNINIT	0x0008 /* Exclude bitmap not in use */
+#endif
 
 /*
  * Macro-instructions used to manage group descriptors
@@ -1567,11 +1569,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_COMPAT_EXT_ATTR		0x0008
 #define EXT4_FEATURE_COMPAT_RESIZE_INODE	0x0010
 #define EXT4_FEATURE_COMPAT_DIR_INDEX		0x0020
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-/*
- * 0x0080 is reserved for exclude inode in next3 so that
- * next3 can be migrate to ext4 with snapshot
- */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 #define EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP	0x0100 /* Has exclude bitmap */
 #endif
 
@@ -2045,25 +2043,21 @@ extern int ext4_block_to_path(struct inode *inode,
 extern Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err);
+extern void ext4_free_branches(handle_t *handle, struct inode *inode,
+				struct buffer_head *parent_bh,
+				__le32 *first, __le32 *last,
+				int depth);
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
-			   int *pfreed_blocks, int *pblocks);
+			   int *pfreed_blocks);
 
 #define ext4_free_data(handle, inode, bh, first, last)		\
-	ext4_free_data_cow(handle, inode, bh, first, last,		\
-			    NULL, 0, NULL, NULL)
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
-extern void ext4_free_branches_cow(handle_t *handle, struct inode *inode,
-				    struct buffer_head *parent_bh,
-				    __le32 *first, __le32 *last,
-				    int depth, int *pblocks);
-
-#define ext4_free_branches(handle, inode, bh, first, last, depth)	\
-	ext4_free_branches_cow((handle), (inode), (bh),		\
-				(first), (last), (depth), NULL)
+	ext4_free_data_cow(handle, inode, bh, first, last,	\
+			    NULL, 0, NULL)
 
 #endif
 /* ioctl.c */
@@ -2078,14 +2072,6 @@ extern int ext4_orphan_add(handle_t *, struct inode *);
 extern int ext4_orphan_del(handle_t *, struct inode *);
 extern int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
 				__u32 start_minor_hash, __u32 *next_hash);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST
-extern int ext4_inode_list_add(handle_t *handle, struct inode *inode,
-				__u32 *i_next, __le32 *s_last,
-				struct list_head *s_list, const char *name);
-extern int ext4_inode_list_del(handle_t *handle, struct inode *inode,
-				__u32 *i_next, __le32 *s_last,
-				struct list_head *s_list, const char *name);
-#endif
 
 /* resize.c */
 extern int ext4_group_add(struct super_block *sb,

@@ -14,7 +14,7 @@ echo $PATCH >> .git/patches/$BRANCH/series
 
 
 for f in $( ls fs/ext4/* ) ; do
-	cp -f $f $f.tmp|| exit 1
+	./strip_ifdef $f $f.tmp $1 y || exit 1
 done
 
 git checkout $BRANCH || exit 1

@@ -1036,7 +1036,7 @@ struct ext4_inode_info {
 #define EXT2_FLAGS_SIGNED_HASH		0x0001  /* Signed dirhash in use */
 #define EXT2_FLAGS_UNSIGNED_HASH	0x0002  /* Unsigned dirhash in use */
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_
 #define EXT4_FLAGS_IS_SNAPSHOT		0x0010 /* Is a snapshot image */
 #define EXT4_FLAGS_FIX_SNAPSHOT		0x0020 /* Corrupted snapshot */
 #define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
@@ -1584,7 +1584,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_
 #define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Ext4 has snapshots */
 #endif
 
@@ -1607,7 +1607,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 					 EXT4_FEATURE_INCOMPAT_EXTENTS| \
 					 EXT4_FEATURE_INCOMPAT_64BIT| \
 					 EXT4_FEATURE_INCOMPAT_FLEX_BG)
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_
 #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
 					 EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT| \

@@ -655,6 +655,7 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 	return 1;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
  * check if @inode data blocks should be moved-on-write
@@ -679,5 +680,6 @@ static inline int ext4_snapshot_should_move_data(struct inode *inode)
 	return 1;
 }
 
+#endif
 #endif
 #endif	/* _EXT4_JBD2_H */

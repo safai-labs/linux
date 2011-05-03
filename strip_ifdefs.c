@@ -287,11 +287,14 @@ int main(int argc, char *argv[])
 			}
 
 			/* strip standalone module defines */
-			if (key && strip < 0 &&
-					!strncmp(line+1, "define", 6) &&
-				!strncmp(line+8, MAINKEY, MAINKEY_LEN) &&
-				!strncmp(line+8+MAINKEY_LEN, key, keylen))
-				continue;
+			if (!strncmp(line+1, "define", 6) &&
+				!strncmp(line+8, MAINKEY, MAINKEY_LEN)) {
+				if (key && !strncmp(line+8+MAINKEY_LEN, key, keylen))
+					continue;
+				/* strip off define SNAPSHOT_ but not define SNAPSHOT */
+				if (!key && line[MAINKEY_LEN+8] == '_')
+					continue;
+			}
 
 			/* filter ifdef/ifndef MAINKEY */
 			if (!strncmp(line+1, "if ", 3))

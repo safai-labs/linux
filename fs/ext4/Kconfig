@@ -458,8 +458,8 @@ config EXT4_FS_SNAPSHOT_CTL_DUMP
 	  Use chattr -d to print the blocks map of a snapshot file.
 	  Snapshot debugging should be enabled.
 
-config EXT4_FS_SNAPSHOT_EXCLUDE
-	bool "snapshot exclude"
+config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	bool "snapshot exclude - the exclude bitmap"
 	depends on EXT4_FS_SNAPSHOT
 	default y
 	help
@@ -469,11 +469,6 @@ config EXT4_FS_SNAPSHOT_EXCLUDE
 	  Excluding snapshot file blocks is essential for efficient cleanup
 	  of deleted snapshot files.
 
-config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	bool "snapshot exclude - the exclude bitmap"
-	depends on EXT4_FS_SNAPSHOT_EXCLUDE
-	default y
-	help
 	  Excluding blocks is done by setting their bit in the exclude bitmap.
 	  There is one exclude bitmap block per block group and its location
 	  is cached in the group descriptor.

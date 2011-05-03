@@ -2,7 +2,6 @@ cleanup_merge
 cleanup_shrink
 cleanup
 exclude_bitmap
-exclude
 race_read
 race_cow
 race_bitmap

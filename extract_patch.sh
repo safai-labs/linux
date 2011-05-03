@@ -40,7 +40,7 @@ echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BR
 echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BRANCH/$PATCH~ || exit 1
 
 #guilt-refresh
-git commit -a -F .git/patches/$BRANCH/$PATCH~
-git show > .git/patches/$BRANCH/$PATCH
+git commit -a -F .git/patches/$BRANCH/$PATCH~ || exit 1
+git show > .git/patches/$BRANCH/$PATCH || exit 1
 $CHECKPATCH .git/patches/$BRANCH/$PATCH >>ext4_snapshot_patches_check
 

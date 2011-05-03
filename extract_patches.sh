@@ -33,4 +33,4 @@ done
 
 NO=`expr $NO - 1`
 git checkout $BRANCH
-git format-patch --subject-prefix='PATCH $RFC' -n -o .git/patches/$BRANCH/ -$NO || exit 1
+git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$BRANCH/ -$NO || exit 1

@@ -15,8 +15,8 @@
 #include <linux/statfs.h>
 #include "ext4_jbd2.h"
 #include "snapshot.h"
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+
 /*
  * General snapshot locking semantics:
  *
@@ -1706,6 +1706,7 @@ out_err:
 			       need_shrink, err);
 	return err;
 }
+
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
 /*
@@ -1808,6 +1809,7 @@ out_err:
 			       end->i_generation, need_merge, err);
 	return err;
 }
+
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 /*
@@ -1872,6 +1874,7 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 #endif
 	return 0;
 }
+
 #endif
 #endif
 /*

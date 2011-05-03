@@ -5,7 +5,6 @@ exclude_bitmap
 race_read
 race_cow
 race_bitmap
-race
 list_read
 list
 journal_trace

@@ -352,16 +352,9 @@ config EXT4_FS_SNAPSHOT_LIST_READ
 	  oldest found mapping is returned.  If the page is not mapped in any of
 	  the newer snapshots, a direct mapping to the block device is returned.
 
-config EXT4_FS_SNAPSHOT_RACE
-	bool "snapshot race conditions"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  Resolve snapshot race conditions
-
 config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	bool "snapshot race conditions - concurrent COW bitmap operations"
-	depends on EXT4_FS_SNAPSHOT_RACE
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Wait for pending COW bitmap creations to complete.
@@ -374,7 +367,7 @@ config EXT4_FS_SNAPSHOT_RACE_BITMAP
 
 config EXT4_FS_SNAPSHOT_RACE_COW
 	bool "snapshot race conditions - concurrent COW operations"
-	depends on EXT4_FS_SNAPSHOT_RACE
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Wait for pending COW operations to complete.
@@ -394,7 +387,7 @@ config EXT4_FS_SNAPSHOT_RACE_COW
 
 config EXT4_FS_SNAPSHOT_RACE_READ
 	bool "snapshot race conditions - tracked reads"
-	depends on EXT4_FS_SNAPSHOT_RACE
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Wait for pending read I/O requests to complete.

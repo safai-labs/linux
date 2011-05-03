@@ -13,7 +13,6 @@ journal_bypass
 journal_release
 journal_credits
 journal_error
-journal
 ctl_dump
 ctl_reserve
 ctl_fix

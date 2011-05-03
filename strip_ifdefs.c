@@ -291,8 +291,8 @@ int main(int argc, char *argv[])
 				!strncmp(line+8, MAINKEY, MAINKEY_LEN)) {
 				if (key && !strncmp(line+8+MAINKEY_LEN, key, keylen))
 					continue;
-				/* strip off define SNAPSHOT_ but not define SNAPSHOT */
-				if (!key && line[MAINKEY_LEN+8] == '_')
+				/* strip off define SNAPSHOT_* but not define SNAPSHOT */
+				if (!key && (strip > 0 || line[MAINKEY_LEN+8] == '_'))
 					continue;
 			}
 

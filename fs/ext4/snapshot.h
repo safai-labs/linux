@@ -410,6 +410,7 @@ extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 extern int ext4_snapshot_take(struct inode *inode);
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * Snapshot constructor/destructor
  */
@@ -418,6 +419,7 @@ extern int ext4_snapshot_load(struct super_block *sb,
 extern int ext4_snapshot_update(struct super_block *sb, int cleanup,
 		int read_only);
 extern void ext4_snapshot_destroy(struct super_block *sb);
+#endif
 
 static inline int init_ext4_snapshot(void)
 {

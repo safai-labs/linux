@@ -870,7 +870,7 @@ static void ext4_put_super(struct super_block *sb)
 	destroy_workqueue(sbi->dio_unwritten_wq);
 
 	lock_super(sb);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	if (EXT4_SNAPSHOTS(sb))
 		ext4_snapshot_destroy(sb);
 #endif
@@ -3379,7 +3379,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	/* Enforce snapshots blocksize == pagesize */
 	if (EXT4_SNAPSHOTS(sb) && blocksize != PAGE_SIZE) {
 		ext4_msg(sb, KERN_ERR,
@@ -3859,7 +3859,7 @@ no_journal:
 		goto failed_mount4;
 	};
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	if (EXT4_SNAPSHOTS(sb) &&
 			ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
 		/* XXX: how can we fail and force read-only at this point? */

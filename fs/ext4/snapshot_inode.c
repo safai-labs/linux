@@ -238,8 +238,8 @@ shrink_indirect_blocks:
 		}
 		if (p == partial->p)
 			/* indirect block maps zero data blocks - free it */
-			ext4_free_data(handle, inode, ind->bh, ind->p,
-					ind->p+1);
+			ext4_free_branches(handle, inode, ind->bh, ind->p,
+					ind->p+1, 1);
 	}
 
 done_shrinking:

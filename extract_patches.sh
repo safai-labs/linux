@@ -3,7 +3,7 @@ BASE=ext4-next
 RBRANCH=extract_reverse_patches
 BRANCH=ext4-snapshot-patches
 WORK_BRANCH=for-ext4
-RFC=y
+RFC=RFC
 
 # re-create the branch from current head
 (git branch | grep $BRANCH) && (git branch -D $BRANCH || exit 1)
@@ -27,6 +27,10 @@ rm -f fs/ext4/*.tmp
 NO=1
 for key in $( tac KEYS ) ; do
 	git checkout $WORK_BRANCH
-	./extract_patch.sh $key $NO $RFC
+	./extract_patch.sh $key $NO
 	NO=`expr $NO + 1`
 done
+
+NO=`expr $NO - 1`
+git checkout $BRANCH
+git format-patch --subject-prefix='PATCH $RFC' -n -o .git/patches/$BRANCH/ -$NO || exit 1

@@ -142,6 +142,7 @@ static inline int ext4_test_mow_tid(struct inode *inode)
 static inline void snapshot_size_extend(struct inode *inode,
 			ext4_fsblk_t blocks)
 {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_DEBUG
 #ifdef CONFIG_EXT4_DEBUG
 	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
 	ext4_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
@@ -149,6 +150,7 @@ static inline void snapshot_size_extend(struct inode *inode,
 	/* sleep total of tunable delay unit over 100% progress */
 	snapshot_test_delay_progress(SNAPTEST_DELETE,
 			old_blocks, blocks, max_blocks);
+#endif
 #endif
 	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
 }
@@ -614,8 +616,11 @@ extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 
 #ifdef CONFIG_EXT4_DEBUG
 extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
-
 #define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)
+#else
+#define ext4_trace_bh_count(bh)
+#endif
+
 #define sb_bread(sb, blk) ext4_sb_bread(__func__, sb, blk)
 #define sb_getblk(sb, blk) ext4_sb_getblk(__func__, sb, blk)
 #define sb_find_get_block(sb, blk) ext4_sb_find_get_block(__func__, sb, blk)
@@ -653,9 +658,6 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 	return bh;
 }
 
-#else
-#define ext4_trace_bh_count(bh)
-#endif
 
 #endif
 

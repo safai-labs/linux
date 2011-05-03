@@ -6,7 +6,9 @@ PATCH=ext4_snapshot_$1.patch
 RPATCH=ext4_snapshot_$1-R.patch
 CHECKPATCH=./scripts/checkpatch.pl
 
+echo
 echo extracting patch $PATCH...
+echo 
 
 git checkout $RBRANCH~$2 || exit 1
 
@@ -44,3 +46,6 @@ git commit -a -F .git/patches/$BRANCH/$PATCH~
 git show > .git/patches/$BRANCH/$PATCH
 $CHECKPATCH .git/patches/$BRANCH/$PATCH >>ext4_snapshot_patches_check
 
+echo
+echo patch $PATCH applied.
+echo

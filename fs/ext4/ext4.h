@@ -33,6 +33,19 @@
 #include <linux/compat.h>
 #endif
 
+#ifndef EXT4_SUPER_MAGIC
+#define EXT4_SUPER_MAGIC EXT3_SUPER_MAGIC
+/* configuration options for standalone module */
+#define CONFIG_EXT4_DEFAULTS_TO_ORDERED
+#define CONFIG_EXT4_FS_XATTR
+#ifdef CONFIG_FS_POSIX_ACL
+#define CONFIG_EXT4_FS_POSIX_ACL
+#endif
+#define CONFIG_EXT4_FS_SECURITY
+#define CONFIG_EXT4_DEBUG
+#define CONFIG_EXT4_FS_SNAPSHOT
+#endif
+
 /*
  * The fourth extended filesystem constants/structures
  */

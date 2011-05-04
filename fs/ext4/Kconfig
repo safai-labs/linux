@@ -89,10 +89,11 @@ config EXT4_FS_SNAPSHOT
 	depends on EXT4_FS && EXPERIMENTAL
 	default n
 	help
-	  Built-in snapshots support for ext4. Requires the features
+	  Built-in snapshots support for ext4.  Requires the features
 	  has_snapshot and exclude_bitmap and requires that block size
-	  in equal to system page size. The snapshot feature is not
-	  supported with 64bit and meta_bg features.
+	  is equal to system page size.  The has_snapshot feature is not
+	  supported together with 64bit and meta_bg features and the file
+	  system must be mounted with ordered journal mode.
 
 config EXT4_FS_SNAPSHOT_DEBUG
 	bool "snapshot debugging support"
@@ -100,18 +101,19 @@ config EXT4_FS_SNAPSHOT_DEBUG
 	depends on EXT4_DEBUG
 	default y
 	help
-	  Control snapshot debug level via debugfs entry /ext4/snapshot-debug.
-	  Control snapshot unit tests via debugfs entries /ext4/test-XXX.
+	  Control snapshot debug level via debugfs entry /ext4/snapshot-debug
+	  and induce delay tests via debugfs entries /ext4/test-XXX-delay-msec.
 
 config EXT4_FS_SNAPSHOT_HOOKS_JBD
 	bool "snapshot hooks - inside JBD hooks"
 	depends on EXT4_FS_SNAPSHOT
 	default y
 	help
-	  Before every meta data buffer write, the journal API is called,
+	  Before every metadata buffer write, the journal API is called,
 	  namely, one of the ext4_journal_get_XXX_access() functions.
-	  We use these journal hooks to call the snapshot API,
-	  before every meta data buffer write.
+	  We use these journal hooks to call the snapshot API, namely
+	  ext4_snapshot_get_XXX_access(), to COW the metadata buffer before
+	  it is modified for the first time.
 
 config EXT4_FS_SNAPSHOT_HOOKS_BITMAP
 	bool "snapshot hooks - block bitmap access"
@@ -120,7 +122,7 @@ config EXT4_FS_SNAPSHOT_HOOKS_BITMAP
 	help
 	  The API ext4_handle_get_bitmap_access() is used instead of
 	  ext4_journal_get_write_access(), before modifying a block bitmap
-	  while allocating or deleting blocks. the bitmap access API is
+	  while allocating or deleting blocks.  The bitmap access API is
 	  used to initialize the COW bitmap for that group.
 	  The old ext4_journal_get_undo_access() API was removed because it
 	  is not being used in the code.
@@ -131,8 +133,9 @@ config EXT4_FS_SNAPSHOT_HOOKS_DELETE
 	default y
 	help
 	  Before deleting file blocks in ext4_free_blocks(),
-	  we call the snapshot API snapshot_get_delete_access(),
-	  to optionally move the block to the snapshot file.
+	  we call the snapshot API ext4_snapshot_get_delete_access(),
+	  to optionally move the block to the snapshot file instead of
+	  freeing them.
 
 config EXT4_FS_SNAPSHOT_HOOKS_DATA
 	bool "snapshot hooks - move data blocks"

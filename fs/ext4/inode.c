@@ -21,7 +21,7 @@
  *
  *  Assorted race fixes, rewrite of ext4_get_block() by Al Viro, 2000
  *
- *  Snapshot inode extentions, Amir Goldstein <amir73il@users.sf.net>, 2011
+ *  Snapshot inode extensions, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #include <linux/module.h>

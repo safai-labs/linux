@@ -161,11 +161,11 @@ typedef unsigned int ext4_group_t;
 #define EXT4_MB_DELALLOC_RESERVED	0x0400
 /* We are doing stream allocation */
 #define EXT4_MB_STREAM_ALLOC		0x0800
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 /* allocate blocks for active snapshot */
-#define EXT4_MB_HINT_COWING		0x01000
+#define EXT4_MB_HINT_COWING		0x02000
 #endif
-
 
 struct ext4_allocation_request {
 	/* target inode for block we're allocating */
@@ -634,18 +634,6 @@ struct ext4_new_group_data {
 	/* Convert extent to initialized after IO complete */
 #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
-/*
- * snapshot_map_blocks() flags passed to ext4_map_blocks() for mapping
- * blocks to snapshot.
- */
-	/* handle COW race conditions */
-#define EXT4_GET_BLOCKS_COW	0x20
-	/* allocate only indirect blocks */
-#define EXT4_GET_BLOCKS_MOVE	0x40
-	/* bypass journal and sync allocated indirect blocks directly to disk */
-#define EXT4_GET_BLOCKS_SYNC	0x80
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/* Look up if mapped block is used by snapshot,
 	 * if so and EXT4_GET_BLOCKS_CREATE is set, move it to snapshot
@@ -653,9 +641,18 @@ struct ext4_new_group_data {
 	 * if EXT4_GET_BLOCKS_CREATE is not set, return REMAP flags.
 	 */
 #define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
-#define EXT4_GET_BLOCKS_DELAY_CREATE		0x0200
-	/* remap the request blocks */
-#define EXT4_GET_BLOCKS_REMAP			0x0400
+#endif
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
+/*
+ * snapshot_map_blocks() flags passed to ext4_map_blocks() for mapping
+ * blocks to snapshot.
+ */
+	/* handle COW race conditions */
+#define EXT4_GET_BLOCKS_COW			0x200
+	/* allocate only indirect blocks */
+#define EXT4_GET_BLOCKS_MOVE			0x400
+	/* bypass journal and sync allocated indirect blocks directly to disk */
+#define EXT4_GET_BLOCKS_SYNC			0x800
 #endif
 
 /*

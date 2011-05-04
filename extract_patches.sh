@@ -2,12 +2,7 @@
 BASE=ext4-next
 RBRANCH=extract_reverse_patches
 BRANCH=ext4-snapshot-patches
-<<<<<<< HEAD
-WORK_BRANCH=for-ext4
 RFC=RFC
-=======
-RFC=y
->>>>>>> 646f21d3b7d3ab7864d91b03f91be6f47fda2226
 
 if [ ! -d .git/patches/$RBRANCH ]; then
 	echo 'reverse patches must exist before doing this.'
@@ -34,14 +29,8 @@ make clean SUBDIRS=fs/ext4
 rm -f fs/ext4/*.tmp
 
 NO=1
-<<<<<<< HEAD
-for key in $( tac KEYS ) ; do
-	git checkout $WORK_BRANCH
-	./extract_patch.sh $key $NO
-=======
 for key in $( cat keys ) ; do
 	./extract_patch $key $NO $RFC || exit 1
->>>>>>> 646f21d3b7d3ab7864d91b03f91be6f47fda2226
 	NO=`expr $NO + 1`
 done
 

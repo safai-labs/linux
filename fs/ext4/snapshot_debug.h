@@ -73,8 +73,8 @@ extern u8 cow_cache_offset;
 
 #define snapshot_debug_once(n, f, a...)					\
 	do {								\
-		static bool __once = false;				\
-		if (__once) {						\
+		static bool __once;					\
+		if (!__once) {						\
 			snapshot_debug(n, f, ## a);			\
 			__once = true;					\
 		}							\

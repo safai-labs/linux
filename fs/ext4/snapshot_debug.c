@@ -47,7 +47,7 @@ static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
 u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM] __read_mostly = {0};
 u8 snapshot_enable_debug __read_mostly = 1;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE
-u8 cow_cache_offset __read_mostly = 0;
+u8 cow_cache_offset __read_mostly;
 #endif
 
 static struct dentry *snapshot_debug;
@@ -111,10 +111,10 @@ void ext4_snapshot_remove_debugfs_entry(void)
 	if (snapshot_debug)
 		debugfs_remove(snapshot_debug);
 }
-
-
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
+
+
+
 /* snapshot dump state */
 struct ext4_dump_info {
 	struct inode *di_inode; /* snapshot inode */
@@ -395,9 +395,9 @@ void ext4_snapshot_dump(int n, struct inode *inode)
 	for (i = 0; i < EXT4_NDIR_BLOCKS; i++) {
 		if (ei->i_data[i]) {
 			nr = le32_to_cpu(ei->i_data[i]);
-			snapshot_debug_l(n, 0, "meta[%d] = [%lld/%lld] !!!\n", i,
-					SNAPSHOT_BLOCK_TUPLE(nr));
-			di.nmeta++;
+			snapshot_debug_l(n, 0, "meta[%d] = [%lld/%lld] !!!\n",
+					 i, SNAPSHOT_BLOCK_TUPLE(nr));
+					 di.nmeta++;
 		}
 	}
 	/* print indirect branch (snapshot reserved blocks) */

@@ -85,13 +85,14 @@ config EXT4_DEBUG
 	  with a command such as "echo 1 > /sys/kernel/debug/ext4/mballoc-debug"
 
 config EXT4_FS_SNAPSHOT
-	bool "snapshot support"
-	depends on EXT4_FS
-	default y
+	bool "EXT4 snapshots (Experimental)"
+	depends on EXT4_FS && EXPERIMENTAL
+	default n
 	help
 	  Built-in snapshots support for ext4. Requires the features
-	  has_snapshot and exclude_inode and requires that block size
-	  in equal to system page size.
+	  has_snapshot and exclude_bitmap and requires that block size
+	  in equal to system page size. The snapshot feature is not
+	  supported with 64bit and meta_bg features.
 
 config EXT4_FS_SNAPSHOT_DEBUG
 	bool "snapshot debugging support"
@@ -247,17 +248,9 @@ config EXT4_FS_SNAPSHOT_BLOCK_BITMAP
 	  bitmap and it is used to check if a block was allocated at the time
 	  that the snapshot was taken.
 
-config EXT4_FS_SNAPSHOT_JOURNAL
-	bool "snapshot journaled"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  Ext4 snapshot operations are journaled inside the same transaction
-	  with the file system operation that triggered them.
-
 config EXT4_FS_SNAPSHOT_JOURNAL_ERROR
 	bool "snapshot journaled - record errors in journal"
-	depends on EXT4_FS_SNAPSHOT_JOURNAL
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Ext4 error state is recorded in the journal super block and error
@@ -271,7 +264,7 @@ config EXT4_FS_SNAPSHOT_JOURNAL_ERROR
 
 config EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	bool "snapshot journaled - increase transaction credits"
-	depends on EXT4_FS_SNAPSHOT_JOURNAL
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Snapshot operations are journaled as part of the running transaction.
@@ -280,7 +273,7 @@ config EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 
 config EXT4_FS_SNAPSHOT_JOURNAL_RELEASE
 	bool "snapshot journaled - implement journal_release_buffer()"
-	depends on EXT4_FS_SNAPSHOT_JOURNAL
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  The API journal_release_buffer() is called to cancel a previous call
@@ -294,7 +287,7 @@ config EXT4_FS_SNAPSHOT_JOURNAL_RELEASE
 
 config EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
 	bool "snapshot journaled - bypass to save credits"
-	depends on EXT4_FS_SNAPSHOT_JOURNAL
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Don't journal COW bitmap indirect blocks to save journal credits.
@@ -308,7 +301,7 @@ config EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
 
 config EXT4_FS_SNAPSHOT_JOURNAL_CACHE
 	bool "snapshot journaled - cache last COW tid in journal_head"
-	depends on EXT4_FS_SNAPSHOT_JOURNAL
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Cache last COW transaction id in buffer's journal_head.
@@ -321,7 +314,7 @@ config EXT4_FS_SNAPSHOT_JOURNAL_CACHE
 
 config EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 	bool "snapshot journaled - trace COW/buffer credits"
-	depends on EXT4_FS_SNAPSHOT_JOURNAL
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	depends on EXT4_FS_DEBUG
 	default y
 	help
@@ -352,16 +345,9 @@ config EXT4_FS_SNAPSHOT_LIST_READ
 	  oldest found mapping is returned.  If the page is not mapped in any of
 	  the newer snapshots, a direct mapping to the block device is returned.
 
-config EXT4_FS_SNAPSHOT_RACE
-	bool "snapshot race conditions"
-	depends on EXT4_FS_SNAPSHOT_BLOCK
-	default y
-	help
-	  Resolve snapshot race conditions
-
 config EXT4_FS_SNAPSHOT_RACE_BITMAP
 	bool "snapshot race conditions - concurrent COW bitmap operations"
-	depends on EXT4_FS_SNAPSHOT_RACE
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Wait for pending COW bitmap creations to complete.
@@ -374,7 +360,7 @@ config EXT4_FS_SNAPSHOT_RACE_BITMAP
 
 config EXT4_FS_SNAPSHOT_RACE_COW
 	bool "snapshot race conditions - concurrent COW operations"
-	depends on EXT4_FS_SNAPSHOT_RACE
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Wait for pending COW operations to complete.
@@ -394,7 +380,7 @@ config EXT4_FS_SNAPSHOT_RACE_COW
 
 config EXT4_FS_SNAPSHOT_RACE_READ
 	bool "snapshot race conditions - tracked reads"
-	depends on EXT4_FS_SNAPSHOT_RACE
+	depends on EXT4_FS_SNAPSHOT_BLOCK
 	default y
 	help
 	  Wait for pending read I/O requests to complete.
@@ -458,8 +444,8 @@ config EXT4_FS_SNAPSHOT_CTL_DUMP
 	  Use chattr -d to print the blocks map of a snapshot file.
 	  Snapshot debugging should be enabled.
 
-config EXT4_FS_SNAPSHOT_EXCLUDE
-	bool "snapshot exclude"
+config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	bool "snapshot exclude - the exclude bitmap"
 	depends on EXT4_FS_SNAPSHOT
 	default y
 	help
@@ -469,11 +455,6 @@ config EXT4_FS_SNAPSHOT_EXCLUDE
 	  Excluding snapshot file blocks is essential for efficient cleanup
 	  of deleted snapshot files.
 
-config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	bool "snapshot exclude - the exclude bitmap"
-	depends on EXT4_FS_SNAPSHOT_EXCLUDE
-	default y
-	help
 	  Excluding blocks is done by setting their bit in the exclude bitmap.
 	  There is one exclude bitmap block per block group and its location
 	  is cached in the group descriptor.

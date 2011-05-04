@@ -38,8 +38,8 @@
 
 #include <trace/events/ext4.h>
 #include "snapshot.h"
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+
 /**
  * ext4_blks_to_skip - count the number blocks that can be skipped
  * @inode: inode in question
@@ -570,7 +570,6 @@ out:
 }
 
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 /*
  * ext4_snapshot_get_block_access() - called from ext4_snapshot_read_through()
@@ -628,7 +627,6 @@ out:
  *    read through from B to block device.
  */
 #endif
-
 static int ext4_snapshot_get_block_access(struct inode *inode,
 		struct inode **prev_snapshot)
 {
@@ -640,7 +638,7 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
 	if (!(flags & 1UL<<EXT4_SNAPSTATE_LIST))
-	  	/* snapshot not on the list - read/write access denied */
+		/* snapshot not on the list - read/write access denied */
 		return -EPERM;
 #endif
 
@@ -722,7 +720,7 @@ static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
 				bit, block_group);
 		err = -EIO;
 	}
-	
+
 	brelse(exclude_bitmap_bh);
 #endif
 	brelse(bitmap_bh);
@@ -758,7 +756,7 @@ get_block:
 	if (err < 0)
 		return err;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
-		if (!prev_snapshot) {
+	if (!prev_snapshot) {
 		/*
 		 * Possible read through to block device.
 		 * Start tracked read before checking if block is mapped to
@@ -783,7 +781,7 @@ get_block:
 	snapshot_debug(4, "ext4_snapshot_read_through(%lld): block = "
 		       "(%lld), err = %d\n prev_snapshot = %u",
 		       (long long)iblock, map.m_pblk, err,
-		       prev_snapshot ? prev_snapshot ->i_generation : 0);
+		       prev_snapshot ? prev_snapshot->i_generation : 0);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 	/* if it's not a hole - cancel tracked read before we deadlock
 	 * on pending COW */

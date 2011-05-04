@@ -2868,7 +2868,7 @@ fix_extent_len:
  * to an uninitialized extent or when do mow to an initialized extent.
  *
  *
- * Splitting an initialized/uninitalized extent may result in splitting 
+ * Splitting an initialized/uninitalized extent may result in splitting
  * the extent into multiple intialized/unintialized extents (up to three),
  * repectively.
  * There are three possibilities:
@@ -2918,8 +2918,8 @@ static int ext4_split_extents(handle_t *handle,
 	ee_len = ext4_ext_get_actual_len(ex);
 	allocated = ee_len - (map->m_lblk - ee_block);
 	newblock = map->m_lblk - ee_block + ext4_ext_pblock(ex);
-	
-	uninitialized = ext4_ext_is_uninitialized(ex); 
+
+	uninitialized = ext4_ext_is_uninitialized(ex);
 
 	ex2 = ex;
 	orig_ex.ee_block = ex->ee_block;
@@ -2933,10 +2933,10 @@ static int ext4_split_extents(handle_t *handle,
 	may_zeroout = ee_block + ee_len <= eof_block;
 
 	/*
- 	 * If the uninitialized extent begins at the same logical
- 	 * block where the write begins, and the write completely
- 	 * covers the extent, then we don't need to split it.
- 	 */
+	 * If the uninitialized extent begins at the same logical
+	 * block where the write begins, and the write completely
+	 * covers the extent, then we don't need to split it.
+	 */
 	if ((map->m_lblk == ee_block) && (allocated <= map->m_len))
 		return allocated;
 
@@ -3653,9 +3653,9 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	/*
 	 * two cases:
 	 * 1. the request block is found.
-	 *    a. If EXT4_GET_BLOCKS_CREATE is not set, we will test 
+	 *    a. If EXT4_GET_BLOCKS_CREATE is not set, we will test
 	 *       if MOW is needed.
-	 *    b. If EXT4_GET_BLOCKS_CREATE is set. MOW will be done 
+	 *    b. If EXT4_GET_BLOCKS_CREATE is set. MOW will be done
 	 *       if MOW is needed.
 	 *
 	 * 2. the request block is not found, EXT4_GET_BLOCKS_CREATE
@@ -3698,9 +3698,9 @@ found:
 			ex = path[depth].p_ext;
 		}
 	}
-	
+
 	if (!(flags & EXT4_GET_BLOCKS_CREATE))
-		goto out;	
+		goto out;
 
 #endif
 	/*
@@ -3710,7 +3710,7 @@ found:
 	/* find neighbour allocated blocks */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	/*
-	 * TODO MOW case needs further consideration. 
+	 * TODO MOW case needs further consideration.
 	 */
 #endif
 	ar.lleft = map->m_lblk;
@@ -3719,7 +3719,7 @@ found:
 		goto out2;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	ar.lright = map->m_lblk + allocated;
-#else	
+#else
 	ar.lright = map->m_lblk;
 #endif
 	err = ext4_ext_search_right(inode, path, &ar.lright, &ar.pright);
@@ -3816,15 +3816,14 @@ found:
 					"ext4_snapshot_get_move_access", NULL,
 					handle, err);
 		} else {
-			/* 
+			/*
 			 * Move to snapshot successfully.
 			 * TODO merge extent after finishing MOW
 			 */
 			err = ext4_split_extents(handle, inode, map,
 					path, flags | EXT4_GET_BLOCKS_PRE_IO);
-			if (err < 0) {
-				goto out;	
-			}
+			if (err < 0)
+				goto out;
 
 			/* extent tree may be changed. */
 			depth = ext_depth(inode);
@@ -3844,12 +3843,14 @@ found:
 			if (!err) {
 				/* splice new blocks to the inode*/
 				ext4_ext_store_pblock(ex, newblock);
-				err = ext4_ext_dirty(handle, inode, path + depth);
+				err = ext4_ext_dirty(handle, inode,
+						     path + depth);
 			}
 		}
-		
+
 	} else
-		err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
+		err = ext4_ext_insert_extent(handle, inode,
+					     path, &newex, flags);
 #else
 	err = ext4_ext_insert_extent(handle, inode, path, &newex, flags);
 #endif

@@ -53,7 +53,7 @@
 #define SNAPSHOT_BLOCK_GROUP_OFFSET(block)			\
 	((block)&(SNAPSHOT_BLOCKS_PER_GROUP-1))
 #define SNAPSHOT_BLOCK_TUPLE(block)				\
-	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block), 	\
+	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block),	\
 	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP(block)
 #define SNAPSHOT_IND_PER_BLOCK_GROUP_BITS			\
 	(SNAPSHOT_BLOCKS_PER_GROUP_BITS-SNAPSHOT_ADDR_PER_BLOCK_BITS)
@@ -71,38 +71,7 @@
 #define SNAPSHOT_IBLOCK(block)					\
 	(ext4_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-6 (2-May-2010)"
-
-#define SNAPSHOT_BYTES_OFFSET					\
-	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
-#define SNAPSHOT_ISIZE(size)					\
-	((size) + SNAPSHOT_BYTES_OFFSET)
-/* Snapshot block device size is recorded in i_disksize */
-#define SNAPSHOT_SET_SIZE(inode, size)				\
-	(EXT4_I(inode)->i_disksize = SNAPSHOT_ISIZE(size))
-#define SNAPSHOT_SIZE(inode)					\
-	(EXT4_I(inode)->i_disksize - SNAPSHOT_BYTES_OFFSET)
-#define SNAPSHOT_SET_BLOCKS(inode, blocks)			\
-	SNAPSHOT_SET_SIZE((inode),				\
-			(loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS)
-#define SNAPSHOT_BLOCKS(inode)					\
-	(ext4_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
-/* Snapshot shrink/merge/clean progress is exported via i_size */
-#define SNAPSHOT_PROGRESS(inode)				\
-	(ext4_fsblk_t)((inode)->i_size >> SNAPSHOT_BLOCK_SIZE_BITS)
-#define SNAPSHOT_SET_ENABLED(inode)				\
-	i_size_write((inode), SNAPSHOT_SIZE(inode))
-#define SNAPSHOT_SET_PROGRESS(inode, blocks)			\
-	snapshot_size_extend((inode), (blocks))
-/* Disabled/deleted snapshot i_size is 1 block, to allow read of super block */
-#define SNAPSHOT_SET_DISABLED(inode)				\
-	snapshot_size_truncate((inode), 1)
-/* Removed snapshot i_size and i_disksize are 0, since all blocks were freed */
-#define SNAPSHOT_SET_REMOVED(inode)				\
-	EXT4_I(inode)->i_disksize = 0;				\
-	snapshot_size_truncate((inode), 0)
-
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 #define SNAPSHOT_TRANSACTION_ID(sb)				\
 	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)
 
@@ -134,10 +103,46 @@ static inline int ext4_test_mow_tid(struct inode *inode)
 	return tid_geq(EXT4_I(inode)->i_datasync_tid,
 		      ext4_get_snapshot_tid(inode->i_sb));
 }
+#endif
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-6 (2-May-2010)"
+
+#define SNAPSHOT_BYTES_OFFSET					\
+	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
+#define SNAPSHOT_ISIZE(size)					\
+	((size) + SNAPSHOT_BYTES_OFFSET)
+/* Snapshot block device size is recorded in i_disksize */
+#define SNAPSHOT_SET_SIZE(inode, size)				\
+	(EXT4_I(inode)->i_disksize = SNAPSHOT_ISIZE(size))
+#define SNAPSHOT_SIZE(inode)					\
+	(EXT4_I(inode)->i_disksize - SNAPSHOT_BYTES_OFFSET)
+#define SNAPSHOT_SET_BLOCKS(inode, blocks)			\
+	SNAPSHOT_SET_SIZE((inode),				\
+			(loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS)
+#define SNAPSHOT_BLOCKS(inode)					\
+	(ext4_fsblk_t)(SNAPSHOT_SIZE(inode) >> SNAPSHOT_BLOCK_SIZE_BITS)
+/* Snapshot shrink/merge/clean progress is exported via i_size */
+#define SNAPSHOT_PROGRESS(inode)				\
+	(ext4_fsblk_t)((inode)->i_size >> SNAPSHOT_BLOCK_SIZE_BITS)
+#define SNAPSHOT_SET_ENABLED(inode)				\
+	i_size_write((inode), SNAPSHOT_SIZE(inode))
+#define SNAPSHOT_SET_PROGRESS(inode, blocks)			\
+	snapshot_size_extend((inode), (blocks))
+/* Disabled/deleted snapshot i_size is 1 block, to allow read of super block */
+#define SNAPSHOT_SET_DISABLED(inode)				\
+	snapshot_size_truncate((inode), 1)
+/* Removed snapshot i_size and i_disksize are 0, since all blocks were freed */
+#define SNAPSHOT_SET_REMOVED(inode)				\
+	do {							\
+		EXT4_I(inode)->i_disksize = 0;			\
+		snapshot_size_truncate((inode), 0);		\
+	} while (0)
 
 static inline void snapshot_size_extend(struct inode *inode,
 			ext4_fsblk_t blocks)
 {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_DEBUG
 #ifdef CONFIG_EXT4_DEBUG
 	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
 	ext4_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
@@ -145,6 +150,7 @@ static inline void snapshot_size_extend(struct inode *inode,
 	/* sleep total of tunable delay unit over 100% progress */
 	snapshot_test_delay_progress(SNAPTEST_DELETE,
 			old_blocks, blocks, max_blocks);
+#endif
 #endif
 	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
 }
@@ -179,7 +185,7 @@ static inline void snapshot_size_truncate(struct inode *inode,
 #define SNAPMAP_ISMOVE(cmd)	((cmd) & EXT4_GET_BLOCKS_MOVE)
 #define SNAPMAP_ISSYNC(cmd)	((cmd) & EXT4_GET_BLOCKS_SYNC)
 
-#define IS_COWING(handle) ((ext4_handle_t *)(handle))->h_cowing
+#define IS_COWING(handle) (((ext4_handle_t *)(handle))->h_cowing)
 
 /* snapshot.c */
 
@@ -327,8 +333,8 @@ static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
  * < 0 - error
  */
 static inline int ext4_snapshot_get_move_access(handle_t *handle,
-						struct inode *inode, 
-						ext4_fsblk_t block, 
+						struct inode *inode,
+						ext4_fsblk_t block,
 						int *pcount, int move)
 {
 	return ext4_snapshot_move(handle, inode, block, pcount, move);
@@ -404,6 +410,7 @@ extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
 extern int ext4_snapshot_take(struct inode *inode);
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 /*
  * Snapshot constructor/destructor
  */
@@ -412,6 +419,7 @@ extern int ext4_snapshot_load(struct super_block *sb,
 extern int ext4_snapshot_update(struct super_block *sb, int cleanup,
 		int read_only);
 extern void ext4_snapshot_destroy(struct super_block *sb);
+#endif
 
 static inline int init_ext4_snapshot(void)
 {
@@ -610,8 +618,11 @@ extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
 
 #ifdef CONFIG_EXT4_DEBUG
 extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
-
 #define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)
+#else
+#define ext4_trace_bh_count(bh)
+#endif
+
 #define sb_bread(sb, blk) ext4_sb_bread(__func__, sb, blk)
 #define sb_getblk(sb, blk) ext4_sb_getblk(__func__, sb, blk)
 #define sb_find_get_block(sb, blk) ext4_sb_find_get_block(__func__, sb, blk)
@@ -620,7 +631,7 @@ static inline struct buffer_head *
 ext4_sb_bread(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
-	
+
 	bh = __bread(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
 		__ext4_trace_bh_count(fn, bh);
@@ -631,7 +642,7 @@ static inline struct buffer_head *
 ext4_sb_getblk(const char *fn, struct super_block *sb, sector_t block)
 {
 	struct buffer_head *bh;
-	
+
 	bh = __getblk(sb->s_bdev, block, sb->s_blocksize);
 	if (bh)
 		__ext4_trace_bh_count(fn, bh);
@@ -649,9 +660,6 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 	return bh;
 }
 
-#else
-#define ext4_trace_bh_count(bh)
-#endif
 
 #endif
 
@@ -685,7 +693,7 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 #define ext4_snapshot_take(inode) (0)
 #define ext4_snapshot_update(inode_i_sb, cleanup, zero) (0)
 #define ext4_snapshot_has_active(sb) (NULL)
-#define ext4_snapshot_get_undo_access(handle, bh) (0)
+#define ext4_snapshot_get_bitmap_access(handle, sb, grp, bh) (0)
 #define ext4_snapshot_get_write_access(handle, inode, bh) (0)
 #define ext4_snapshot_get_create_access(handle, bh) (0)
 #define ext4_snapshot_excluded(ac_inode) (0)
@@ -695,6 +703,7 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 #define ext4_snapshot_start_pending_cow(sbh)	(0)
 #define ext4_snapshot_end_pending_cow(sbh)	(0)
 #define ext4_snapshot_is_active(inode)		(0)
+#define ext4_test_mow_tid(inode)		(1)
 
 #endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

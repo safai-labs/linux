@@ -15,8 +15,8 @@
 #include <linux/statfs.h>
 #include "ext4_jbd2.h"
 #include "snapshot.h"
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+
 /*
  * General snapshot locking semantics:
  *
@@ -86,7 +86,8 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 		 * Set up the jbd2_inode - we are about to file_inode soon...
 		 */
 		if (!ei->jinode) {
-			struct jbd2_inode *jinode = jbd2_alloc_inode(GFP_KERNEL);
+			struct jbd2_inode *jinode;
+			jinode = jbd2_alloc_inode(GFP_KERNEL);
 
 			spin_lock(&inode->i_lock);
 			if (!ei->jinode) {
@@ -264,8 +265,9 @@ static int ext4_inode_list_del(handle_t *handle, struct inode *inode,
 		err = ext4_handle_dirty_metadata(handle, NULL, sbi->s_sbh);
 	} else {
 		struct ext4_iloc iloc2;
-		struct inode *i_prev =
-			&list_entry(prev, struct ext4_inode_info, i_orphan)->vfs_inode;
+		struct inode *i_prev;
+		i_prev = &list_entry(prev, struct ext4_inode_info,
+				     i_orphan)->vfs_inode;
 
 		snapshot_debug(4, "%s inode %lu will point to inode %lu\n",
 			  name, i_prev->i_ino, (long unsigned int)ino_next);
@@ -367,7 +369,7 @@ static int ext4_snapshot_delete(struct inode *inode);
 void ext4_snapshot_get_flags(struct inode *inode, struct file *filp)
 {
 	unsigned int open_count = filp->f_path.dentry->d_count;
-	
+
 	/*
 	 * 1 count for ioctl (lsattr)
 	 * greater count means the snapshot is open by user (mounted?)
@@ -1681,7 +1683,7 @@ static int ext4_snapshot_shrink(struct inode *start, struct inode *end,
 		SNAPSHOT_SET_DISABLED(inode);
 		if (ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_DELETED) &&
 		    !(ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK) &&
-		      ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE))) {
+		    ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE))) {
 			/* mark snapshot shrunk */
 			err = ext4_reserve_inode_write(handle, inode, &iloc);
 			ext4_set_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK);
@@ -1704,6 +1706,7 @@ out_err:
 			       need_shrink, err);
 	return err;
 }
+
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
 /*
@@ -1806,6 +1809,7 @@ out_err:
 			       end->i_generation, need_merge, err);
 	return err;
 }
+
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 /*
@@ -1870,6 +1874,7 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 #endif
 	return 0;
 }
+
 #endif
 #endif
 /*

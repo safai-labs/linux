@@ -995,7 +995,7 @@ failed:
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
 static int ext4_splice_branch_cow(handle_t *handle, struct inode *inode,
-			long block, Indirect *where, int num, int blks, int flags)
+		long block, Indirect *where, int num, int blks, int flags)
 #else
 static int ext4_splice_branch(handle_t *handle, struct inode *inode,
 			      ext4_lblk_t block, Indirect *where, int num,
@@ -1160,7 +1160,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 			 * test if first_block should be moved to snapshot?
 			 */
 			err = ext4_snapshot_get_move_access(handle, inode,
-							    first_block, 
+							    first_block,
 							    &map->m_len, 0);
 			if (err < 0) {
 				/* cleanup the whole chain and exit */
@@ -1220,7 +1220,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 
 	/*
 	 * Okay, we need to do block allocation.
-	 */
+	*/
 	goal = ext4_find_goal(inode, map->m_lblk, partial);
 
 	/* the number of blocks need to allocate for [d,t]indirect blocks */
@@ -1236,7 +1236,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 		count = map->m_len;
 	} else
 		count = ext4_blks_to_allocate(partial, indirect_blks,
-				     	      map->m_len, blocks_to_boundary);
+					      map->m_len, blocks_to_boundary);
 #else
 	count = ext4_blks_to_allocate(partial, indirect_blks,
 				      map->m_len, blocks_to_boundary);
@@ -1279,15 +1279,15 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	if (map->m_flags & EXT4_MAP_REMAP) {
-		map->m_len = count; 
+		map->m_len = count;
 		/* move old block to snapshot */
 		err = ext4_snapshot_get_move_access(handle, inode,
 						    le32_to_cpu(*(partial->p)),
 						    &map->m_len, 1);
 		if (err <= 0) {
-                        /* failed to move to snapshot - abort! */
-                        err = err ? : -EIO;
-                        ext4_journal_abort_handle(__func__, __LINE__,
+			/* failed to move to snapshot - abort! */
+			err = err ? : -EIO;
+			ext4_journal_abort_handle(__func__, __LINE__,
 					"ext4_snapshot_get_move_access", NULL,
 					handle, err);
 			goto cleanup;
@@ -1334,9 +1334,8 @@ got_it:
 cleanup:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 	/* cancel pending COW operation on failure to alloc snapshot block */
-	if(SNAPMAP_ISCOW(flags))
-	{
-		if (err < 0 && sbh )
+	if (SNAPMAP_ISCOW(flags)) {
+		if (err < 0 && sbh)
 			ext4_snapshot_end_pending_cow(sbh);
 		brelse(sbh);
 	}
@@ -1621,7 +1620,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	if (retval > 0 && (map->m_flags & EXT4_MAP_REMAP) &&
 	    (flags & EXT4_GET_BLOCKS_PRE_IO)) {
 		/*
-		 * If mow is needed on the requested block and 
+		 * If mow is needed on the requested block and
 		 * request comes from async-direct-io-write path,
 		 * we return an unmapped buffer to fall back to buffered I/O.
 		 */
@@ -1714,7 +1713,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	up_write((&EXT4_I(inode)->i_data_sem));
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 	/* Clear EXT4_MAP_REMAP, it is not needed any more. */
-	map->m_flags &= ~EXT4_MAP_REMAP; 
+	map->m_flags &= ~EXT4_MAP_REMAP;
 #endif
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
 		int ret = check_block_validity(inode, map);
@@ -1825,7 +1824,7 @@ out:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
- * ext4_get_block_mow is used when a block may be needed to be snapshotted. 
+ * ext4_get_block_mow is used when a block may be needed to be snapshotted.
  */
 int ext4_get_block_mow(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh, int create)
@@ -2030,7 +2029,7 @@ static void ext4_truncate_failed_write(struct inode *inode)
 	truncate_inode_pages(inode->i_mapping, inode->i_size);
 	ext4_truncate(inode);
 }
- 
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 /*
  * Prepare for snapshot.
@@ -2946,8 +2945,8 @@ flush_it:
 static int ext4_bh_delay_or_unwritten_or_remap(handle_t *handle,
 		struct buffer_head *bh)
 {
-	return ((buffer_delay(bh) || buffer_unwritten(bh)) && buffer_dirty(bh)) ||
-		buffer_remap(bh);
+	return ((buffer_delay(bh) || buffer_unwritten(bh)) &&
+		buffer_dirty(bh)) || buffer_remap(bh);
 }
 #else
 static int ext4_bh_delay_or_unwritten(handle_t *handle, struct buffer_head *bh)
@@ -3126,7 +3125,7 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
 	if (map.m_flags & EXT4_MAP_REMAP) {
 		ret = ext4_da_reserve_space(inode, iblock);
 		if (ret < 0)
-			return ret;	
+			return ret;
 	}
 #endif
 	map_bh(bh, inode->i_sb, map.m_pblk);
@@ -4933,9 +4932,9 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 /*
  * ext4_free_data_cow - free a list of data blocks (consult COW bitmap)
- * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
- * @bit:	bit number representing the @first block
- * @pfreed_blocks:	return number of freed blocks
+ * @bitmap:	   COW bitmap to consult when shrinking deleted snapshot
+ * @bit:	   bit number representing the @first block
+ * @pfreed_blocks: return number of freed blocks
  */
 void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
@@ -4991,8 +4990,8 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 				count++;
 			} else {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
-				if (ext4_clear_blocks_cow(handle, inode, this_bh,
-					       block_to_free, count,
+				if (ext4_clear_blocks_cow(handle, inode,
+					       this_bh, block_to_free, count,
 					       block_to_free_p, p, bitmap,
 					       bit + (block_to_free_p - first)))
 					break;
@@ -5571,7 +5570,7 @@ int ext4_get_inode_loc(struct inode *inode, struct ext4_iloc *iloc)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
 	int in_mem = (!EXT4_SNAPSHOTS(inode->i_sb) &&
 		!ext4_test_inode_state(inode, EXT4_STATE_XATTR));
-	
+
 	/*
 	 * We have all inode's data except xattrs in memory here,
 	 * but we must always read-in the entire inode block for COW.
@@ -5628,10 +5627,10 @@ void ext4_get_inode_flags(struct ext4_inode_info *ei)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_FIX
 blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
-			struct ext4_inode_info *ei)
+			  struct ext4_inode_info *ei)
 #else
 static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
-			struct ext4_inode_info *ei)
+				 struct ext4_inode_info *ei)
 #endif
 {
 	blkcnt_t i_blocks ;
@@ -5644,7 +5643,7 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 			ext4_snapshot_file(inode)) {
 #else
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				       EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
 #endif
 		/* we are using combined 48 bit field */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
@@ -5982,8 +5981,8 @@ static int ext4_do_update_inode(handle_t *handle,
 		struct super_block *sb = inode->i_sb;
 		if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_LARGE_FILE) ||
-				 EXT4_SB(sb)->s_es->s_rev_level ==
-				 cpu_to_le32(EXT4_GOOD_OLD_REV)) {
+				EXT4_SB(sb)->s_es->s_rev_level ==
+				cpu_to_le32(EXT4_GOOD_OLD_REV)) {
 			/* If this is the first large file
 			 * created, add a flag to the superblock.
 			 */

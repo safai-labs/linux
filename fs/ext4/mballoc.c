@@ -420,7 +420,7 @@ static inline int mb_find_next_bit(void *addr, int max, int start)
 	return ret;
 }
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 /*
  * Find the largest range of set or clear bits.
  * Return 1 for set bits and 0 for clear bits.
@@ -432,9 +432,9 @@ int ext4_mb_test_bit_range(int bit, void *addr, int *pcount)
 
 	ret = mb_test_bit(bit, addr);
 	if (ret)
-		i = mb_find_next_zero_bit(addr, bit + *pcount, bit); 
+		i = mb_find_next_zero_bit(addr, bit + *pcount, bit);
 	else
-		i = mb_find_next_bit(addr, bit + *pcount, bit); 
+		i = mb_find_next_bit(addr, bit + *pcount, bit);
 	*pcount = i - bit;
 	return ret ? 1 : 0;
 }
@@ -3237,7 +3237,7 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 	ext4_fsblk_t goal_block;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	/* 
+	/*
 	 * All inode preallocations allocated before the time when the
 	 * active snapshot is taken need to be discarded, otherwise blocks
 	 * maybe used by both a regular file and the snapshot file that we
@@ -4730,15 +4730,15 @@ do_more:
 	}
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if(exclude_bitmap_bh) {
+	if (exclude_bitmap_bh) {
 		int i;
-		if(excluded_file)
+		if (excluded_file)
 			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
 						  bit + count, bit) - bit;
 		else
 			i = mb_find_next_bit(exclude_bitmap_bh->b_data,
 					     bit + count, bit) - bit;
-		if(i < count) {
+		if (i < count) {
 			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
 			ext4_error(sb, "%sexcluded file (ino=%lu)"
 				   " block [%d/%u] was %sexcluded!"
@@ -4747,7 +4747,7 @@ do_more:
 				   inode ? inode->i_ino : 0,
 				   bit + i, block_group,
 				   excluded_block ? "" : "not ");
-			if(!excluded_file)
+			if (!excluded_file)
 				excluded_block = 1;
 		}
 	}

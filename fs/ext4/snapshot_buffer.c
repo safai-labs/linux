@@ -49,7 +49,7 @@ static int quiet_error(struct buffer_head *bh)
 static void buffer_io_error(struct buffer_head *bh)
 {
 	char b[BDEVNAME_SIZE];
-	printk(KERN_ERR "Buffer I/O error on device %s, logical block %Lu\n",
+	printk(KERN_ERR "Buffer I/O error on device %s, logical block %llu\n",
 			bdevname(bh->b_bdev, b),
 			(unsigned long long)bh->b_blocknr);
 }
@@ -82,10 +82,10 @@ static void buffer_io_error(struct buffer_head *bh)
  */
 void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh)
 {
-	static sector_t blocknr = 0;
-	static int maxcount = 0;
+	static sector_t blocknr;
+	static int maxcount;
 	static int maxbit = 1;
-	static int maxorder = 0;
+	static int maxorder;
 	int count = atomic_read(&bh->b_count) & 0x0000ffff;
 
 	BUG_ON(count < 0);

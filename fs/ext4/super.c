@@ -870,7 +870,7 @@ static void ext4_put_super(struct super_block *sb)
 	destroy_workqueue(sbi->dio_unwritten_wq);
 
 	lock_super(sb);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	if (EXT4_SNAPSHOTS(sb))
 		ext4_snapshot_destroy(sb);
 #endif
@@ -2214,7 +2214,7 @@ static int ext4_check_descriptors(struct super_block *sb,
 		}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 		if (EXT4_HAS_COMPAT_FEATURE(sb,
-		    EXT4_FEATURE_COMPAT_EXCLUDE_BITAMP)) {
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
 			exclude_bitmap = ext4_exclude_bitmap(sb, gdp);
 			if (exclude_bitmap < first_block ||
 			    exclude_bitmap > last_block) {
@@ -2291,7 +2291,7 @@ static void ext4_orphan_cleanup(struct super_block *sb,
 	}
 
 	/* Check if feature set would not allow a r/w mount */
- 	if (!ext4_feature_set_ok(sb, 0)) {
+	if (!ext4_feature_set_ok(sb, 0)) {
 		ext4_msg(sb, KERN_INFO, "Skipping orphan cleanup due to "
 			 "unknown ROCOMPAT features");
 		return;
@@ -3379,7 +3379,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	/* Enforce snapshots blocksize == pagesize */
 	if (EXT4_SNAPSHOTS(sb) && blocksize != PAGE_SIZE) {
 		ext4_msg(sb, KERN_ERR,
@@ -3859,7 +3859,7 @@ no_journal:
 		goto failed_mount4;
 	};
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 	if (EXT4_SNAPSHOTS(sb) &&
 			ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
 		/* XXX: how can we fail and force read-only at this point? */
@@ -3999,7 +3999,7 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		iput(journal_inode);
 		return NULL;
 	}
-	
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	if (EXT4_SNAPSHOTS(sb) &&
 			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <

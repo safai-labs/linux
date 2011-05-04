@@ -2,11 +2,9 @@ cleanup_merge
 cleanup_shrink
 cleanup
 exclude_bitmap
-exclude
 race_read
 race_cow
 race_bitmap
-race
 list_read
 list
 journal_trace
@@ -15,7 +13,6 @@ journal_bypass
 journal_release
 journal_credits
 journal_error
-journal
 ctl_dump
 ctl_reserve
 ctl_fix

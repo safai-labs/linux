@@ -257,7 +257,8 @@ int main(int argc, char *argv[])
 					/* hold 1 empty line */
 					hold = 1;
 					continue;
-				} else if (strstr(line+2, "Amir") || strstr(line+2, "CTERA")) {
+				} else if (strstr(line+2, "Amir") || strstr(line+2, "CTERA") ||
+						strstr(line+2, "Yongqiang")) {
 					/* strip off copyright */
 					hold = 0;
 					continue;

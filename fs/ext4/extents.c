@@ -18,6 +18,8 @@
  * You should have received a copy of the GNU General Public Licens
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-
+ *
+ * Snapshot move-on-write (MOW), Yongqiang Yang <xiaoqiangnk@gmail.com>, 2011
  */
 
 /*

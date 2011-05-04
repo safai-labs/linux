@@ -16,8 +16,8 @@
 #include "snapshot.h"
 #include "ext4.h"
 #include "mballoc.h"
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
+
 #define snapshot_debug_hl(n, f, a...) snapshot_debug_l(n, handle ? \
 					IS_COWING(handle) : 0, f, ## a)
 
@@ -59,8 +59,8 @@ int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
 			cmd, maxblocks, err);
 	return err;
 }
-#endif
 
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 /*
  * COW helper functions
@@ -98,6 +98,7 @@ __ext4_snapshot_copy_bitmap(struct buffer_head *sbh,
 
 	set_buffer_uptodate(sbh);
 }
+
 #endif
 /*
  * ext4_snapshot_complete_cow()
@@ -555,8 +556,8 @@ out:
 	brelse(exclude_bitmap_bh);
 	return err ? err : excluded;
 }
-#endif
 
+#endif
 /*
  * COW functions
  */
@@ -696,8 +697,8 @@ ext4_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 		jbd_unlock_bh_state(bh);
 	}
 }
-#endif
 
+#endif
 /*
  * Begin COW or move operation.
  * No locks needed here, because @handle is a per-task struct.
@@ -1056,4 +1057,3 @@ out:
 }
 
 #endif
-

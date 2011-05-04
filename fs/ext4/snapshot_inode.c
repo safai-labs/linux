@@ -38,8 +38,8 @@
 
 #include <trace/events/ext4.h>
 #include "snapshot.h"
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+
 /**
  * ext4_blks_to_skip - count the number blocks that can be skipped
  * @inode: inode in question
@@ -570,7 +570,6 @@ out:
 }
 
 #endif
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_READ
 /*
  * ext4_snapshot_get_block_access() - called from ext4_snapshot_read_through()
@@ -628,7 +627,6 @@ out:
  *    read through from B to block device.
  */
 #endif
-
 static int ext4_snapshot_get_block_access(struct inode *inode,
 		struct inode **prev_snapshot)
 {

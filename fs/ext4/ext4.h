@@ -35,14 +35,12 @@
 
 #ifndef EXT4_SUPER_MAGIC
 #define EXT4_SUPER_MAGIC EXT3_SUPER_MAGIC
-/* if the kernel was not patched, ext4 is compiled as standalone module */
-#define CONFIG_EXT4_FS_STANDALONE
-#endif
-
-#ifdef CONFIG_EXT4_FS_STANDALONE
 /* configuration options for standalone module */
 #define CONFIG_EXT4_DEFAULTS_TO_ORDERED
 #define CONFIG_EXT4_FS_XATTR
+#ifdef CONFIG_FS_POSIX_ACL
+#define CONFIG_EXT4_FS_POSIX_ACL
+#endif
 #define CONFIG_EXT4_FS_SECURITY
 #define CONFIG_EXT4_DEBUG
 #define CONFIG_EXT4_FS_SNAPSHOT
@@ -84,8 +82,8 @@
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 #define CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
 #endif
-#if defined(CONFIG_EXT4_FS_STANDALONE) && defined(CONFIG_FS_POSIX_ACL)
-#define CONFIG_EXT4_FS_POSIX_ACL
+#ifndef CONFIG_EXT4_FS_SNAPSHOT_
+#define CONFIG_EXT4_FS_SNAPSHOT_
 #endif
 
 /*

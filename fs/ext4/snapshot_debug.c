@@ -111,10 +111,10 @@ void ext4_snapshot_remove_debugfs_entry(void)
 	if (snapshot_debug)
 		debugfs_remove(snapshot_debug);
 }
-
-
-
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_DUMP
+
+
+
 /* snapshot dump state */
 struct ext4_dump_info {
 	struct inode *di_inode; /* snapshot inode */

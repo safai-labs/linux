@@ -693,7 +693,7 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 #define ext4_snapshot_take(inode) (0)
 #define ext4_snapshot_update(inode_i_sb, cleanup, zero) (0)
 #define ext4_snapshot_has_active(sb) (NULL)
-#define ext4_snapshot_get_undo_access(handle, bh) (0)
+#define ext4_snapshot_get_bitmap_access(handle, sb, grp, bh) (0)
 #define ext4_snapshot_get_write_access(handle, inode, bh) (0)
 #define ext4_snapshot_get_create_access(handle, bh) (0)
 #define ext4_snapshot_excluded(ac_inode) (0)
@@ -703,6 +703,7 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 #define ext4_snapshot_start_pending_cow(sbh)	(0)
 #define ext4_snapshot_end_pending_cow(sbh)	(0)
 #define ext4_snapshot_is_active(inode)		(0)
+#define ext4_test_mow_tid(inode)		(1)
 
 #endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

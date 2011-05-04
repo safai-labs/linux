@@ -2214,7 +2214,7 @@ static int ext4_check_descriptors(struct super_block *sb,
 		}
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 		if (EXT4_HAS_COMPAT_FEATURE(sb,
-		    EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
 			exclude_bitmap = ext4_exclude_bitmap(sb, gdp);
 			if (exclude_bitmap < first_block ||
 			    exclude_bitmap > last_block) {

@@ -18,6 +18,7 @@
 #include <linux/debugfs.h>
 #include "snapshot.h"
 
+#if defined (CONFIG_EXT4_FS_SNAPSHOT) && defined (CONFIG_EXT4_DEBUG)
 /*
  * debugfs tunables
  */
@@ -428,4 +429,5 @@ void ext4_snapshot_dump(int n, struct inode *inode)
 		       "%d blocks\n", inode->i_generation,
 		       di.ncopied, di.nmoved, di.ncopied + di.nmoved);
 }
+#endif
 #endif

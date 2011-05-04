@@ -3257,7 +3257,7 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 	 * mballoc.c for more information.
 	 */
 	if (ext4_snapshot_active(EXT4_SB(ac->ac_inode->i_sb)) &&
-	    !ext4_test_mow_tid(ac->ac_inode)) {
+	    !ext4_snapshot_mow_in_tid(ac->ac_inode)) {
 		ext4_discard_preallocations(ac->ac_inode);
 	}
 #endif

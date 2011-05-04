@@ -498,7 +498,7 @@ static inline int ext4_snapshot_is_active(struct inode *inode)
  * calling unfreeze_super() to record the tid at time when a snapshot is
  * taken.
  */
-static inline void ext4_set_snapshot_tid(struct super_block *sb)
+static inline void ext4_snapshot_set_tid(struct super_block *sb)
 {
 	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
 	SNAPSHOT_TRANSACTION_ID(sb) =
@@ -506,16 +506,17 @@ static inline void ext4_set_snapshot_tid(struct super_block *sb)
 }
 
 /* get trancation ID of active snapshot */
-static inline tid_t ext4_get_snapshot_tid(struct super_block *sb)
+static inline tid_t ext4_snapshot_get_tid(struct super_block *sb)
 {
 	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
 	return SNAPSHOT_TRANSACTION_ID(sb);
 }
 
-static inline int ext4_test_mow_tid(struct inode *inode)
+/* test if thereis a mow that is in or before current transcation */
+static inline int ext4_snapshot_mow_in_tid(struct inode *inode)
 {
 	return tid_geq(EXT4_I(inode)->i_datasync_tid,
-		      ext4_get_snapshot_tid(inode->i_sb));
+		      ext4_snapshot_get_tid(inode->i_sb));
 }
 
 #endif
@@ -689,7 +690,7 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 #define ext4_snapshot_should_move_data(inode) (0)
 #define ext4_snapshot_test_excluded(handle, inode, block_to_free, count) (0)
 #define ext4_snapshot_list(inode) (0)
-#define ext4_snapshot_get_flags(ei, filp) (0)
+#define ext4_snapshot_get_flags(ei, filp)
 #define ext4_snapshot_set_flags(handle, inode, flags) (0)
 #define ext4_snapshot_take(inode) (0)
 #define ext4_snapshot_update(inode_i_sb, cleanup, zero) (0)
@@ -701,10 +702,10 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 #define ext4_snapshot_get_delete_access(handle, inode, block, pcount) (0)
 
 #define ext4_snapshot_get_move_access(handle, inode, block, pcount, move) (0)
-#define ext4_snapshot_start_pending_cow(sbh)	(0)
-#define ext4_snapshot_end_pending_cow(sbh)	(0)
+#define ext4_snapshot_start_pending_cow(sbh)
+#define ext4_snapshot_end_pending_cow(sbh)
 #define ext4_snapshot_is_active(inode)		(0)
-#define ext4_test_mow_tid(inode)		(1)
+#define ext4_snapshot_mow_in_tid(inode)		(1)
 
 #endif /* CONFIG_EXT4_FS_SNAPSHOT */
 #endif	/* _LINUX_EXT4_SNAPSHOT_H */

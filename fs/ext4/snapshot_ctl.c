@@ -1220,7 +1220,7 @@ next_inode:
 		/* 0 is not a valid snapshot id */
 		sbi->s_es->s_snapshot_id = cpu_to_le32(1);
 	sbi->s_es->s_snapshot_inum = cpu_to_le32(inode->i_ino);
-	ext4_set_snapshot_tid(sb);
+	ext4_snapshot_set_tid(sb);
 
 	err = 0;
 out_unlockfs:

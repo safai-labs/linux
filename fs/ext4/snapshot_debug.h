@@ -15,7 +15,7 @@
 #ifndef _LINUX_EXT4_SNAPSHOT_DEBUG_H
 #define _LINUX_EXT4_SNAPSHOT_DEBUG_H
 
-#ifdef CONFIG_EXT4_DEBUG
+#if defined(CONFIG_EXT4_FS_SNAPSHOT) && defined(CONFIG_EXT4_DEBUG)
 #include <linux/delay.h>
 
 #define SNAPSHOT_INDENT_MAX 4

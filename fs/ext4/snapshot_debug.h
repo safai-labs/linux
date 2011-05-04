@@ -15,7 +15,7 @@
 #ifndef _LINUX_EXT4_SNAPSHOT_DEBUG_H
 #define _LINUX_EXT4_SNAPSHOT_DEBUG_H
 
-#ifdef CONFIG_EXT4_DEBUG
+#if defined(CONFIG_EXT4_FS_SNAPSHOT) && defined(CONFIG_EXT4_DEBUG)
 #include <linux/delay.h>
 
 #define SNAPSHOT_INDENT_MAX 4
@@ -84,6 +84,7 @@ extern void ext4_snapshot_create_debugfs_entry(struct dentry *debugfs_dir);
 extern void ext4_snapshot_remove_debugfs_entry(void);
 
 #else
+#define snapshot_enable_debug (0)
 #define snapshot_test_delay(i)
 #define snapshot_test_delay_progress(i, from, to, max)
 #define snapshot_debug(n, f, a...)

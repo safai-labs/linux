@@ -294,8 +294,8 @@ static void ext4_journal_cow_stats(int n, ext4_handle_t *handle)
 void __ext4_journal_trace(int n, const char *fn, const char *caller,
 		ext4_handle_t *handle, int nblocks)
 {
-	struct super_block *sb = handle->h_transaction->t_journal->j_private;
-	struct inode *active_snapshot = ext4_snapshot_has_active(sb);
+	int active_snapshot = ext4_snapshot_active(EXT4_SB(
+				handle->h_transaction->t_journal->j_private));
 	int upper = EXT4_SNAPSHOT_START_TRANS_BLOCKS(handle->h_base_credits);
 	int lower = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits);
 	int final = (nblocks == 0 && handle->h_ref == 1 &&

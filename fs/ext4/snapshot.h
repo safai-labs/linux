@@ -71,39 +71,7 @@
 #define SNAPSHOT_IBLOCK(block)					\
 	(ext4_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define SNAPSHOT_TRANSACTION_ID(sb)				\
-	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)
 
-static inline int ext4_snapshot_active(struct ext4_sb_info *sbi);
-
-/**
- * set transaction ID for active snapshot
- *
- * this function is called after freeze_super() returns but before
- * calling unfreeze_super() to record the tid at time when a snapshot is
- * taken.
- */
-static inline void ext4_set_snapshot_tid(struct super_block *sb)
-{
-	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
-	SNAPSHOT_TRANSACTION_ID(sb) =
-			EXT4_SB(sb)->s_journal->j_transaction_sequence;
-}
-
-/* get trancation ID of active snapshot */
-static inline tid_t ext4_get_snapshot_tid(struct super_block *sb)
-{
-	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
-	return SNAPSHOT_TRANSACTION_ID(sb);
-}
-
-static inline int ext4_test_mow_tid(struct inode *inode)
-{
-	return tid_geq(EXT4_I(inode)->i_datasync_tid,
-		      ext4_get_snapshot_tid(inode->i_sb));
-}
-#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 #define EXT4_SNAPSHOT_VERSION "ext4 snapshot v1.0.13-6 (2-May-2010)"
@@ -518,6 +486,38 @@ static inline int ext4_snapshot_is_active(struct inode *inode)
 {
 	return (inode == EXT4_SB(inode->i_sb)->s_active_snapshot);
 }
+
+
+#define SNAPSHOT_TRANSACTION_ID(sb)				\
+	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)
+
+/**
+ * set transaction ID for active snapshot
+ *
+ * this function is called after freeze_super() returns but before
+ * calling unfreeze_super() to record the tid at time when a snapshot is
+ * taken.
+ */
+static inline void ext4_set_snapshot_tid(struct super_block *sb)
+{
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	SNAPSHOT_TRANSACTION_ID(sb) =
+			EXT4_SB(sb)->s_journal->j_transaction_sequence;
+}
+
+/* get trancation ID of active snapshot */
+static inline tid_t ext4_get_snapshot_tid(struct super_block *sb)
+{
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	return SNAPSHOT_TRANSACTION_ID(sb);
+}
+
+static inline int ext4_test_mow_tid(struct inode *inode)
+{
+	return tid_geq(EXT4_I(inode)->i_datasync_tid,
+		      ext4_get_snapshot_tid(inode->i_sb));
+}
+
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_COW
 /*

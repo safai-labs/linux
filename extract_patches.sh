@@ -1,7 +1,7 @@
 #!/bin/sh
 BASE=ext4-next
 RBRANCH=extract_reverse_patches
-BRANCH=ext4-snapshot-patches
+BRANCH=for-ext4
 RFC=RFC
 
 if [ ! -d .git/patches/$RBRANCH ]; then

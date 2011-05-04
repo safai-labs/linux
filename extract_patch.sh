@@ -1,7 +1,7 @@
 #!/bin/sh
 
 RBRANCH=extract_reverse_patches
-BRANCH=ext4-snapshot-patches
+BRANCH=for-ext4
 PATCH=ext4_snapshot_$1.patch
 RPATCH=ext4_snapshot_$1-R.patch
 CHECKPATCH=./scripts/checkpatch.pl

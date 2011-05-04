@@ -671,6 +671,7 @@ static int ext4_snapshot_get_block_access(struct inode *inode,
 #endif
 }
 
+#ifdef CONFIG_EXT4_DEBUG
 /*
  * ext4_snapshot_get_blockdev_access - get read through access to block device.
  * Sanity test to verify that the read block is allocated and not excluded.
@@ -726,7 +727,7 @@ static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
 	brelse(bitmap_bh);
 	return err;
 }
-
+#endif
 /*
  * ext4_snapshot_read_through - get snapshot image block.
  * On read of snapshot file, an unmapped block is a peephole to prev snapshot.

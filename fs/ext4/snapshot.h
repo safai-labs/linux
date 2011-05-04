@@ -621,6 +621,7 @@ extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
 #define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)
 #else
 #define ext4_trace_bh_count(bh)
+#define __ext4_trace_bh_count(fn, bh)
 #endif
 
 #define sb_bread(sb, blk) ext4_sb_bread(__func__, sb, blk)

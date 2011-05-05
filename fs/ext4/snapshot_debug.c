@@ -48,7 +48,7 @@ static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
 u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM] __read_mostly = {0};
 u8 snapshot_enable_debug __read_mostly = 1;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE
-u8 cow_cache_offset __read_mostly;
+u8 cow_cache_enabled __read_mostly = 1;
 #endif
 
 static struct dentry *snapshot_debug;
@@ -86,9 +86,9 @@ void ext4_snapshot_create_debugfs_entry(struct dentry *debugfs_dir)
 					      debugfs_dir,
 					      &snapshot_enable_test[i]);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CACHE
-	cow_cache = debugfs_create_u8("cow-cache", S_IRUGO,
+	cow_cache = debugfs_create_u8("cow-cache", S_IRUGO|S_IWUSR,
 					   debugfs_dir,
-					   &cow_cache_offset);
+					   &cow_cache_enabled);
 #endif
 }
 

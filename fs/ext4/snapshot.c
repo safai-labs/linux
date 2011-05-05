@@ -597,47 +597,26 @@ __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
  * The last transaction ID during which the buffer has been COWed is stored in
  * the b_cow_tid field of the journal_head struct.  If we know that the buffer
  * was COWed during the current transaction, we don't need to COW it again.
- * Find the offset of the b_cow_tid field by checking for free space in the
- * journal_head struct. If there is no free space, don't use cow tid cache.
- * This method is used so the ext4 module could be loaded without rebuilding
- * the kernel with modified journal_head struct.
  * [jbd_lock_bh_state()]
  */
 
-static int cow_tid_offset;
-
 void init_ext4_snapshot_cow_cache(void)
 {
-	const struct journal_head *jh = NULL;
-	char *pos, *end;
-
-	if (cow_tid_offset)
-		return;
-
-	/* check for 32bit (padding to 64bit alignment) after b_modified */
-	pos = (char *)&jh->b_modified + sizeof(jh->b_modified);
-	end = (char *)&jh->b_frozen_data;
-	if (pos + sizeof(tid_t) <= end)
-		goto found;
-
-	/* no free space found - disable cow cache */
-	cow_tid_offset = -1;
-	return;
-found:
-	cow_tid_offset = pos - (char *)NULL;
 #ifdef CONFIG_EXT4_DEBUG
-	cow_cache_offset = cow_tid_offset;
+	cow_cache_enabled = 1;
 #endif
 }
 
-#define cow_cache_enabled()	(cow_tid_offset > 0)
-#define jh_cow_tid(jh)			\
-	(*(tid_t *)(((char *)(jh))+cow_tid_offset))
+#ifdef CONFIG_EXT4_DEBUG
+#define cow_cache_enabled()	(cow_cache_enabled)
+#else
+#define cow_cache_enabled()	(1)
+#endif
 
 #define test_cow_tid(jh, handle)	\
-	(jh_cow_tid(jh) == (handle)->h_transaction->t_tid)
+	((jh)->b_cow_tid == (handle)->h_transaction->t_tid)
 #define set_cow_tid(jh, handle)		\
-	(jh_cow_tid(jh) = (handle)->h_transaction->t_tid)
+	((jh)->b_cow_tid = (handle)->h_transaction->t_tid)
 
 /*
  * Journal COW cache functions.

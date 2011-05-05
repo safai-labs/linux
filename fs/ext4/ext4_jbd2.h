@@ -188,10 +188,10 @@ struct ext4_handle_s {
 	int			h_err;
 
 	/* Flags [no locking] */
-	unsigned int	h_sync:		1;	/* sync-on-close */
-	unsigned int	h_jdata:	1;	/* force data journaling */
-	unsigned int	h_aborted:	1;	/* fatal error on handle */
-	unsigned int	h_cowing:	1;	/* COWing block to snapshot */
+	unsigned int	h_sync:1;	/* sync-on-close */
+	unsigned int	h_jdata:1;	/* force data journaling */
+	unsigned int	h_aborted:1;	/* fatal error on handle */
+	unsigned int	h_cowing:1;	/* COWing block to snapshot */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	/* Number of buffers requested by user:
 	 * (before adding the COW credits factor) */

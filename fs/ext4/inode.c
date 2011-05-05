@@ -386,8 +386,9 @@ static int ext4_block_to_path(struct inode *inode,
 		final = ptrs;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	} else if (ext4_snapshot_file(inode) &&
-			(tind = (i_block >> (ptrs_bits * 3))) <
+			(i_block >> (ptrs_bits * 3)) <
 			EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS + 1) {
+		tind = i_block >> (ptrs_bits * 3);
 		BUG_ON(tind == 0);
 		/* use up to 4 triple indirect blocks to map 2^32 blocks */
 		i_block -= (tind << (ptrs_bits * 3));

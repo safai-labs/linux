@@ -2544,7 +2544,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 		if (nr_pages == 0)
 			break;
 		for (i = 0; i < nr_pages; i++) {
-			int commit_write = 0, redirty_page = 0;
+			int commit_write = 0, skip_page = 0;
 			struct page *page = pvec.pages[i];
 
 			index = page->index;
@@ -2570,14 +2570,12 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 			 * If the page does not have buffers (for
 			 * whatever reason), try to create them using
 			 * __block_write_begin.  If this fails,
-			 * redirty the page and move on.
+			 * skip the page and move on.
 			 */
 			if (!page_has_buffers(page)) {
 				if (__block_write_begin(page, 0, len,
 						noalloc_get_block_write)) {
-				redirty_page:
-					redirty_page_for_writepage(mpd->wbc,
-								   page);
+				skip_page:
 					unlock_page(page);
 					continue;
 				}
@@ -2588,7 +2586,7 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 			block_start = 0;
 			do {
 				if (!bh)
-					goto redirty_page;
+					goto skip_page;
 				if (map && (cur_logical >= map->m_lblk) &&
 				    (cur_logical <= (map->m_lblk +
 						     (map->m_len - 1)))) {
@@ -2610,27 +2608,28 @@ static int mpage_da_submit_io(struct mpage_da_data *mpd,
 					clear_buffer_unwritten(bh);
 				}
 
-				/* redirty page if block allocation undone */
+				/* skip page if block allocation undone */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
 				if (buffer_delay(bh) || buffer_unwritten(bh) ||
 				    buffer_remap(bh))
 #else
 				if (buffer_delay(bh) || buffer_unwritten(bh))
 #endif
-					redirty_page = 1;
+					skip_page = 1;
 				bh = bh->b_this_page;
 				block_start += bh->b_size;
 				cur_logical++;
 				pblock++;
 			} while (bh != page_bufs);
 
-			if (redirty_page)
-				goto redirty_page;
+			if (skip_page)
+				goto skip_page;
 
 			if (commit_write)
 				/* mark the buffer_heads as dirty & uptodate */
 				block_commit_write(page, 0, len);
 
+			clear_page_dirty_for_io(page);
 			/*
 			 * Delalloc doesn't support data journalling,
 			 * but eventually maybe we'll lift this
@@ -2784,9 +2783,8 @@ static void mpage_da_map_and_submit(struct mpage_da_data *mpd)
 		err = blks;
 		/*
 		 * If get block returns EAGAIN or ENOSPC and there
-		 * appears to be free blocks we will call
-		 * ext4_writepage() for all of the pages which will
-		 * just redirty the pages.
+		 * appears to be free blocks we will just let
+		 * mpage_da_submit_io() unlock all of the pages.
 		 */
 		if (err == -EAGAIN)
 			goto submit_io;
@@ -3320,7 +3318,6 @@ static int write_cache_pages_da(struct address_space *mapping,
 			    (PageWriteback(page) &&
 			     (wbc->sync_mode == WB_SYNC_NONE)) ||
 			    unlikely(page->mapping != mapping)) {
-			continue_unlock:
 				unlock_page(page);
 				continue;
 			}
@@ -3329,8 +3326,6 @@ static int write_cache_pages_da(struct address_space *mapping,
 				wait_on_page_writeback(page);
 
 			BUG_ON(PageWriteback(page));
-			if (!clear_page_dirty_for_io(page))
-				goto continue_unlock;
 
 			/*
 			 * Can we merge this page to current extent?
@@ -3346,7 +3341,6 @@ static int write_cache_pages_da(struct address_space *mapping,
 					/*
 					 * skip rest of the page in the page_vec
 					 */
-					redirty_page_for_writepage(wbc, page);
 					unlock_page(page);
 					goto ret_extent_tail;
 				}

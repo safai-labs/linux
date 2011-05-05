@@ -1,7 +1,7 @@
 #!/bin/sh
 
 RBRANCH=extract_reverse_patches
-BRANCH=for-ext4
+BRANCH=extract_patches
 PATCH=ext4_snapshot_$1.patch
 RPATCH=ext4_snapshot_$1-R.patch
 CHECKPATCH=./scripts/checkpatch.pl
@@ -10,13 +10,14 @@ echo
 echo extracting patch $PATCH...
 echo 
 
-git checkout $RBRANCH~$2 || exit 1
+git checkout $RBRANCH~$2 fs/ext4 || exit 1
 
 for f in $( ls fs/ext4/* ) ; do
 	./strip_ifdefs $f $f.tmp snapshot y || exit 1
 done
 
-git checkout $BRANCH || exit 1
+#git checkout $BRANCH || exit 1
+git reset --hard $BRANCH || exit 1
 
 if [ _$3 = _core ] ; then
 	rm -f fs/ext4/snapshot*.c.tmp

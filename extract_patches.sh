@@ -1,7 +1,7 @@
 #!/bin/sh
 BASE=ext4-next
 RBRANCH=extract_reverse_patches
-BRANCH=for-ext4
+BRANCH=extract_patches
 RFC=RFC
 
 if [ ! -d .git/patches/$RBRANCH ]; then
@@ -30,10 +30,10 @@ rm -f fs/ext4/*.tmp
 
 NO=1
 for key in $( cat keys ) ; do
-	./extract_patch $key $NO $3 || exit 1
+	./extract_patch $key $NO $1 || exit 1
 	NO=`expr $NO + 1`
 done
 
-NO=`expr $NO - 1`
-git checkout $BRANCH
-git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$BRANCH/ -$NO || exit 1
+#NO=`expr $NO - 1`
+#git checkout $BRANCH
+git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$BRANCH/ $BASE..$BRANCH || exit 1

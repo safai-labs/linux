@@ -30,7 +30,7 @@ rm -f fs/ext4/*.tmp
 
 NO=1
 for key in $( cat keys ) ; do
-	./extract_patch $key $NO $RFC || exit 1
+	./extract_patch $key $NO $3 || exit 1
 	NO=`expr $NO + 1`
 done
 

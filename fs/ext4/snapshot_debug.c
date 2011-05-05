@@ -18,7 +18,7 @@
 #include <linux/debugfs.h>
 #include "snapshot.h"
 
-#if defined (CONFIG_EXT4_FS_SNAPSHOT) && defined (CONFIG_EXT4_DEBUG)
+#if defined(CONFIG_EXT4_FS_SNAPSHOT) && defined(CONFIG_EXT4_DEBUG)
 /*
  * debugfs tunables
  */

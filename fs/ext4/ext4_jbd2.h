@@ -129,7 +129,7 @@
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
 #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n)			\
 	((handle)->h_buffer_credits >= EXT4_SNAPSHOT_TRANS_BLOCKS(n) && \
-	 ((ext4_handle_t *)(handle))->h_user_credits >= (n))
+	 (handle)->h_user_credits >= (n))
 #else
 #define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n) \
 	(handle->h_buffer_credits >= (n))
@@ -165,101 +165,6 @@
 #define EXT4_QUOTA_TRANS_BLOCKS(sb) 0
 #define EXT4_QUOTA_INIT_BLOCKS(sb) 0
 #define EXT4_QUOTA_DEL_BLOCKS(sb) 0
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
-/*
- * This struct is binary compatible to struct handle_s in include/linux/jbd.h
- * for building a standalone ext4 module.
- * XXX: be aware of changes to the original struct!!!
- */
-struct ext4_handle_s {
-
-	/* Which compound transaction is this update a part of? */
-	transaction_t		*h_transaction;
-
-	/* Number of remaining buffers we are allowed to dirty: */
-	int			h_buffer_credits;
-
-	/* Reference count on this handle */
-	int			h_ref;
-
-	/* Field for caller's use to track errors through large fs */
-	/* operations */
-	int			h_err;
-
-	/* Flags [no locking] */
-	unsigned int	h_sync:1;	/* sync-on-close */
-	unsigned int	h_jdata:1;	/* force data journaling */
-	unsigned int	h_aborted:1;	/* fatal error on handle */
-	unsigned int	h_cowing:1;	/* COWing block to snapshot */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-	/* Number of buffers requested by user:
-	 * (before adding the COW credits factor) */
-	unsigned int	h_base_credits:14;
-
-	/* Number of buffers the user is allowed to dirty:
-	 * (counts only buffers dirtied when !h_cowing) */
-	unsigned int	h_user_credits:14;
-#endif
-
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
-	struct lockdep_map	h_lockdep_map;
-#endif
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
-
-#ifdef CONFIG_JBD2_DEBUG
-	/* Statistics counters: */
-	unsigned int h_cow_moved; /* blocks moved to snapshot */
-	unsigned int h_cow_copied; /* blocks copied to snapshot */
-	unsigned int h_cow_ok_jh; /* blocks already COWed during current
-				     transaction */
-	unsigned int h_cow_ok_bitmap; /* blocks not set in COW bitmap */
-	unsigned int h_cow_ok_mapped;/* blocks already mapped in snapshot */
-	unsigned int h_cow_bitmaps; /* COW bitmaps created */
-	unsigned int h_cow_excluded; /* blocks set in exclude bitmap */
-#endif
-#endif
-};
-
-#ifndef _EXT4_HANDLE_T
-#define _EXT4_HANDLE_T
-typedef struct ext4_handle_s		ext4_handle_t;	/* Ext4 COW handle */
-#endif
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
-/*
- * macros for ext4 to update transaction COW statistics.
- * when ext4 is compiled as a module with CONFIG_JBD2_DEBUG,
- * if sizeof(ext4_handle_t) doesn't match the sizeof(handle_t),
- * then the kernel was compiled without CONFIG_JBD2_DEBUG or without the
- * trace_cow patch and the h_cow_* fields are not allocated in handle objects.
- */
-#ifdef CONFIG_JBD2_DEBUG
-#define trace_cow_enabled()	\
-	(sizeof(ext4_handle_t) == sizeof(handle_t))
-
-#define trace_cow_add(handle, name, num)			\
-	do {							\
-		if (trace_cow_enabled())			\
-			((ext4_handle_t *)(handle))->h_cow_##name += (num); \
-	} while (0)
-
-#define trace_cow_inc(handle, name)				\
-	do {							\
-		if (trace_cow_enabled())			\
-			((ext4_handle_t *)(handle))->h_cow_##name++;	\
-	} while (0)
-
-#else
-#define trace_cow_enabled()	0
-#define trace_cow_add(handle, name, num)
-#define trace_cow_inc(handle, name)
-#endif
-#else
-#define trace_cow_add(handle, name, num)
-#define trace_cow_inc(handle, name)
-#endif
-
 #endif
 #define EXT4_MAXQUOTAS_TRANS_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_TRANS_BLOCKS(sb))
 #define EXT4_MAXQUOTAS_INIT_BLOCKS(sb) (MAXQUOTAS*EXT4_QUOTA_INIT_BLOCKS(sb))
@@ -352,17 +257,39 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #define ext4_handle_dirty_super(handle, sb) \
 	__ext4_handle_dirty_super(__func__, __LINE__, (handle), (sb))
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
+/*
+ * macros for ext4 to update transaction COW statistics.
+ * if the kernel was compiled without CONFIG_JBD2_DEBUG
+ * then the h_cow_* fields are not allocated in handle objects.
+ */
+#ifdef CONFIG_JBD2_DEBUG
+#define trace_cow_add(handle, name, num)	\
+	(handle)->h_cow_##name += (num)
+#define trace_cow_inc(handle, name)		\
+	(handle)->h_cow_##name++;
+
+#else
+#define trace_cow_add(handle, name, num)
+#define trace_cow_inc(handle, name)
+
+#endif
+#else
+#define trace_cow_add(handle, name, num)
+#define trace_cow_inc(handle, name)
+
+#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 #ifdef CONFIG_EXT4_DEBUG
 void __ext4_journal_trace(int debug, const char *fn, const char *caller,
-		ext4_handle_t *handle, int nblocks);
+		handle_t *handle, int nblocks);
 
 #define ext4_journal_trace(n, caller, handle, nblocks)			\
 	do {								\
 		if ((n) <= snapshot_enable_debug)			\
 			__ext4_journal_trace((n), __func__, (caller),	\
-				(ext4_handle_t *)(handle), (nblocks));	\
+						(handle), (nblocks));	\
 	} while (0)
 
 #else
@@ -462,7 +389,7 @@ static inline handle_t *ext4_journal_current_handle(void)
  * are missing and then tries to extend the transaction.
  */
 static inline int __ext4_journal_extend(const char *where,
-		ext4_handle_t *handle, int nblocks)
+					handle_t *handle, int nblocks)
 {
 	int lower, missing = 0;
 	int err = 0;
@@ -491,7 +418,7 @@ static inline int __ext4_journal_extend(const char *where,
  * extra credits for COW operations.
  */
 static inline int __ext4_journal_restart(const char *where,
-		ext4_handle_t *handle, int nblocks)
+					 handle_t *handle, int nblocks)
 {
 	int err = 0;
 
@@ -507,12 +434,10 @@ static inline int __ext4_journal_restart(const char *where,
 }
 
 #define ext4_journal_extend(handle, nblocks) \
-	__ext4_journal_extend(__func__, \
-			(ext4_handle_t *)(handle), (nblocks))
+	__ext4_journal_extend(__func__, (handle), (nblocks))
 
 #define ext4_journal_restart(handle, nblocks) \
-	__ext4_journal_restart(__func__, \
-			(ext4_handle_t *)(handle), (nblocks))
+	__ext4_journal_restart(__func__, (handle), (nblocks))
 #else
 static inline int ext4_journal_extend(handle_t *handle, int nblocks)
 {

@@ -716,7 +716,7 @@ static inline void ext4_snapshot_cow_begin(handle_t *handle)
 		snapshot_debug_hl(1, "warning: insufficient buffer/user "
 				  "credits (%d/%d) for COW operation?\n",
 				  handle->h_buffer_credits,
-				  ((ext4_handle_t *)handle)->h_user_credits);
+				  handle->h_user_credits);
 	}
 #endif
 	snapshot_debug_hl(4, "{\n");

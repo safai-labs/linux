@@ -188,7 +188,7 @@ int __ext4_handle_release_buffer(const char *where, handle_t *handle,
 				"%s: warning: couldn't extend transaction "
 				"from %s (credits=%d/%d)\n", __func__,
 				where, handle->h_buffer_credits,
-				((ext4_handle_t *)handle)->h_user_credits);
+				handle->h_user_credits);
 		err = 0;
 	}
 	ext4_journal_trace(SNAP_WARN, where, handle, -1);
@@ -226,7 +226,7 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 			 */
 			if (jh->b_modified == 1) {
 				jh->b_modified = 2;
-				((ext4_handle_t *)handle)->h_user_credits--;
+				handle->h_user_credits--;
 			}
 			jbd_unlock_bh_state(bh);
 		}
@@ -275,10 +275,8 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 
 #ifdef CONFIG_JBD2_DEBUG
-static void ext4_journal_cow_stats(int n, ext4_handle_t *handle)
+static void ext4_journal_cow_stats(int n, handle_t *handle)
 {
-	if (!trace_cow_enabled())
-		return;
 	snapshot_debug(n, "COW stats: moved/copied=%d/%d, "
 			 "mapped/bitmap/cached=%d/%d/%d, "
 			 "bitmaps/cleared=%d/%d\n", handle->h_cow_moved,
@@ -292,7 +290,7 @@ static void ext4_journal_cow_stats(int n, ext4_handle_t *handle)
 
 #ifdef CONFIG_EXT4_DEBUG
 void __ext4_journal_trace(int n, const char *fn, const char *caller,
-		ext4_handle_t *handle, int nblocks)
+			  handle_t *handle, int nblocks)
 {
 	int active_snapshot = ext4_snapshot_active(EXT4_SB(
 				handle->h_transaction->t_journal->j_private));

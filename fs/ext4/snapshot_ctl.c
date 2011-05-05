@@ -447,8 +447,7 @@ int __extend_or_restart_transaction(const char *where,
 	if (nblocks < EXT4_MAX_TRANS_DATA)
 		nblocks = EXT4_MAX_TRANS_DATA;
 
-	err = __ext4_journal_extend(where,
-			(ext4_handle_t *)handle, nblocks);
+	err = __ext4_journal_extend(where, handle, nblocks);
 	if (err < 0)
 		return err;
 	if (err) {
@@ -458,8 +457,7 @@ int __extend_or_restart_transaction(const char *where,
 			if (err)
 				return err;
 		}
-		err = __ext4_journal_restart(where,
-				(ext4_handle_t *)handle, nblocks);
+		err = __ext4_journal_restart(where, handle, nblocks);
 		if (err)
 			return err;
 		if (inode)

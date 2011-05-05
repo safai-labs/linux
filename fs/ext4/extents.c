@@ -3352,9 +3352,6 @@ found:
 	 */
 
 	/* find neighbour allocated blocks */
-	/*
-	 * TODO MOW case needs further consideration.
-	 */
 	ar.lleft = map->m_lblk;
 	err = ext4_ext_search_left(inode, path, &ar.lleft, &ar.pleft);
 	if (err)

@@ -257,6 +257,7 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #define ext4_handle_dirty_super(handle, sb) \
 	__ext4_handle_dirty_super(__func__, __LINE__, (handle), (sb))
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
 /*
  * macros for ext4 to update transaction COW statistics.
@@ -278,6 +279,7 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #define trace_cow_add(handle, name, num)
 #define trace_cow_inc(handle, name)
 
+#endif
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_TRACE
@@ -361,7 +363,6 @@ static inline int ext4_handle_has_enough_credits(handle_t *handle, int needed)
 		return 0;
 	return 1;
 }
-
 #ifndef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 
 static inline handle_t *ext4_journal_start(struct inode *inode, int nblocks)

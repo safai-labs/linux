@@ -917,11 +917,11 @@ repeat_in_this_group:
 			}
 			/* we lost it */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_RELEASE
-			err = ext4_journal_release_buffer(handle,
+			err = ext4_handle_release_buffer(handle,
 					inode_bitmap_bh);
 			if (err)
 				goto fail;
-			err = ext4_journal_release_buffer(handle,
+			err = ext4_handle_release_buffer(handle,
 					group_desc_bh);
 			if (err)
 				goto fail;

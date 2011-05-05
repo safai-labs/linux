@@ -257,51 +257,70 @@ static void ext4_put_nojournal(handle_t *handle)
  * journal_end calls result in the superblock being marked dirty, so
  * that sync() will call the filesystem's write_super callback if
  * appropriate.
+ *
+ * To avoid j_barrier hold in userspace when a user calls freeze(),
+ * ext4 prevents a new handle from being started by s_frozen, which
+ * is in an upper layer.
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 handle_t *__ext4_journal_start(const char *where,
 		struct super_block *sb, int nblocks)
 {
-	ext4_handle_t *handle;
+	int credits;
 #else
 handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
 {
 #endif
 	journal_t *journal;
+	handle_t  *handle;
 
 	if (sb->s_flags & MS_RDONLY)
 		return ERR_PTR(-EROFS);
 
-	vfs_check_frozen(sb, SB_FREEZE_TRANS);
-	/* Special case here: if the journal has aborted behind our
-	 * backs (eg. EIO in the commit thread), then we still need to
-	 * take the FS itself readonly cleanly. */
 	journal = EXT4_SB(sb)->s_journal;
-	if (journal) {
-		if (is_journal_aborted(journal)) {
-			ext4_abort(sb, "Detected aborted journal");
-			return ERR_PTR(-EROFS);
-		}
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-		/* sanity test for standalone module */
-		if (sizeof(ext4_handle_t) != sizeof(handle_t))
-			return ERR_PTR(-EINVAL);
+	handle = ext4_journal_current_handle();
 
-		handle = (ext4_handle_t *)jbd2_journal_start(journal,
-				EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks));
-		if (!IS_ERR(handle)) {
-			if (handle->h_ref == 1) {
-				handle->h_base_credits = nblocks;
-				handle->h_user_credits = nblocks;
-			}
-			ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
-		}
-		return (handle_t *)handle;
-#else
-		return jbd2_journal_start(journal, nblocks);
-#endif
+	/*
+	 * If a handle has been started, it should be allowed to
+	 * finish, otherwise deadlock could happen between freeze
+	 * and others(e.g. truncate) due to the restart of the
+	 * journal handle if the filesystem is forzen and active
+	 * handles are not stopped.
+	 */
+	if (!handle)
+		vfs_check_frozen(sb, SB_FREEZE_TRANS);
+
+	if (!journal)
+		return ext4_get_nojournal();
+	/*
+	 * Special case here: if the journal has aborted behind our
+	 * backs (eg. EIO in the commit thread), then we still need to
+	 * take the FS itself readonly cleanly.
+	 */
+	if (is_journal_aborted(journal)) {
+		ext4_abort(sb, "Detected aborted journal");
+		return ERR_PTR(-EROFS);
 	}
-	return ext4_get_nojournal();
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+
+	/* sanity test for standalone module */
+	if (sizeof(ext4_handle_t) != sizeof(handle_t))
+		return ERR_PTR(-EINVAL);
+
+	credits = EXT4_SNAPSHOTS(sb) ?
+		EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks) : nblocks;
+	handle = jbd2_journal_start(journal, credits);
+	if (EXT4_SNAPSHOTS(sb) && !IS_ERR(handle)) {
+		if (handle->h_ref == 1) {
+			((ext4_handle_t *)handle)->h_base_credits = nblocks;
+			((ext4_handle_t *)handle)->h_user_credits = nblocks;
+		}
+		ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return handle;
+#else
+	return jbd2_journal_start(journal, nblocks);
+#endif
 }
 
 /*
@@ -4426,6 +4445,11 @@ static int ext4_sync_fs(struct super_block *sb, int wait)
 /*
  * LVM calls this function before a (read-only) snapshot is created.  This
  * gives us a chance to flush the journal completely and mark the fs clean.
+ *
+ * Note that only this function cannot bring a filesystem to be in a clean
+ * state independently, because ext4 prevents a new handle from being started
+ * by @sb->s_frozen, which stays in an upper layer.  It thus needs help from
+ * the upper layer.
  */
 static int ext4_freeze(struct super_block *sb)
 {

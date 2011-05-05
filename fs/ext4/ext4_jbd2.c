@@ -161,7 +161,7 @@ int __ext4_journal_get_create_access(const char *where, unsigned int line,
 }
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_RELEASE
-int __ext4_journal_release_buffer(const char *where, handle_t *handle,
+int __ext4_handle_release_buffer(const char *where, handle_t *handle,
 				struct buffer_head *bh)
 {
 	int err = 0;

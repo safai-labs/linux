@@ -178,7 +178,7 @@ config EXT4_FS_SNAPSHOT_FILE_READ
 	depends on EXT4_FS_SNAPSHOT_FILE
 	default y
 	help
-	  On active snapshot file page read, the function ext4_get_block()
+	  On active snapshot page read, the function ext4_snapshot_get_block()
 	  is called to map the page to a disk block.  If the page is not mapped
 	  in the snapshot file a direct mapping to the block device is returned.
 
@@ -217,8 +217,8 @@ config EXT4_FS_SNAPSHOT_BLOCK
 	depends on EXT4_FS_SNAPSHOT_FILE
 	default y
 	help
-	  Core implementation of special snapshot file block operations.
-	  The argument @create to the function ext4_get_blocks_handle()
+	  Core API of special snapshot file block operations.
+	  The argument @create to the function ext4_getblk()
 	  is re-interpreted as a snapshot block command argument.  The old
 	  argument values 0(=read) and 1(=create) preserve the original
 	  behavior of the function.  The bit field h_cowing in the current
@@ -258,12 +258,8 @@ config EXT4_FS_SNAPSHOT_JOURNAL_ERROR
 	help
 	  Ext4 error state is recorded in the journal super block and error
 	  messages are recorder in free space after the journal super block.
-	  Ext4 should be mounted with errors=remount-ro.
-	  After a snapshot error, the file system will be in read-only mode.
-	  The administrator must un-mount the file system and run fsck
-	  to prevent data corruption.
-	  Some places in Ext3 original code don't check for return value of
-	  JBD functions.  Check for snapshot/journal errors in those places.
+	  These error messages are dislayed by fsck and cleared after the
+	  errors were fixed.
 
 config EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	bool "snapshot journaled - increase transaction credits"
@@ -273,6 +269,11 @@ config EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 	  Snapshot operations are journaled as part of the running transaction.
 	  The amount of requested credits is multiplied with a factor, to ensure
 	  that enough buffer credits are reserved in the running transaction.
+	  The new field h_base_credits stored to original credits request and
+	  the new filed u_user_credits counts the number of credits used by
+	  non-COW operations.  They are especially useful when exteding a large
+	  transaction, which did not use the extra COW credits it requested.
+	  In this case, only the missing extra credits are requested.
 
 config EXT4_FS_SNAPSHOT_JOURNAL_RELEASE
 	bool "snapshot journaled - implement journal_release_buffer()"
@@ -297,7 +298,7 @@ config EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
 	  On very few COW operations (i.e., first block group access after
 	  snapshot take), there may be up to 3 extra blocks allocated for the
 	  active snapshot (i.e., COW bitmap block and up to 2 indirect blocks).
-	  Taking these 3 extra allocations into account on every COW operation
+	  Taking these 2 indorect blocks into account on every COW operation
 	  would further increase the transaction's COW credits factor.
 	  Instead, we choose to pay a small performance penalty on these few
 	  COW bitmap operations and wait until they are synced to disk.
@@ -330,8 +331,7 @@ config EXT4_FS_SNAPSHOT_LIST
 	help
 	  Implementation of multiple incremental snapshots.
 	  Snapshot inodes are chained on a list starting at the super block,
-	  both on-disk and in-memory, similar to the orphan inodes.  We reuse
-	  the orphan inode list functions to manipulate the snapshot list.
+	  both on-disk and in-memory, similar to the orphan inodes.
 	  Unlink and truncate of snapshot inodes on the list is not allowed,
 	  so an inode can never be chained on both orphan and snapshot lists.
 	  We make use of this fact to overload the in-memory inode field
@@ -368,18 +368,19 @@ config EXT4_FS_SNAPSHOT_RACE_COW
 	help
 	  Wait for pending COW operations to complete.
 	  When concurrent tasks try to COW the same buffer, the task that takes
-	  the active snapshot truncate_mutex is elected as the the COWing task.
+	  the active snapshot i_data_sem is elected as the the COWing task.
 	  The COWing task allocates a new snapshot block and creates a buffer
 	  cache entry with ref_count=1 for that new block.  It then locks the
 	  new buffer and marks it with the buffer_new flag.  The rest of the
 	  tasks wait (in msleep(1) loop), until the buffer_new flag is cleared.
 	  The COWing task copies the source buffer into the 'new' buffer,
-	  unlocks it, marks it as journal dirty data, clears the new_buffer flag
-	  and drops its reference count.
+	  unlocks it, clears the new_buffer flag and drops its reference count.
 	  On active snapshot readpage, the buffer cache is checked.
 	  If a 'new' buffer entry is found, the reader task waits until the
 	  buffer_new flag is cleared and then copies the 'new' buffer directly
 	  into the snapshot file page.
+	  The sleep loop method was copied from LVM snapshot code, which does
+	  the same thing to deal with these (rare) races without wait queues.
 
 config EXT4_FS_SNAPSHOT_RACE_READ
 	bool "snapshot race conditions - tracked reads"
@@ -397,15 +398,18 @@ config EXT4_FS_SNAPSHOT_RACE_READ
 	  After a pending COW operation has started, reader tasks have to wait
 	  (again, in msleep(1) loop), until the pending COW operation is
 	  completed, so the COWing task cannot be starved by reader tasks.
+	  The sleep loop method was copied from LVM snapshot code, which does
+	  the same thing to deal with these (rare) races without wait queues.
 
 config EXT4_FS_SNAPSHOT_CTL
 	bool "snapshot control"
 	depends on EXT4_FS_SNAPSHOT_FILE
 	default y
 	help
-	  Snapshot control with chattr -X.
-	  Take/delete snapshot with chattr -X +/-S.
-	  Enable/disable snapshot with chattr -X +/-n.
+	  Snapshot control with chsnap/lssnap.
+	  Take/delete snapshot with chsnap +/-S.
+	  Enable/disable snapshot with chsnap +/-n.
+	  Show snapshot status with lssnap.
 
 config EXT4_FS_SNAPSHOT_CTL_INIT
 	bool "snapshot control - init new snapshot"
@@ -424,10 +428,10 @@ config EXT4_FS_SNAPSHOT_CTL_FIX
 	default y
 	help
 	  On snapshot take, after copying the pre-allocated blocks, some are
-	  fixed to make the snapshot image appear as a valid Ext2 file system.
-	  The has_journal and has_snapshot flags are cleared from the super
-	  block as well as the journal inode and last snapshot inode fields.
-	  All snapshot inodes are cleared (to appear as empty inodes).
+	  fixed to make the snapshot image appear as a valid Ext4 file system.
+	  The has_snapshot flags is cleared from the super block as well as
+	  the last_snapshot field and all snapshot inodes are cleared
+	  (to appear as empty inodes).
 
 config EXT4_FS_SNAPSHOT_CTL_RESERVE
 	bool "snapshot control - reserve disk space for snapshot"
@@ -452,15 +456,18 @@ config EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	depends on EXT4_FS_SNAPSHOT
 	default y
 	help
-	  Mark all snapshot blocks excluded from COW bitmap (i.e., mark that
+	  Mark all snapshot blocks excluded from COW (i.e., mark that
 	  they do not need to be COWed).  The excluded blocks appear as not
 	  allocated inside the snapshot image (no snapshots of snapshot files).
 	  Excluding snapshot file blocks is essential for efficient cleanup
 	  of deleted snapshot files.
 
 	  Excluding blocks is done by setting their bit in the exclude bitmap.
-	  There is one exclude bitmap block per block group and its location
-	  is cached in the group descriptor.
+	  There is one exclude bitmap block per block group, which is allocated
+	  on mkfs when setting the exclude_bitmap feature.  The exclude bitmap
+	  location is stored in the group descriptor.
+	  The exclude_bitmap feature is backward compatible, but online resize
+	  support with exclude_bitmap was not yet implemented.
 
 config EXT4_FS_SNAPSHOT_CLEANUP
 	bool "snapshot cleanup"
@@ -482,6 +489,9 @@ config EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 	  Free blocks of deleted snapshots, which are not in use by an older
 	  non-deleted snapshot.  Shrinking helps reclaiming disk space
 	  while older snapshots are currently in use (enabled).
+	  We modify the indirect inode truncate helper functions so that they
+	  can be used by the snapshot cleanup functions to free blocks
+	  selectively according to a COW bitmap buffer.
 
 config EXT4_FS_SNAPSHOT_CLEANUP_MERGE
 	bool "snapshot cleanup - merge shrunk snapshots"

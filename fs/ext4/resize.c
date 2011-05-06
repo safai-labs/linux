@@ -767,7 +767,7 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	if (EXT4_HAS_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
 		ext4_warning(sb, "Can't resize filesystem with exclude bitmap");
-		return -EPERM;
+		return -ENOTSUPP;
 	}
 
 #endif

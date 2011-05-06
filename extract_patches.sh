@@ -26,7 +26,7 @@ echo -n > ext4_snapshot_patches_check
 # prepare patches queue to apply on top of ext4/master
 mkdir -p .git/patches/$QBRANCH
 echo -n > .git/patches/$QBRANCH/series
-echo -n > .git/patches/$QBRNACH/status
+echo -n > .git/patches/$QBRANCH/status
 
 # create forward and reverse work dirs
 rm -rf fs/ext4*

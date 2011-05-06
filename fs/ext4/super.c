@@ -3394,7 +3394,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
 	/* Enforce snapshots blocksize == pagesize */
 	if (EXT4_SNAPSHOTS(sb) && blocksize != PAGE_SIZE) {
 		ext4_msg(sb, KERN_ERR,

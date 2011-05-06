@@ -3178,12 +3178,11 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 	struct ext4_extent_header *eh;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	struct ext4_extent newex, *ex = NULL;
-	ext4_fsblk_t newblock = 0;
 	ext4_fsblk_t oldblock = 0;
 #else
 	struct ext4_extent newex, *ex;
-	ext4_fsblk_t newblock;
 #endif
+	ext4_fsblk_t newblock = 0;
 	int err = 0, depth, ret;
 	unsigned int allocated = 0;
 	struct ext4_allocation_request ar;

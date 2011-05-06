@@ -26,7 +26,7 @@ echo -n > .git/patches/$BRANCH/series
 echo -n > .git/patches/$BRNACH/status
 
 # create forward and reverse work dirs
-rm -f fs/ext4*
+rm -rf fs/ext4*
 git checkout $RBRANCH fs/ext4 || exit 1
 mv fs/ext4 fs/ext4.rev
 git checkout $BRANCH fs/ext4 || exit 1

@@ -935,7 +935,7 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 			mark_buffer_dirty(bh);
 			sync_dirty_buffer(bh);
 		} else
-		err = ext4_handle_dirty_metadata(handle, inode, bh);
+			err = ext4_handle_dirty_metadata(handle, inode, bh);
 #else
 		err = ext4_handle_dirty_metadata(handle, inode, bh);
 #endif
@@ -1064,7 +1064,7 @@ err_out:
 	for (i = 1; i <= num; i++) {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_BYPASS
 		int forget = EXT4_FREE_BLOCKS_FORGET;
-		
+
 		/* If we bypassed journal, we don't need to forget */
 		if (SNAPMAP_ISSYNC(flags))
 			forget = 0;

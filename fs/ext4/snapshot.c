@@ -699,7 +699,7 @@ static inline void ext4_snapshot_cow_begin(handle_t *handle)
 	}
 #endif
 	snapshot_debug_hl(4, "{\n");
-	IS_COWING(handle) = 1;
+	handle->h_cowing = 1;
 }
 
 /*
@@ -709,7 +709,7 @@ static inline void ext4_snapshot_cow_begin(handle_t *handle)
 static inline void ext4_snapshot_cow_end(const char *where,
 		handle_t *handle, ext4_fsblk_t block, int err)
 {
-	IS_COWING(handle) = 0;
+	handle->h_cowing = 0;
 	snapshot_debug_hl(4, "} = %d\n", err);
 	snapshot_debug_hl(4, ".\n");
 	if (err < 0)

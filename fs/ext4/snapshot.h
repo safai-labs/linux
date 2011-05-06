@@ -149,11 +149,11 @@ static inline void snapshot_size_truncate(struct inode *inode,
 #define SNAPMAP_BITMAP	(SNAPMAP_COW|EXT4_GET_BLOCKS_SYNC)
 
 /* test special cases when mapping snapshot blocks */
-#define SNAPMAP_ISCOW(cmd)	((cmd) & EXT4_GET_BLOCKS_COW)
-#define SNAPMAP_ISMOVE(cmd)	((cmd) & EXT4_GET_BLOCKS_MOVE)
-#define SNAPMAP_ISSYNC(cmd)	((cmd) & EXT4_GET_BLOCKS_SYNC)
+#define SNAPMAP_ISCOW(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_COW))
+#define SNAPMAP_ISMOVE(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_MOVE))
+#define SNAPMAP_ISSYNC(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_SYNC))
 
-#define IS_COWING(handle) 	((handle)->h_cowing)
+#define IS_COWING(handle) 	(unlikely((handle)->h_cowing))
 
 /* snapshot.c */
 

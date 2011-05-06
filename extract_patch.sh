@@ -1,7 +1,5 @@
 #!/bin/sh
 
-RBRANCH=extract_reverse_patches
-BRANCH=extract_patches
 PATCH=ext4_snapshot_$1.patch
 RPATCH=ext4_snapshot_$1-R.patch
 CHECKPATCH=./scripts/checkpatch.pl
@@ -35,27 +33,27 @@ for f in $( ls fs/ext4/* ) ; do
 done
 
 if [ ! -f .git/patches/$RBRANCH/$RPATCH~ ]; then
-	echo 'reverse patch $PATCH~ does not exist'
+	echo 'reverse patch $RPATCH~ does not exist'
 fi
 
-cat .git/patches/$RBRANCH/$RPATCH~ > .git/patches/$BRANCH/$PATCH~ 
+cat .git/patches/$RBRANCH/$RPATCH~ > .git/patches/$QBRANCH/$PATCH~ 
 #Add Signed-off-by lines.
-echo '' >> .git/patches/$BRANCH/$PATCH~ || exit 1
-echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$BRANCH/$PATCH~ || exit 1
-echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$BRANCH/$PATCH~ || exit 1
+echo '' >> .git/patches/$QBRANCH/$PATCH~ || exit 1
+echo 'Signed-off-by: Amir Goldstein <amir73il@users.sf.net>' >> .git/patches/$QBRANCH/$PATCH~ || exit 1
+echo 'Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>' >> .git/patches/$QBRANCH/$PATCH~ || exit 1
 
-cat .git/patches/$BRANCH/$PATCH~ > .git/patches/$BRANCH/$PATCH
-echo '' >> .git/patches/$BRANCH/$PATCH || exit 1
-git diff --cached >> .git/patches/$BRANCH/$PATCH || exit 1
-cat .git/patches/$BRANCH/$PATCH~
+cat .git/patches/$QBRANCH/$PATCH~ > .git/patches/$QBRANCH/$PATCH
+echo '' >> .git/patches/$QBRANCH/$PATCH || exit 1
+git diff --cached >> .git/patches/$QBRANCH/$PATCH || exit 1
+cat .git/patches/$QBRANCH/$PATCH~
 git diff --cached --stat
 
 #guilt-refresh
-git commit -a --author='Amir Goldstein <amir73il@users.sf.net>' -F .git/patches/$BRANCH/$PATCH~ || exit 0
-echo $PATCH >> .git/patches/$BRANCH/series
+git commit -a --author='Amir Goldstein <amir73il@users.sf.net>' -F .git/patches/$QBRANCH/$PATCH~ || exit 0
+echo $PATCH >> .git/patches/$QBRANCH/series
 
 echo checking patch $PATCH...
-$CHECKPATCH .git/patches/$BRANCH/$PATCH >> ext4_snapshot_patches_check
+$CHECKPATCH .git/patches/$QBRANCH/$PATCH >> ext4_snapshot_patches_check
 
 echo
 echo patch $PATCH applied.

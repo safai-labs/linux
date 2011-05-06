@@ -1,7 +1,9 @@
 #!/bin/sh
 BASE=ext4-next
-RBRANCH=extract_reverse_patches
-BRANCH=extract_patches
+REBASE=alloc_semp
+export RBRANCH=extract_reverse_patches
+export BRANCH=extract_patches
+export QBRANCH=for-ext4
 RFC=RFC
 
 if [ ! -d .git/patches/$RBRANCH ]; then
@@ -14,16 +16,17 @@ gcc -o strip_ifdefs strip_ifdefs.c || exit 1
 tac KEYS > keys || exit 1
 cp extract_patch.sh extract_patch || exit 1
 
-# re-create the branch from current head
+# re-create the branch from base head
 (git branch | grep $BRANCH) && (git branch -D $BRANCH || exit 1)
 git checkout -b $BRANCH $BASE || exit 1
 
-echo -n >ext4_snapshot_patches_check
+echo -n > ext4_snapshot_patches_check
 #guilt-init
 #guilt-pop -a
-mkdir -p .git/patches/$BRANCH
-echo -n > .git/patches/$BRANCH/series
-echo -n > .git/patches/$BRNACH/status
+# prepare patches queue to apply on top of ext4/master
+mkdir -p .git/patches/$QBRANCH
+echo -n > .git/patches/$QBRANCH/series
+echo -n > .git/patches/$QBRNACH/status
 
 # create forward and reverse work dirs
 rm -rf fs/ext4*
@@ -39,4 +42,13 @@ done
 
 #NO=`expr $NO - 1`
 #git checkout $BRANCH
-git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$BRANCH/ $BASE..$BRANCH || exit 1
+git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$QBRANCH/ $BASE..$BRANCH || exit 1
+
+# re-create the branch from rebase head
+(git branch | grep $QBRANCH) && (git branch -D $QBRANCH || exit 1)
+git checkout -b $QBRANCH $REBASE || exit 1
+
+# try to apply all patch queue
+guilt-push -a
+
+

@@ -5627,7 +5627,7 @@ blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 			  struct ext4_inode_info *ei)
 #else
 static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
-				 struct ext4_inode_info *ei)
+				  struct ext4_inode_info *ei)
 #endif
 {
 	blkcnt_t i_blocks ;
@@ -5636,7 +5636,7 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_HUGE_FILE) ||
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE) ||
 			ext4_snapshot_file(inode)) {
 #else
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,

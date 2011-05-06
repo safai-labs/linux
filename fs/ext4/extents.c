@@ -3175,7 +3175,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 			struct ext4_map_blocks *map, int flags)
 {
 	struct ext4_ext_path *path = NULL;
-	struct ext4_extent_header *eh;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	struct ext4_extent newex, *ex = NULL;
 	ext4_fsblk_t oldblock = 0;
@@ -3241,7 +3240,6 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 		err = -EIO;
 		goto out2;
 	}
-	eh = path[depth].p_hdr;
 
 	ex = path[depth].p_ext;
 	if (ex) {

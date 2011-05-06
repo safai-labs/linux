@@ -153,7 +153,7 @@ static inline void snapshot_size_truncate(struct inode *inode,
 #define SNAPMAP_ISMOVE(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_MOVE))
 #define SNAPMAP_ISSYNC(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_SYNC))
 
-#define IS_COWING(handle) 	(unlikely((handle)->h_cowing))
+#define IS_COWING(handle)	(unlikely((handle)->h_cowing))
 
 /* snapshot.c */
 

@@ -203,6 +203,9 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 				 handle_t *handle, struct inode *inode,
 				 struct buffer_head *bh)
 {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+	struct super_block *sb;
+#endif
 	int err = 0;
 
 	if (ext4_handle_valid(handle)) {
@@ -213,7 +216,8 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
 		if (err)
 			return err;
-		if (!IS_COWING(handle)) {
+		sb = handle->h_transaction->t_journal->j_private;
+		if (EXT4_SNAPSHOTS(sb) && !IS_COWING(handle)) {
 			struct journal_head *jh = bh2jh(bh);
 			jbd_lock_bh_state(bh);
 			/*
@@ -292,11 +296,20 @@ static void ext4_journal_cow_stats(int n, handle_t *handle)
 void __ext4_journal_trace(int n, const char *fn, const char *caller,
 			  handle_t *handle, int nblocks)
 {
-	int active_snapshot = ext4_snapshot_active(EXT4_SB(
-				handle->h_transaction->t_journal->j_private));
-	int upper = EXT4_SNAPSHOT_START_TRANS_BLOCKS(handle->h_base_credits);
-	int lower = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits);
-	int final = (nblocks == 0 && handle->h_ref == 1 &&
+	int active_snapshot;
+	int upper;
+	int lower;
+	int final;
+	struct super_block *sb;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return;
+
+	active_snapshot = ext4_snapshot_active(EXT4_SB(sb));
+	upper = EXT4_SNAPSHOT_START_TRANS_BLOCKS(handle->h_base_credits);
+	lower = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits);
+	final = (nblocks == 0 && handle->h_ref == 1 &&
 		     !IS_COWING(handle));
 
 	switch (snapshot_enable_debug) {

@@ -142,10 +142,12 @@ config EXT4_FS_SNAPSHOT_HOOKS_DATA
 	depends on EXT4_FS_SNAPSHOT
 	default y
 	help
-	  Before every regular file data buffer write,
-	  the function ext4_get_block() is called to map the buffer to disk.
-	  We use this hook to call the snapshot API snapshot_get_move_access(),
-	  to optionally move the block to the snapshot file.
+	  Before every regular file data buffer write, the function
+	  ext4_get_block() is called to map the buffer to disk. We add a
+	  new function ext4_get_block_mow() which is called when we want to
+	  snapshot the blocks. We use this hook to call the snapshot API
+	  snapshot_get_move_access(), to optionally move the block
+	  to the snapshot file.
 
 config EXT4_FS_SNAPSHOT_HOOKS_DIO
 	bool "snapshot hooks - direct I/O"

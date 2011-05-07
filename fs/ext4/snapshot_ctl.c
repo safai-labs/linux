@@ -441,7 +441,7 @@ int __extend_or_restart_transaction(const char *where,
 {
 	int err;
 
-	if (EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, nblocks))
+	if (ext4_handle_has_enough_credits(handle, nblocks))
 		return 0;
 
 	if (nblocks < EXT4_MAX_TRANS_DATA)

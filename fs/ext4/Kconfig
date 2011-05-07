@@ -162,7 +162,9 @@ config EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	depends on EXT4_FS_SNAPSHOT_HOOKS_DATA
 	default y
 	help
-	  Split extents and move blocks to snapshot on write.
+	  Extent mapped file data is moved into snapshot in ext4_ext_map_blocks().
+	  If a part of a extent is to be moved, the extent is splitted. Fragmentation
+	  is light because of delayed-move-on-write.
 
 config EXT4_FS_SNAPSHOT_FILE
 	bool "snapshot file"

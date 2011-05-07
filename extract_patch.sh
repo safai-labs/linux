@@ -21,8 +21,10 @@ done
 #git checkout $BRANCH || exit 1
 
 # 'core' patch series doesn't include added snapshot C files
+# include snapshot.h and snapshot_debug.h only in first 2 core patches
 if [ _$3 = _core ] ; then
 	rm -f fs/ext4/snapshot*.c
+	[ $2 -le 2 ] || git checkout fs/ext4/snapshot*.h
 fi
 
 #guilt-push

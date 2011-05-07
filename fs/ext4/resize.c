@@ -667,18 +667,15 @@ static void update_backups(struct super_block *sb,
 		struct buffer_head *bh;
 
 		/* Out of journal space, and can't get more - abort - so sad */
+		if (ext4_handle_valid(handle) &&
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-		if (ext4_handle_valid(handle) &&
 		    !ext4_handle_has_enough_credits(handle, 1) &&
-		    ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA) &&
-		    (err = ext4_journal_restart(handle, EXT4_MAX_TRANS_DATA)))
 #else
-		if (ext4_handle_valid(handle) &&
 		    handle->h_buffer_credits == 0 &&
+#endif
 		    ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA) &&
 		    (err = ext4_journal_restart(handle, EXT4_MAX_TRANS_DATA)))
 			break;
-#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 		if (ext4_snapshot_has_active(sb))
@@ -689,8 +686,10 @@ static void update_backups(struct super_block *sb,
 			 */
 			bh = sb_bread(sb, group * bpg + blk_off);
 		else
-#endif
+			bh = sb_getblk(sb, group * bpg + blk_off);
+#else
 		bh = sb_getblk(sb, group * bpg + blk_off);
+#endif
 		if (!bh) {
 			err = -EIO;
 			break;

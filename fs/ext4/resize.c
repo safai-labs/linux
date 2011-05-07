@@ -668,14 +668,17 @@ static void update_backups(struct super_block *sb,
 
 		/* Out of journal space, and can't get more - abort - so sad */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-		if (!ext4_handle_has_enough_credits(handle, 1))
-			handle->h_buffer_credits = 0;
-#endif
+		if (ext4_handle_valid(handle) &&
+		    !ext4_handle_has_enough_credits(handle, 1) &&
+		    ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA) &&
+		    (err = ext4_journal_restart(handle, EXT4_MAX_TRANS_DATA)))
+#else
 		if (ext4_handle_valid(handle) &&
 		    handle->h_buffer_credits == 0 &&
 		    ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA) &&
 		    (err = ext4_journal_restart(handle, EXT4_MAX_TRANS_DATA)))
 			break;
+#endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 		if (ext4_snapshot_has_active(sb))

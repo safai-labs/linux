@@ -677,8 +677,8 @@ static void update_backups(struct super_block *sb,
 		    handle->h_buffer_credits == 0 &&
 		    ext4_journal_extend(handle, EXT4_MAX_TRANS_DATA) &&
 		    (err = ext4_journal_restart(handle, EXT4_MAX_TRANS_DATA)))
-			break;
 #endif
+			break;
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_COW
 		if (ext4_snapshot_has_active(sb))

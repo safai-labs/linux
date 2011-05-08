@@ -4139,9 +4139,38 @@ static const struct address_space_operations ext4_da_aops = {
 	.is_partially_uptodate  = block_is_partially_uptodate,
 	.error_remove_page	= generic_error_remove_page,
 };
+static int ext4_no_writepage(struct page *page,
+				struct writeback_control *wbc)
+{
+	unlock_page(page);
+	return -EIO;
+}
+
+/*
+ * Snapshot file page operations:
+ * always readpage (by page) with buffer tracked read.
+ * user cannot writepage or direct_IO to a snapshot file.
+ *
+ * snapshot file pages are written to disk after a COW operation in "ordered"
+ * mode and are never changed after that again, so there is no data corruption
+ * risk when using "ordered" mode on snapshot files.
+ * some snapshot data pages are written to disk by sync_dirty_buffer(), namely
+ * the snapshot COW bitmaps and a few initial blocks copied on snapshot_take().
+ */
+static const struct address_space_operations ext4_snapfile_aops = {
+	.readpage		= ext4_readpage,
+	.readpages		= ext4_readpages,
+	.writepage		= ext4_no_writepage,
+	.bmap			= ext4_bmap,
+	.invalidatepage		= ext4_invalidatepage,
+	.releasepage		= ext4_releasepage,
+};
 
 void ext4_set_aops(struct inode *inode)
 {
+	if (ext4_snapshot_file(inode))
+		inode->i_mapping->a_ops = &ext4_snapfile_aops;
+	else
 	if (ext4_should_order_data(inode) &&
 		test_opt(inode->i_sb, DELALLOC))
 		inode->i_mapping->a_ops = &ext4_da_aops;

@@ -761,6 +761,8 @@ static void ext4_put_super(struct super_block *sb)
 	destroy_workqueue(sbi->dio_unwritten_wq);
 
 	lock_super(sb);
+	if (EXT4_SNAPSHOTS(sb))
+		ext4_snapshot_destroy(sb);
 	if (sb->s_dirt)
 		ext4_commit_super(sb, 1);
 
@@ -3521,6 +3523,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_root = NULL;
 
+	mutex_init(&sbi->s_snapshot_mutex);
+	sbi->s_active_snapshot = NULL;
+
 	needs_recovery = (es->s_last_orphan != 0 ||
 			  EXT4_HAS_INCOMPAT_FEATURE(sb,
 				    EXT4_FEATURE_INCOMPAT_RECOVER));
@@ -3727,6 +3732,10 @@ no_journal:
 		goto failed_mount4;
 	};
 
+	if (EXT4_SNAPSHOTS(sb) &&
+			ext4_snapshot_load(sb, es, sb->s_flags & MS_RDONLY))
+		/* XXX: how can we fail and force read-only at this point? */
+		ext4_error(sb, "load snapshot failed\n");
 	EXT4_SB(sb)->s_mount_state |= EXT4_ORPHAN_FS;
 	ext4_orphan_cleanup(sb, es);
 	EXT4_SB(sb)->s_mount_state &= ~EXT4_ORPHAN_FS;

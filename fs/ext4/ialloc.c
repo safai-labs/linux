@@ -1049,8 +1049,12 @@ got:
 		goto fail_free_drop;
 
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_EXTENTS)) {
-		/* set extent flag only for directory, file and normal symlink*/
-		if (S_ISDIR(mode) || S_ISREG(mode) || S_ISLNK(mode)) {
+		/*
+		 * Set extent flag only for non-snapshot file, directory
+		 * and normal symlink
+		 */
+		if ((S_ISREG(mode) && !ext4_snapshot_file(inode)) ||
+				S_ISDIR(mode) || S_ISLNK(mode)) {
 			ext4_set_inode_flag(inode, EXT4_INODE_EXTENTS);
 			ext4_ext_tree_init(handle, inode);
 		}

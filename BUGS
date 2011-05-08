@@ -33,4 +33,26 @@ when running xfstest 70 with acl,user_xattr mount options, the test hangs on fss
 [ 1801.310544]  [<ffffffff8100bf82>] system_call_fastpath+0x16/0x1b
 [ 1801.310547] INFO: lockdep is turned off.
 
+============================================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Tue Mar 29 22:19:41 2011 +0200
+HEAD: 40073931
+
+the following warnings are printed when deleting a snapshot during phoronix tests:
+
+Mar 29 22:19:41 qalab kernel: [27505.934175] snapshot: snapshot (871) marked for deletion
+Mar 29 22:19:41 qalab kernel: [27505.976536] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976552] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976560] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976571] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976583] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976595] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976609] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976621] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976634] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976645] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976657] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.976671] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
+Mar 29 22:19:41 qalab kernel: [27505.988038] snapshot: snapshot (871) deleted
+
 

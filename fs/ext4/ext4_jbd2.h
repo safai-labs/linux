@@ -83,6 +83,62 @@
  * one block, plus two quota updates.  Quota allocations are not
  * needed. */
 
+/* on block write we have to journal the block itself */
+#define EXT4_WRITE_CREDITS 1
+/* on snapshot block alloc we have to journal block group bitmap, exclude
+   bitmap and gdb */
+#define EXT4_ALLOC_CREDITS 3
+/* number of credits for COW bitmap operation (allocated blocks are not
+   journalled): alloc(dind+ind+cow) = 9 */
+#define EXT4_COW_BITMAP_CREDITS	(3*EXT4_ALLOC_CREDITS)
+/* number of credits for other block COW operations:
+   alloc(dind+ind+cow)+write(dind+ind) = 11 */
+#define EXT4_COW_BLOCK_CREDITS	(3*EXT4_ALLOC_CREDITS+2*EXT4_WRITE_CREDITS)
+/* number of credits for the first COW operation in the block group, which
+ * is not the first group in a flex group (alloc 2 dind blocks):
+   9+11 = 20 */
+#define EXT4_COW_CREDITS	(EXT4_COW_BLOCK_CREDITS +	\
+				 EXT4_COW_BITMAP_CREDITS)
+/* number of credits for snapshot operations counted once per transaction:
+   write(sb+inode+tind) = 3 */
+#define EXT4_SNAPSHOT_CREDITS	(3*EXT4_WRITE_CREDITS)
+/*
+ * in total, for N COW operations, we may have to journal 20N+3 blocks,
+ * and we also want to reserve 20+3 credits for the last COW operation,
+ * so we add 20(N-1)+3+(20+3) to the requested N buffer credits
+ * and request 21N+6 buffer credits.
+ * that's a lot of extra credits and much more then needed for the common
+ * case, but what can we do?
+ *
+ * we are going to need a bigger journal to accommodate the
+ * extra snapshot credits.
+ * mke2fs -j uses the following default formula for fs-size above 1G:
+ * journal-size = MIN(128M, fs-size/32)
+ * mke2fs -j -J big uses the following formula:
+ * journal-size = MIN(3G, fs-size/32)
+ */
+#define EXT4_SNAPSHOT_TRANS_BLOCKS(n) \
+	((n)*(1+EXT4_COW_CREDITS)+EXT4_SNAPSHOT_CREDITS)
+#define EXT4_SNAPSHOT_START_TRANS_BLOCKS(n) \
+	((n)*(1+EXT4_COW_CREDITS)+2*EXT4_SNAPSHOT_CREDITS)
+
+/*
+ * check for sufficient buffer and COW credits
+ */
+#define EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, n)			\
+	((handle)->h_buffer_credits >= EXT4_SNAPSHOT_TRANS_BLOCKS(n) && \
+	 (handle)->h_user_credits >= (n))
+
+#define EXT4_RESERVE_COW_CREDITS	(EXT4_COW_CREDITS +		\
+					 EXT4_SNAPSHOT_CREDITS)
+
+/*
+ * Ext4 is not designed for filesystems under 4G with journal size < 128M
+ * Recommended journal size is 3G (created with 'mke2fs -j -J big')
+ */
+#define EXT4_MIN_JOURNAL_BLOCKS	32768U
+#define EXT4_BIG_JOURNAL_BLOCKS	(24*EXT4_MIN_JOURNAL_BLOCKS)
+
 #define EXT4_RESERVE_TRANS_BLOCKS	12U
 
 #define EXT4_INDEX_EXTRA_TRANS_BLOCKS	8
@@ -176,7 +232,19 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #define trace_cow_add(handle, name, num)
 #define trace_cow_inc(handle, name)
 
-handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks);
+#define ext4_journal_trace(n, caller, handle, nblocks)
+
+handle_t *__ext4_journal_start(const char *where,
+		struct super_block *sb, int nblocks);
+
+#define ext4_journal_start_sb(sb, nblocks) \
+	__ext4_journal_start(__func__, \
+			(sb), (nblocks))
+
+#define ext4_journal_start(inode, nblocks) \
+	__ext4_journal_start(__func__, \
+			(inode)->i_sb, (nblocks))
+
 int __ext4_journal_stop(const char *where, unsigned int line, handle_t *handle);
 
 #define EXT4_NOJOURNAL_MAX_REF_COUNT ((unsigned long) 4096)
@@ -212,14 +280,18 @@ static inline int ext4_handle_is_aborted(handle_t *handle)
 
 static inline int ext4_handle_has_enough_credits(handle_t *handle, int needed)
 {
-	if (ext4_handle_valid(handle) && handle->h_buffer_credits < needed)
+	struct super_block *sb;
+
+	if (!ext4_handle_valid(handle))
+		return 1;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (EXT4_SNAPSHOTS(sb))
+		return EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, needed);
+	/* sb has no snapshot feature */
+	if (handle->h_buffer_credits < needed)
 		return 0;
 	return 1;
-}
-
-static inline handle_t *ext4_journal_start(struct inode *inode, int nblocks)
-{
-	return ext4_journal_start_sb(inode->i_sb, nblocks);
 }
 
 #define ext4_journal_stop(handle) \
@@ -230,20 +302,77 @@ static inline handle_t *ext4_journal_current_handle(void)
 	return journal_current_handle();
 }
 
-static inline int ext4_journal_extend(handle_t *handle, int nblocks)
+/*
+ * Ext4 wrapper for journal_extend()
+ * When transaction runs out of buffer credits it is possible to try and
+ * extend the buffer credits without restarting the transaction.
+ * Ext4 wrapper for journal_start() has increased the user requested buffer
+ * credits to include the extra credits for COW operations.
+ * This wrapper checks the remaining user credits and how many COW credits
+ * are missing and then tries to extend the transaction.
+ */
+static inline int __ext4_journal_extend(const char *where,
+					handle_t *handle, int nblocks)
 {
-	if (ext4_handle_valid(handle))
-		return jbd2_journal_extend(handle, nblocks);
-	return 0;
+	int credits = 0;
+	int err = 0;
+	struct super_block *sb;
+
+	if (!ext4_handle_valid((handle_t *)handle))
+		return 0;
+
+	credits = nblocks;
+	sb = handle->h_transaction->t_journal->j_private;
+	if (EXT4_SNAPSHOTS(sb)) {
+		/* extend transaction to valid buffer/user credits ratio */
+		credits = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits +
+			nblocks) - handle->h_buffer_credits;
+	}
+	if (credits > 0)
+		err = jbd2_journal_extend((handle_t *)handle, credits);
+	if (EXT4_SNAPSHOTS(sb) && !err) {
+		/* update base/user credits for future extends */
+		handle->h_base_credits += nblocks;
+		handle->h_user_credits += nblocks;
+		ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return err;
 }
 
-static inline int ext4_journal_restart(handle_t *handle, int nblocks)
+/*
+ * Ext4 wrapper for journal_restart()
+ * When transaction runs out of buffer credits and cannot be extended,
+ * the alternative is to restart it (start a new transaction).
+ * This wrapper increases the user requested buffer credits to include the
+ * extra credits for COW operations.
+ */
+static inline int __ext4_journal_restart(const char *where,
+					 handle_t *handle, int nblocks)
 {
-	if (ext4_handle_valid(handle))
-		return jbd2_journal_restart(handle, nblocks);
-	return 0;
+	int err = 0;
+	int credits = 0;
+	struct super_block *sb;
+
+	if (!ext4_handle_valid((handle_t *)handle))
+		return 0;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	credits = EXT4_SNAPSHOTS(sb) ?
+		  EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks) : nblocks;
+	err = jbd2_journal_restart((handle_t *)handle, credits);
+	if (EXT4_SNAPSHOTS(sb) && !err) {
+		handle->h_base_credits = nblocks;
+		handle->h_user_credits = nblocks;
+		ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return err;
 }
 
+#define ext4_journal_extend(handle, nblocks) \
+	__ext4_journal_extend(__func__, (handle), (nblocks))
+
+#define ext4_journal_restart(handle, nblocks) \
+	__ext4_journal_restart(__func__, (handle), (nblocks))
 static inline int ext4_journal_blocks_per_page(struct inode *inode)
 {
 	if (EXT4_JOURNAL(inode) != NULL)

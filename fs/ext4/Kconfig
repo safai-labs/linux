@@ -95,6 +95,14 @@ config EXT4_FS_SNAPSHOT
 	  supported together with 64bit and meta_bg features and the file
 	  system must be mounted with ordered journal mode.
 
+config EXT4_FS_SNAPSHOT_ROCOMPAT
+	bool "snapshot rocompat - enable rw mount"
+	depends on EXT4_FS_SNAPSHOT
+	default y
+	help
+	  Enable readwrite mount of filesystem with has_snapshot feature only
+	  if ext4 was compiled with snapshot support.
+
 config EXT4_FS_SNAPSHOT_DEBUG
 	bool "snapshot debugging support"
 	depends on EXT4_FS_SNAPSHOT

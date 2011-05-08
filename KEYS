@@ -1,5 +1,6 @@
 ctl_dump
 journal_error
+rocompat
 cleanup_merge
 cleanup_shrink
 cleanup

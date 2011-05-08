@@ -414,10 +414,8 @@ static inline int __ext4_journal_extend(const char *where,
 		credits = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits +
 			nblocks) - handle->h_buffer_credits;
 	}
-	
 	if (credits > 0)
 		err = jbd2_journal_extend((handle_t *)handle, credits);
-
 	if (EXT4_SNAPSHOTS(sb) && !err) {
 		/* update base/user credits for future extends */
 		handle->h_base_credits += nblocks;

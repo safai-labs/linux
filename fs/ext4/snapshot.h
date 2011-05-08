@@ -132,6 +132,13 @@ static inline void snapshot_size_truncate(struct inode *inode,
 	truncate_inode_pages(&inode->i_data, i_size);
 }
 
+/* Is ext4 configured for snapshots support? */
+static inline int EXT4_SNAPSHOTS(struct super_block *sb)
+{
+	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
+}
+
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK
 /*
  * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
@@ -220,6 +227,12 @@ extern int ext4_snapshot_test_and_move(const char *where,
 static inline int ext4_snapshot_get_write_access(handle_t *handle,
 		struct inode *inode, struct buffer_head *bh)
 {
+	struct super_block *sb;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
+
 	return ext4_snapshot_cow(handle, inode, bh->b_blocknr, bh, 1);
 }
 
@@ -233,7 +246,12 @@ static inline int ext4_snapshot_get_write_access(handle_t *handle,
 static inline int ext4_snapshot_get_create_access(handle_t *handle,
 		struct buffer_head *bh)
 {
+	struct super_block *sb;
 	int err;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
 
 	/* Should block be COWed? */
 	err = ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 0);
@@ -262,6 +280,8 @@ static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
 		struct super_block *sb, ext4_group_t group,
 		struct buffer_head *bh)
 {
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
 	/*
 	 * With flex_bg, block bitmap may reside in a different group than
 	 * the group it describes, so we need to init both COW bitmaps:
@@ -305,6 +325,9 @@ static inline int ext4_snapshot_get_move_access(handle_t *handle,
 						ext4_fsblk_t block,
 						int *pcount, int move)
 {
+	if (!EXT4_SNAPSHOTS(inode->i_sb))
+		return 0;
+
 	return ext4_snapshot_move(handle, inode, block, pcount, move);
 }
 
@@ -313,12 +336,12 @@ static inline int ext4_snapshot_get_move_access(handle_t *handle,
 /*
  * get_delete_access() - move blocks to snapshot or approve to free them
  * @handle:	JBD handle
- * @inode:	owner of blocks
+ * @inode:	owner of blocks if known (or NULL otherwise)
  * @block:	address of start @block
  * @pcount:	pointer to no. of blocks about to move or approve
  *
  * Called from ext4_free_blocks() before deleting blocks with
- * truncate_mutex held
+ * i_data_sem held
  *
  * Return values:
  * > 0 - blocks were moved to snapshot and may not be freed
@@ -328,6 +351,12 @@ static inline int ext4_snapshot_get_move_access(handle_t *handle,
 static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 		struct inode *inode, ext4_fsblk_t block, int *pcount)
 {
+	struct super_block *sb;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
+
 	return ext4_snapshot_move(handle, inode, block, pcount, 1);
 }
 #endif
@@ -664,13 +693,6 @@ ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
 
 
 #endif
-
-/* Is ext4 configured for snapshots support? */
-static inline int EXT4_SNAPSHOTS(struct super_block *sb)
-{
-	return EXT4_HAS_RO_COMPAT_FEATURE(sb,
-			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
-}
 
 #else /* CONFIG_EXT4_FS_SNAPSHOT */
 

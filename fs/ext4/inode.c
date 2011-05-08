@@ -176,6 +176,14 @@ int ext4_truncate_restart_trans(handle_t *handle, struct inode *inode,
 	 */
 	BUG_ON(EXT4_JOURNAL(inode) == NULL);
 	jbd_debug(2, "restarting handle %p\n", handle);
+	/*
+	 * Snapshot shrink/merge/clean do not take i_data_sem, so we cannot
+	 * release it here. Luckily, snapshot files are not writable,
+	 * so deadlock with ext4_map_blocks on writepage is impossible.
+	 * Snapshot files also don't have preallocations.
+	 */
+	if (ext4_snapshot_file(inode))
+		return ext4_journal_restart(handle, nblocks);
 	up_write(&EXT4_I(inode)->i_data_sem);
 	ret = ext4_journal_restart(handle, nblocks);
 	down_write(&EXT4_I(inode)->i_data_sem);
@@ -281,11 +289,6 @@ no_delete:
 	ext4_clear_inode(inode);	/* We must guarantee clearing of inode... */
 }
 
-typedef struct {
-	__le32	*p;
-	__le32	key;
-	struct buffer_head *bh;
-} Indirect;
 
 static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
 {
@@ -324,7 +327,7 @@ static inline void add_chain(Indirect *p, struct buffer_head *bh, __le32 *v)
  * get there at all.
  */
 
-static int ext4_block_to_path(struct inode *inode,
+int ext4_block_to_path(struct inode *inode,
 			      ext4_lblk_t i_block,
 			      ext4_lblk_t offsets[4], int *boundary)
 {
@@ -440,7 +443,7 @@ static int __ext4_check_blockref(const char *function, unsigned int line,
  *      Need to be called with
  *      down_read(&EXT4_I(inode)->i_data_sem)
  */
-static Indirect *ext4_get_branch(struct inode *inode, int depth,
+Indirect *ext4_get_branch(struct inode *inode, int depth,
 				 ext4_lblk_t  *offsets,
 				 Indirect chain[4], int *err)
 {
@@ -4679,7 +4682,7 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
  *	stored as little-endian 32-bit) and updating @inode->i_blocks
  *	appropriately.
  */
-static void ext4_free_branches(handle_t *handle, struct inode *inode,
+void ext4_free_branches(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,
 			       __le32 *first, __le32 *last, int depth)
 {

@@ -132,9 +132,9 @@ void ext4_journal_abort_handle(const char *caller, unsigned int line,
 int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 				   handle_t *handle, struct buffer_head *bh);
 
-int __ext4_journal_get_write_access(const char *where, unsigned int line,
-				    handle_t *handle, struct buffer_head *bh);
-
+int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
+					 handle_t *handle, struct inode *inode,
+					 struct buffer_head *bh, int exclude);
 int __ext4_forget(const char *where, unsigned int line, handle_t *handle,
 		  int is_metadata, struct inode *inode,
 		  struct buffer_head *bh, ext4_fsblk_t blocknr);
@@ -151,8 +151,15 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 
 #define ext4_journal_get_undo_access(handle, bh) \
 	__ext4_journal_get_undo_access(__func__, __LINE__, (handle), (bh))
+#define ext4_journal_get_write_access_exclude(handle, bh) \
+	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
+						 (handle), NULL, (bh), 1)
 #define ext4_journal_get_write_access(handle, bh) \
-	__ext4_journal_get_write_access(__func__, __LINE__, (handle), (bh))
+	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
+						 (handle), NULL, (bh), 0)
+#define ext4_journal_get_write_access_inode(handle, inode, bh) \
+	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
+						(handle), (inode), (bh), 0)
 #define ext4_forget(handle, is_metadata, inode, bh, block_nr) \
 	__ext4_forget(__func__, __LINE__, (handle), (is_metadata), (inode), \
 		      (bh), (block_nr))

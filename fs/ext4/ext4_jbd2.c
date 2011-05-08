@@ -23,13 +23,16 @@ int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 	return err;
 }
 
-int __ext4_journal_get_write_access(const char *where, unsigned int line,
-				    handle_t *handle, struct buffer_head *bh)
+int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
+					 handle_t *handle, struct inode *inode,
+					 struct buffer_head *bh, int exclude)
 {
 	int err = 0;
 
 	if (ext4_handle_valid(handle)) {
 		err = jbd2_journal_get_write_access(handle, bh);
+		if (!err && !exclude)
+			err = ext4_snapshot_get_write_access(handle, inode, bh);
 		if (err)
 			ext4_journal_abort_handle(where, line, __func__, bh,
 						  handle, err);
@@ -111,6 +114,8 @@ int __ext4_journal_get_create_access(const char *where, unsigned int line,
 
 	if (ext4_handle_valid(handle)) {
 		err = jbd2_journal_get_create_access(handle, bh);
+		if (!err)
+			err = ext4_snapshot_get_create_access(handle, bh);
 		if (err)
 			ext4_journal_abort_handle(where, line, __func__,
 						  bh, handle, err);

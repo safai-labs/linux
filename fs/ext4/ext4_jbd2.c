@@ -23,7 +23,7 @@ int __ext4_journal_get_undo_access(const char *where, unsigned int line,
 	if (ext4_handle_valid(handle)) {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_BITMAP
 		err = jbd2_journal_get_write_access(handle, bh);
-		if (EXT4_SNAPSHOTS(sb) && !err)
+		if (!err)
 			err = ext4_snapshot_get_bitmap_access(handle, sb,
 							      group, bh);
 #else
@@ -53,7 +53,7 @@ int __ext4_journal_get_write_access(const char *where, unsigned int line,
 	if (ext4_handle_valid(handle)) {
 		err = jbd2_journal_get_write_access(handle, bh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
-		if (EXT4_SNAPSHOTS(sb) && !err && !exclude)
+		if (!err && !exclude)
 			err = ext4_snapshot_get_write_access(handle, inode, bh);
 #endif
 		if (err)
@@ -147,7 +147,7 @@ int __ext4_journal_get_create_access(const char *where, unsigned int line,
 	if (ext4_handle_valid(handle)) {
 		err = jbd2_journal_get_create_access(handle, bh);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_JBD
-		if (EXT4_SNAPSHOTS(sb) && !err)
+		if (!err)
 			err = ext4_snapshot_get_create_access(handle, bh);
 #endif
 		if (err)
@@ -164,11 +164,13 @@ int __ext4_journal_get_create_access(const char *where, unsigned int line,
 int __ext4_handle_release_buffer(const char *where, handle_t *handle,
 				struct buffer_head *bh)
 {
+	struct super_block *sb;
 	int err = 0;
 
 	if (!ext4_handle_valid(handle))
 		return 0;
 
+	sb = handle->h_transaction->t_journal->j_private;
 	if (!EXT4_SNAPSHOTS(sb) || IS_COWING(handle))
 		goto out;
 

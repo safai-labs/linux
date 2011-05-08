@@ -917,8 +917,14 @@ repeat_in_this_group:
 				goto got;
 			}
 			/* we lost it */
-			ext4_handle_release_buffer(handle, inode_bitmap_bh);
-			ext4_handle_release_buffer(handle, group_desc_bh);
+			err = ext4_handle_release_buffer(handle,
+					inode_bitmap_bh);
+			if (err)
+				goto fail;
+			err = ext4_handle_release_buffer(handle,
+					group_desc_bh);
+			if (err)
+				goto fail;
 
 			if (++ino < EXT4_INODES_PER_GROUP(sb))
 				goto repeat_in_this_group;

@@ -2748,7 +2748,8 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	if (!bitmap_bh)
 		goto out_err;
 
-	err = ext4_journal_get_write_access(handle, bitmap_bh);
+	err = ext4_handle_get_bitmap_access(handle, sb, ac->ac_b_ex.fe_group,
+			bitmap_bh);
 	if (err)
 		goto out_err;
 
@@ -4545,7 +4546,7 @@ do_more:
 	}
 
 	BUFFER_TRACE(bitmap_bh, "getting write access");
-	err = ext4_journal_get_write_access(handle, bitmap_bh);
+	err = ext4_handle_get_bitmap_access(handle, sb, block_group, bitmap_bh);
 	if (err)
 		goto error_return;
 
@@ -4694,7 +4695,7 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
 	}
 
 	BUFFER_TRACE(bitmap_bh, "getting write access");
-	err = ext4_journal_get_write_access(handle, bitmap_bh);
+	err = ext4_handle_get_bitmap_access(handle, sb, block_group, bitmap_bh);
 	if (err)
 		goto error_return;
 

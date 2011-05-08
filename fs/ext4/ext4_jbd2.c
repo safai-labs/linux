@@ -9,13 +9,17 @@
 
 #include <trace/events/ext4.h>
 
-int __ext4_journal_get_undo_access(const char *where, unsigned int line,
-				   handle_t *handle, struct buffer_head *bh)
+int __ext4_handle_get_bitmap_access(const char *where, unsigned int line,
+				    handle_t *handle, struct super_block *sb,
+				    ext4_group_t group, struct buffer_head *bh)
 {
 	int err = 0;
 
 	if (ext4_handle_valid(handle)) {
-		err = jbd2_journal_get_undo_access(handle, bh);
+		err = jbd2_journal_get_write_access(handle, bh);
+		if (!err)
+			err = ext4_snapshot_get_bitmap_access(handle, sb,
+							      group, bh);
 		if (err)
 			ext4_journal_abort_handle(where, line, __func__, bh,
 						  handle, err);

@@ -28,6 +28,7 @@
 #include "ext4_jbd2.h"
 #include "xattr.h"
 #include "acl.h"
+#include "snapshot.h"
 
 #include <trace/events/ext4.h>
 

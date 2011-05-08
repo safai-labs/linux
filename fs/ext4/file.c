@@ -28,6 +28,7 @@
 #include "ext4_jbd2.h"
 #include "xattr.h"
 #include "acl.h"
+#include "snapshot.h"
 
 /*
  * Called when an inode is released. Note that this is different

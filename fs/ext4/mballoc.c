@@ -25,6 +25,7 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <trace/events/ext4.h>
+#include "snapshot.h"
 
 /*
  * MUSTDO:

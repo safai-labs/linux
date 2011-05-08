@@ -83,3 +83,14 @@ config EXT4_DEBUG
 
 	  If you select Y here, then you will be able to turn on debugging
 	  with a command such as "echo 1 > /sys/kernel/debug/ext4/mballoc-debug"
+
+config EXT4_FS_SNAPSHOT
+	bool "EXT4 snapshots (Experimental)"
+	depends on EXT4_FS && EXPERIMENTAL
+	default n
+	help
+	  Built-in snapshots support for ext4.
+	  Requires that the filesystem has the has_snapshot and exclude_bitmap
+	  features and that block size is equal to system page size.
+	  Snapshots are not supported with 64bit and meta_bg features and the
+	  filesystem must be mounted with ordered data mode.

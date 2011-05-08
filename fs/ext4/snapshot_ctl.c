@@ -432,7 +432,7 @@ out:
 
 /*
  * If we have fewer than nblocks credits,
- * extend transaction by a minimum of EXT4_MAX_TRANS_DATA.
+ * extend transaction by at most EXT4_MAX_TRANS_DATA.
  * If that fails, restart the transaction &
  * regain write access for the inode block.
  */

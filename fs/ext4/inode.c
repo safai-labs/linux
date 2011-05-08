@@ -835,7 +835,8 @@ static int ext4_alloc_branch_cow(handle_t *handle, struct inode *inode,
 		branch[n].bh = bh;
 		lock_buffer(bh);
 		BUFFER_TRACE(bh, "call get_create_access");
-		err = ext4_journal_get_create_access(handle, bh);
+		if (!SNAPMAP_ISSYNC(flags))
+			err = ext4_journal_get_create_access(handle, bh);
 		if (err) {
 			/* Don't brelse(bh) here; it's done in
 			 * ext4_journal_forget() below */
@@ -862,7 +863,21 @@ static int ext4_alloc_branch_cow(handle_t *handle, struct inode *inode,
 		unlock_buffer(bh);
 
 		BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
-		err = ext4_handle_dirty_metadata(handle, inode, bh);
+		/*
+		 * When accessing a block group for the first time, the
+		 * block bitmap is the first block to be copied to the
+		 * snapshot.  We don't want to reserve journal credits for
+		 * the indirect blocks that map the bitmap copy (the COW
+		 * bitmap), so instead of writing through the journal, we
+		 * sync the indirect blocks directly to disk.  Of course,
+		 * this is not good for performance but it only happens once
+		 * per snapshot/blockgroup.
+		 */
+		if (SNAPMAP_ISSYNC(flags)) {
+			mark_buffer_dirty(bh);
+			sync_dirty_buffer(bh);
+		} else
+			err = ext4_handle_dirty_metadata(handle, inode, bh);
 		if (err)
 			goto failed;
 	}
@@ -871,6 +886,9 @@ static int ext4_alloc_branch_cow(handle_t *handle, struct inode *inode,
 failed:
 	/* Allocation failed, free what we already allocated */
 	ext4_free_blocks(handle, inode, NULL, new_blocks[0], 1, 0);
+	/* If we bypassed journal, we don't need to forget any block */
+	if (SNAPMAP_ISSYNC(flags))
+		n = 1;
 	for (i = 1; i <= n ; i++) {
 		/*
 		 * branch[i].bh is newly allocated, so there is no
@@ -966,13 +984,18 @@ static int ext4_splice_branch_cow(handle_t *handle, struct inode *inode,
 
 err_out:
 	for (i = 1; i <= num; i++) {
+		int forget = EXT4_FREE_BLOCKS_FORGET;
+
+		/* If we bypassed journal, we don't need to forget */
+		if (SNAPMAP_ISSYNC(flags))
+			forget = 0;
+
 		/*
 		 * branch[i].bh is newly allocated, so there is no
 		 * need to revoke the block, which is why we don't
 		 * need to set EXT4_FREE_BLOCKS_METADATA.
 		 */
-		ext4_free_blocks(handle, inode, where[i].bh, 0, 1,
-				 EXT4_FREE_BLOCKS_FORGET);
+		ext4_free_blocks(handle, inode, where[i].bh, 0, 1, forget);
 	}
 	if (SNAPMAP_ISMOVE(flags))
 		/* don't charge snapshot file owner if move failed */

@@ -1603,8 +1603,8 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
 
 	map.m_lblk = block;
 	map.m_len = 1;
-	err = ext4_map_blocks(handle, inode, &map,
-			      create ? EXT4_GET_BLOCKS_CREATE : 0);
+	/* passing SNAPMAP flags on create argument */
+	err = ext4_map_blocks(handle, inode, &map, create);
 
 	if (err < 0)
 		*errp = err;

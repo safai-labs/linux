@@ -544,6 +544,16 @@ struct ext4_new_group_data {
 	 * if EXT4_GET_BLOCKS_CREATE is not set, return REMAP flags.
 	 */
 #define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
+/*
+ * snapshot_map_blocks() flags passed to ext4_map_blocks() for mapping
+ * blocks to snapshot.
+ */
+	/* handle COW race conditions */
+#define EXT4_GET_BLOCKS_COW			0x200
+	/* allocate only indirect blocks */
+#define EXT4_GET_BLOCKS_MOVE			0x400
+	/* bypass journal and sync allocated indirect blocks directly to disk */
+#define EXT4_GET_BLOCKS_SYNC			0x800
 
 /*
  * Flags used by ext4_free_blocks

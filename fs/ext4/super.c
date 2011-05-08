@@ -2329,7 +2329,7 @@ static loff_t ext4_max_bitmap_size(int bits, int has_huge_files)
 
 	res += 1LL << (bits-2);
 	res += 1LL << (2*(bits-2));
-	res += 1LL << (3*(bits-2));
+	res += (1LL + EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS) << (3*(bits-2));
 	res <<= bits;
 	if (res > upper_limit)
 		res = upper_limit;
@@ -3300,6 +3300,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	has_huge_files = EXT4_HAS_RO_COMPAT_FEATURE(sb,
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE);
+	if (EXT4_SNAPSHOTS(sb))
+		/* Snapshot files are huge files */
+		has_huge_files = 1;
 	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits,
 						      has_huge_files);
 	sb->s_maxbytes = ext4_max_size(sb->s_blocksize_bits, has_huge_files);

@@ -320,6 +320,19 @@ struct flex_groups {
 #define	EXT4_DIND_BLOCK			(EXT4_IND_BLOCK + 1)
 #define	EXT4_TIND_BLOCK			(EXT4_DIND_BLOCK + 1)
 #define	EXT4_N_BLOCKS			(EXT4_TIND_BLOCK + 1)
+/*
+ * Snapshot files have different indirection mapping that can map up to 2^32
+ * logical blocks, so they can cover the mapped filesystem block address space.
+ * Ext4 must use either 4K or 8K blocks (depending on PAGE_SIZE).
+ * With 8K blocks, 1 triple indirect block maps 2^33 logical blocks.
+ * With 4K blocks (the system default), each triple indirect block maps 2^30
+ * logical blocks, so 4 triple indirect blocks map 2^32 logical blocks.
+ * Snapshot files in small filesystems (<= 4G), use only 1 double indirect
+ * block to map the entire filesystem.
+ */
+#define	EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS	3
+#define	EXT4_SNAPSHOT_N_BLOCKS		(EXT4_TIND_BLOCK + 1 + \
+					 EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS)
 
 /*
  * Inode flags

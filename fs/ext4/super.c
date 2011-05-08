@@ -324,6 +324,8 @@ int __ext4_journal_stop(const char *where, unsigned int line, handle_t *handle)
 	int err;
 	int rc;
 
+	ext4_journal_trace(SNAP_WARN, where, handle, 0);
+
 	if (!ext4_handle_valid(handle)) {
 		ext4_put_nojournal(handle);
 		return 0;

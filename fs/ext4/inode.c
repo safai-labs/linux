@@ -676,6 +676,11 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 			new_blocks[index++] = current_block++;
 			count--;
 		}
+		if (blks == 0 && target == 0) {
+			/* mapping data blocks */
+			*err = 0;
+			return 0;
+		}
 		if (count > 0) {
 			/*
 			 * save the new block number
@@ -777,10 +782,10 @@ failed_out:
  *	ext4_alloc_block() (normally -ENOSPC). Otherwise we set the chain
  *	as described above and return 0.
  */
-static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
-			     ext4_lblk_t iblock, int indirect_blks,
-			     int *blks, ext4_fsblk_t goal,
-			     ext4_lblk_t *offsets, Indirect *branch)
+static int ext4_alloc_branch_cow(handle_t *handle, struct inode *inode,
+			ext4_fsblk_t iblock, int indirect_blks,
+				  int *blks, ext4_fsblk_t goal,
+				  int *offsets, Indirect *branch, int flags)
 {
 	int blocksize = inode->i_sb->s_blocksize;
 	int i, n = 0;
@@ -790,6 +795,22 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 	ext4_fsblk_t new_blocks[4];
 	ext4_fsblk_t current_block;
 
+	if (SNAPMAP_ISMOVE(flags)) {
+		/* mapping snapshot block to block device block */
+		current_block = SNAPSHOT_BLOCK(iblock);
+		num = 0;
+		if (indirect_blks > 0) {
+			/* allocating only indirect blocks */
+			ext4_alloc_blocks(handle, inode, iblock, goal,
+					  indirect_blks, 0, new_blocks, &err);
+			if (err)
+				return err;
+		}
+		/* charge snapshot file owner for moved blocks */
+		dquot_alloc_block_nofail(inode, *blks);
+		num = *blks;
+		new_blocks[indirect_blks] = current_block;
+	} else
 	num = ext4_alloc_blocks(handle, inode, iblock, goal, indirect_blks,
 				*blks, new_blocks, &err);
 	if (err)
@@ -861,8 +882,11 @@ failed:
 	}
 	for (i = n+1; i < indirect_blks; i++)
 		ext4_free_blocks(handle, inode, NULL, new_blocks[i], 1, 0);
-
-	ext4_free_blocks(handle, inode, NULL, new_blocks[i], num, 0);
+	if (SNAPMAP_ISMOVE(flags) && num > 0)
+		/* don't charge snapshot file owner if move failed */
+		dquot_free_block(inode, num);
+	else if (num > 0)
+		ext4_free_blocks(handle, inode, NULL, new_blocks[i], num, 0);
 
 	return err;
 }
@@ -882,9 +906,8 @@ failed:
  * inode (->i_blocks, etc.). In case of success we end up with the full
  * chain to new block and return 0.
  */
-static int ext4_splice_branch(handle_t *handle, struct inode *inode,
-			      ext4_lblk_t block, Indirect *where, int num,
-			      int blks)
+static int ext4_splice_branch_cow(handle_t *handle, struct inode *inode,
+		long block, Indirect *where, int num, int blks, int flags)
 {
 	int i;
 	int err = 0;
@@ -951,8 +974,12 @@ err_out:
 		ext4_free_blocks(handle, inode, where[i].bh, 0, 1,
 				 EXT4_FREE_BLOCKS_FORGET);
 	}
-	ext4_free_blocks(handle, inode, NULL, le32_to_cpu(where[num].key),
-			 blks, 0);
+	if (SNAPMAP_ISMOVE(flags))
+		/* don't charge snapshot file owner if move failed */
+		dquot_free_block(inode, blks);
+	else
+		ext4_free_blocks(handle, inode, NULL,
+				 le32_to_cpu(where[num].key), blks, 0);
 
 	return err;
 }
@@ -1099,9 +1126,11 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	/*
 	 * Block out ext4_truncate while we alter the tree
 	 */
-	err = ext4_alloc_branch(handle, inode, map->m_lblk, indirect_blks,
-				&count, goal,
-				offsets + (partial - chain), partial);
+	err = ext4_alloc_branch_cow(handle, inode, map->m_lblk, indirect_blks,
+				     &count, goal, offsets + (partial - chain),
+				     partial, flags);
+	if (err)
+		goto cleanup;
 
 	if (map->m_flags & EXT4_MAP_REMAP) {
 		map->m_len = count;
@@ -1127,9 +1156,8 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	 * credits cannot be returned.  Can we handle this somehow?  We
 	 * may need to return -EAGAIN upwards in the worst case.  --sct
 	 */
-	if (!err)
-		err = ext4_splice_branch(handle, inode, map->m_lblk,
-					 partial, indirect_blks, count);
+	err = ext4_splice_branch_cow(handle, inode, map->m_lblk, partial,
+				     indirect_blks, count, flags);
 	if (err)
 		goto cleanup;
 

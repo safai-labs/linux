@@ -420,6 +420,24 @@ static inline int mb_find_next_bit(void *addr, int max, int start)
 	return ret;
 }
 
+/*
+ * Find the largest range of set or clear bits.
+ * Return 1 for set bits and 0 for clear bits.
+ * Set *pcount to number of bits in range.
+ */
+int ext4_mb_test_bit_range(int bit, void *addr, int *pcount)
+{
+	int i, ret;
+
+	ret = mb_test_bit(bit, addr);
+	if (ret)
+		i = mb_find_next_zero_bit(addr, bit + *pcount, bit);
+	else
+		i = mb_find_next_bit(addr, bit + *pcount, bit);
+	*pcount = i - bit;
+	return ret ? 1 : 0;
+}
+
 static void *mb_find_buddy(struct ext4_buddy *e4b, int order, int *max)
 {
 	char *bb;

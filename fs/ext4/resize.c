@@ -673,7 +673,15 @@ static void update_backups(struct super_block *sb,
 		    (err = ext4_journal_restart(handle, EXT4_MAX_TRANS_DATA)))
 			break;
 
-		bh = sb_getblk(sb, group * bpg + blk_off);
+		if (ext4_snapshot_has_active(sb))
+			/*
+			 * test_and_cow() expects an uptodate buffer.
+			 * Read the buffer here to suppress the
+			 * "non uptodate buffer" warning.
+			 */
+			bh = sb_bread(sb, group * bpg + blk_off);
+		else
+			bh = sb_getblk(sb, group * bpg + blk_off);
 		if (!bh) {
 			err = -EIO;
 			break;

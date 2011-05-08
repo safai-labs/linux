@@ -18,6 +18,7 @@
 #include <linux/version.h>
 #include <linux/delay.h>
 #include "ext4.h"
+#include "snapshot_debug.h"
 
 
 /*
@@ -109,6 +110,14 @@
 static inline void snapshot_size_extend(struct inode *inode,
 			ext4_fsblk_t blocks)
 {
+#ifdef CONFIG_EXT4_DEBUG
+	ext4_fsblk_t old_blocks = SNAPSHOT_PROGRESS(inode);
+	ext4_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
+
+	/* sleep total of tunable delay unit over 100% progress */
+	snapshot_test_delay_progress(SNAPTEST_DELETE,
+			old_blocks, blocks, max_blocks);
+#endif
 	i_size_write((inode), (loff_t)(blocks) << SNAPSHOT_BLOCK_SIZE_BITS);
 }
 

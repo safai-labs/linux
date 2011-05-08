@@ -2658,10 +2658,13 @@ static void __init ext4_create_debugfs_entry(void)
 						  S_IRUGO | S_IWUSR,
 						  debugfs_dir,
 						  &mb_enable_debug);
+	if (debugfs_dir)
+		ext4_snapshot_create_debugfs_entry(debugfs_dir);
 }
 
 static void ext4_remove_debugfs_entry(void)
 {
+	ext4_snapshot_remove_debugfs_entry();
 	debugfs_remove(debugfs_debug);
 	debugfs_remove(debugfs_dir);
 }

@@ -1373,6 +1373,16 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 			return ret;
 	}
 
+	if (retval > 0 && (map->m_flags & EXT4_MAP_REMAP) &&
+	    (flags & EXT4_GET_BLOCKS_PRE_IO)) {
+		/*
+		 * If mow is needed on the requested block and
+		 * request comes from async-direct-io-write path,
+		 * we return an unmapped buffer to fall back to buffered I/O.
+		 */
+		map->m_flags &= ~EXT4_MAP_MAPPED;
+		return 0;
+	}
 	/* If it is only a block(s) look up */
 	if ((flags & EXT4_GET_BLOCKS_CREATE) == 0)
 		return retval;
@@ -3654,6 +3664,29 @@ static int ext4_releasepage(struct page *page, gfp_t wait)
 }
 
 /*
+ * ext4_get_block_dio used when preparing for a DIO write
+ * to indirect mapped files with snapshots.
+ */
+int ext4_get_block_dio_write(struct inode *inode, sector_t iblock,
+		   struct buffer_head *bh, int create)
+{
+	int flags = EXT4_GET_BLOCKS_CREATE;
+
+	/*
+	 * DIO_SKIP_HOLES may ask to map direct I/O write with create=0,
+	 * but we know this is a write, so we need to check if block
+	 * needs to be moved to snapshot and fall back to buffered I/O.
+	 * ext4_map_blocks() will return an unmapped buffer if block
+	 * is not allocated or if it needs to be moved to snapshot.
+	 */
+	if (ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE|
+			EXT4_GET_BLOCKS_PRE_IO;
+
+	return _ext4_get_block(inode, iblock, bh, flags);
+}
+
+/*
  * O_DIRECT for ext3 (or indirect map) based files
  *
  * If the O_DIRECT write will extend the file then add this inode to the
@@ -3708,6 +3741,16 @@ retry:
 		ret = blockdev_direct_IO(rw, iocb, inode,
 				 inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,
+				 /*
+				  * snapshots code gets here for DIO write
+				  * to ind mapped files or outside i_size
+				  * of extent mapped files and for DIO read
+				  * to all files.
+				  * XXX: isn't it possible to expose stale data
+				  *      on DIO read to newly allocated ind map
+				  *      blocks or newly MOWed blocks?
+				  */
+				 (rw == WRITE) ? ext4_get_block_dio_write :
 				 ext4_get_block, NULL);
 
 		if (unlikely((rw & WRITE) && ret < 0)) {
@@ -3769,10 +3812,13 @@ out:
 static int ext4_get_block_write(struct inode *inode, sector_t iblock,
 		   struct buffer_head *bh_result, int create)
 {
+	int flags = EXT4_GET_BLOCKS_IO_CREATE_EXT;
+
 	ext4_debug("ext4_get_block_write: inode %lu, create flag %d\n",
 		   inode->i_ino, create);
-	return _ext4_get_block(inode, iblock, bh_result,
-			       EXT4_GET_BLOCKS_IO_CREATE_EXT);
+	if (ext4_snapshot_should_move_data(inode))
+		flags |= EXT4_GET_BLOCKS_MOVE_ON_WRITE;
+	return _ext4_get_block(inode, iblock, bh_result, flags);
 }
 
 static void ext4_end_io_dio(struct kiocb *iocb, loff_t offset,

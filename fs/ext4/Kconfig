@@ -89,11 +89,11 @@ config EXT4_FS_SNAPSHOT
 	depends on EXT4_FS && EXPERIMENTAL
 	default n
 	help
-	  Built-in snapshots support for ext4.  Requires the features
-	  has_snapshot and exclude_bitmap and requires that block size
-	  is equal to system page size.  The has_snapshot feature is not
-	  supported together with 64bit and meta_bg features and the file
-	  system must be mounted with ordered journal mode.
+	  Built-in snapshots support for ext4.
+	  Requires that the filesystem has the has_snapshot and exclude_bitmap
+	  features and that block size is equal to system page size.
+	  Snapshots are not supported with 64bit and meta_bg features and the
+	  filesystem must be mounted with ordered data mode.
 
 config EXT4_FS_SNAPSHOT_ROCOMPAT
 	bool "snapshot rocompat - enable rw mount"

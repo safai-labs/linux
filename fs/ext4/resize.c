@@ -753,6 +753,12 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
 	gdb_num = input->group / EXT4_DESC_PER_BLOCK(sb);
 	gdb_off = input->group % EXT4_DESC_PER_BLOCK(sb);
 
+	if (EXT4_HAS_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+		ext4_warning(sb, "Can't resize filesystem with exclude bitmap");
+		return -ENOTSUPP;
+	}
+
 	if (gdb_off == 0 && !EXT4_HAS_RO_COMPAT_FEATURE(sb,
 					EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER)) {
 		ext4_warning(sb, "Can't resize non-sparse filesystem further");

@@ -899,7 +899,7 @@ static int ext4_snapshot_is_bitmap(struct super_block *sb,
 	ext4_group_t group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_group_t ngroups = ext4_get_groups_count(sb);
 	int flex_groups = ext4_flex_bg_size(EXT4_SB(sb));
-	int i, is_bitmap;
+	int i, is_bitmap = 0;
 
 	/*
 	 * When block is in the first block group of a flex group, we need to

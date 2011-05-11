@@ -2814,6 +2814,18 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 				"must run fsck -xy to make it writable.");
 			return 0;
 		}
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_ROCOMPAT
+	} else if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
+			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT)) {
+		/*
+		 * We get here when CONFIG_EXT4_FS_SNAPSHOT is not defined
+		 * so EXT4_SNAPSHOTS(sb) is defined to (0)
+		 */
+		ext4_msg(sb, KERN_ERR,
+			"Filesystem with has_snapshot feature cannot be "
+			"mounted RDWR without CONFIG_EXT4_FS_SNAPSHOT");
+		return 0;
+#endif
 	}
 #endif
 	return 1;

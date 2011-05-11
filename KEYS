@@ -1,3 +1,6 @@
+ctl_dump
+journal_error
+rocompat
 cleanup_merge
 cleanup_shrink
 cleanup
@@ -12,8 +15,6 @@ journal_cache
 journal_bypass
 journal_release
 journal_credits
-journal_error
-ctl_dump
 ctl_reserve
 ctl_fix
 ctl_init

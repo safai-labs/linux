@@ -706,7 +706,7 @@ ext4_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
 static inline void ext4_snapshot_cow_begin(handle_t *handle)
 {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
-	if (!EXT4_SNAPSHOT_HAS_TRANS_BLOCKS(handle, 1)) {
+	if (!ext4_handle_has_enough_credits(handle, 1)) {
 		/*
 		 * The test above is based on lower limit heuristics of
 		 * user_credits/buffer_credits, which is not always accurate,

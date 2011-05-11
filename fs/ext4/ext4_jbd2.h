@@ -479,9 +479,13 @@ static inline int __ext4_journal_extend(const char *where,
 	if (!ext4_handle_valid((handle_t *)handle))
 		return 0;
 
+	credits = nblocks;
 	sb = handle->h_transaction->t_journal->j_private;
-	credits = EXT4_SNAPSHOTS(sb) ?
-		  EXT4_SNAPSHOT_TRANS_BLOCKS(nblocks) : nblocks;
+	if (EXT4_SNAPSHOTS(sb)) {
+		credits = EXT4_SNAPSHOT_TRANS_BLOCKS(handle->h_user_credits +
+			nblocks) - handle->h_buffer_credits;
+	}
+	
 	/* extend transaction to keep buffer credits above lower limit */
 	if (credits > 0) {
 		err = jbd2_journal_extend((handle_t *)handle, credits);
@@ -512,7 +516,7 @@ static inline int __ext4_journal_restart(const char *where,
 
 	sb = handle->h_transaction->t_journal->j_private;
 	credits = EXT4_SNAPSHOTS(sb) ?
-		  EXT4_SNAPSHOT_TRANS_BLOCKS(nblocks) : nblocks;
+		  EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks) : nblocks;
 	err = jbd2_journal_restart((handle_t *)handle, credits);
 	if (EXT4_SNAPSHOTS(sb) && !err) {
 		handle->h_base_credits = nblocks;

@@ -1,7 +1,7 @@
 #!/bin/sh
 # strip fake ifdefs from ext4-snapshots branch
 
-ORIGIN=v2.6.38
+ORIGIN=ext4-stable
 BASE=ext4-next
 PATCH=ext4_snapshots.patch
 BIGPATCH=ext4_snapshots+.patch

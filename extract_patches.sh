@@ -1,6 +1,6 @@
 #!/bin/sh
 BASE=ext4-next
-REBASE=alloc_semp
+REBASE=ext4-dev
 export RBRANCH=extract_reverse_patches
 export BRANCH=extract_patches
 export QBRANCH=for-ext4

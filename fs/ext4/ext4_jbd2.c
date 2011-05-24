@@ -164,12 +164,14 @@ int __ext4_journal_get_create_access(const char *where, unsigned int line,
 int __ext4_handle_release_buffer(const char *where, handle_t *handle,
 				struct buffer_head *bh)
 {
+	struct super_block *sb;
 	int err = 0;
 
 	if (!ext4_handle_valid(handle))
 		return 0;
 
-	if (IS_COWING(handle))
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb) || IS_COWING(handle))
 		goto out;
 
 	/*

@@ -40,9 +40,8 @@ for key in $( cat keys ) ; do
 	NO=`expr $NO + 1`
 done
 
-#NO=`expr $NO - 1`
-#git checkout $BRANCH
-git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$QBRANCH/ $BASE..$BRANCH || exit 1
+# exclude journal_error and ctl_dump debug patches from snapshot patch series
+git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$QBRANCH/ $BASE..$BRANCH~2 || exit 1
 
 # re-create the branch from rebase head
 (git branch | grep $QBRANCH) && (git branch -D $QBRANCH || exit 1)
@@ -50,5 +49,7 @@ git checkout -b $QBRANCH $REBASE || exit 1
 
 # try to apply all patch queue
 guilt-push -a
-
+# exclude journal_error and ctl_dump debug patches from snapshot patch series
+guilt-pop
+guilt-pop
 

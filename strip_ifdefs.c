@@ -245,12 +245,13 @@ int main(int argc, char *argv[])
 				continue;
 			if (debug && strip < 0 && strstr(line, "snapshot_debug.o"))
 				continue;
-			/* strip default config options */
+			/* strip default config options *
 			if (!key && strip > 0 &&
 					(strstr(line+14, "?=") ||
 					!strncmp(line, "if", 2) ||
 					!strncmp(line, "endif", 5)))
 				continue;
+			*/
 		} else if (!strncmp(line, " *", 2) || !strncmp(line, "*/", 2)) {
 			if (!key && strip < 0) {
 				if (!hold && !strncmp(line, " *\n", 3)) {

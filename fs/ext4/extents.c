@@ -3153,6 +3153,66 @@ out2:
 	return err ? err : allocated;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+/*
+ * Move oldblocks to snapshot and newblocks to the file.
+ */
+static int ext4_ext_move_to_snapshot(handle_t *handle, struct inode *inode,
+				     struct ext4_map_blocks *map,
+				     struct ext4_ext_path *path,
+				     ext4_fsblk_t oldblock,
+				     ext4_fsblk_t newblock,
+				     int len, int flags)
+{
+	struct ext4_extent *ex;
+	int err, depth;
+
+	map->m_len = len;
+	err = ext4_snapshot_get_move_access(handle, inode,
+			oldblock, &map->m_len, 1);
+	if (err <= 0 || map->m_len != len) {
+		/* failed to move to snapshot - abort! */
+		err = err ? : -EIO;
+		ext4_journal_abort_handle(__func__, __LINE__,
+				"ext4_snapshot_get_move_access", NULL,
+				handle, err);
+	} else {
+		/*
+		 * Move to snapshot successfully.
+		 * TODO merge extent after finishing MOW
+		 */
+		err = ext4_split_extent(handle, inode, path, map, 0,
+					flags | EXT4_GET_BLOCKS_PRE_IO);
+		if (err < 0)
+			goto out;
+
+		/* extent tree may be changed. */
+		depth = ext_depth(inode);
+		ext4_ext_drop_refs(path);
+		path = ext4_ext_find_extent(inode, map->m_lblk, path);
+		if (IS_ERR(path)) {
+			err = PTR_ERR(path);
+			goto out;
+		}
+
+		/* just verify splitting. */
+		ex = path[depth].p_ext;
+		BUG_ON(le32_to_cpu(ex->ee_block) != map->m_lblk ||
+		       ext4_ext_get_actual_len(ex) != map->m_len);
+
+		err = ext4_ext_get_access(handle, inode, path + depth);
+		if (!err) {
+			/* splice new blocks to the inode*/
+			ext4_ext_store_pblock(ex, newblock);
+			err = ext4_ext_dirty(handle, inode,
+					     path + depth);
+		}
+	}
+
+out:
+	return err;
+}
+#endif
 /*
  * Block allocation/map/preallocation routine for extents based files
  *
@@ -3445,51 +3505,9 @@ found:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	if (oldblock) {
-		/*
-		 * Move oldblocks to snapshot.
-		 */
-		map->m_len = ar.len;
-		err = ext4_snapshot_get_move_access(handle, inode,
-				oldblock, &map->m_len, 1);
-		if (err <= 0 || map->m_len < ar.len) {
-			/* failed to move to snapshot - abort! */
-			err = err ? : -EIO;
-			ext4_journal_abort_handle(__func__, __LINE__,
-					"ext4_snapshot_get_move_access", NULL,
-					handle, err);
-		} else {
-			/*
-			 * Move to snapshot successfully.
-			 * TODO merge extent after finishing MOW
-			 */
-			err = ext4_split_extent(handle, inode, path, map, 0,
-						flags | EXT4_GET_BLOCKS_PRE_IO);
-			if (err < 0)
-				goto out;
-
-			/* extent tree may be changed. */
-			depth = ext_depth(inode);
-			ext4_ext_drop_refs(path);
-			path = ext4_ext_find_extent(inode, map->m_lblk, path);
-			if (IS_ERR(path)) {
-				err = PTR_ERR(path);
-				goto out;
-			}
-
-			/* just verify splitting. */
-			ex = path[depth].p_ext;
-			BUG_ON(le32_to_cpu(ex->ee_block) != map->m_lblk ||
-			       ext4_ext_get_actual_len(ex) != map->m_len);
-
-			err = ext4_ext_get_access(handle, inode, path + depth);
-			if (!err) {
-				/* splice new blocks to the inode*/
-				ext4_ext_store_pblock(ex, newblock);
-				err = ext4_ext_dirty(handle, inode,
-						     path + depth);
-			}
-		}
-
+		BUG_ON(!(flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE));
+		err = ext4_ext_move_to_snapshot(handle, inode, map, path,
+					oldblock, newblock, ar.len, flags);
 	} else
 		err = ext4_ext_insert_extent(handle, inode,
 					     path, &newex, flags);

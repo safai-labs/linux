@@ -13,5 +13,6 @@ mv ext4_extents.h ext4dev_extents.h
 mv ext4_jbd2.h ext4dev_jbd2.h
 mv ext4_jbd2.c ext4dev_jbd2.c
 mv ext4.h ext4dev.h
-cd -
-sed -f ext4dev.sed -i fs/ext4dev/*
+sed -f ../../ext4dev.sed -i *
+cd ..
+tar cfz ../ext4dev_module.tar.gz ext4dev/

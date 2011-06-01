@@ -6178,7 +6178,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
 		/* prevent size modification of snapshot files */
 		if (ext4_snapshot_file(inode) && attr->ia_size != 0) {
-			snapshot_debug(1, "snapshot file (%lu) only can be "
+			snapshot_debug(1, "snapshot file (%lu) can only be "
 					"truncated to 0!\n", inode->i_ino);
 			return -EPERM;
 		}

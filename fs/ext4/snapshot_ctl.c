@@ -103,12 +103,9 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 			if (unlikely(jinode != NULL))
 				jbd2_free_inode(jinode);
 		}
-		/*
-		 * ACTIVE && !LIST is an illegal state, so set these
-		 * 2 flags together.
-		 */
-		ext4_set_snapstate_flags(inode, 1UL<<EXT4_SNAPSTATE_ACTIVE |
-						1UL<<EXT4_SNAPSTATE_LIST);
+		/* ACTIVE implies LIST */
+		ext4_set_inode_snapstate(inode, EXT4_SNAPSTATE_LIST);
+		ext4_set_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE);
 		snapshot_debug(1, "snapshot (%u) activated\n",
 			       inode->i_generation);
 	}
@@ -1467,7 +1464,10 @@ static int ext4_snapshot_remove(struct inode *inode)
 	 * have the SNAPFILE and SNAPFILE_DELETED persistent flags to indicate
 	 * this is a deleted snapshot that should not be recycled.
 	 */
-	ext4_clear_snapstate_flags(inode, EXT4_SNAPSTATE_MASK);
+	ext4_clear_inode_snapstate(inode, EXT4_SNAPSTATE_LIST);
+	ext4_clear_inode_snapstate(inode, EXT4_SNAPSTATE_ENABLED);
+	ext4_clear_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE);
+	ext4_clear_inode_snapstate(inode, EXT4_SNAPSTATE_INUSE);
 
 out_handle:
 	ret = ext4_journal_stop(handle);
@@ -2042,13 +2042,11 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 
 	BUG_ON(read_only && cleanup);
 	if (active_snapshot) {
-		/*
-		 * ACTIVE && !LIST is an illegal state, so set these
-		 * 2 flags together.
-		 */
-		ext4_set_snapstate_flags(active_snapshot,
-				1UL<<EXT4_SNAPSTATE_ACTIVE |
-				1UL<<EXT4_SNAPSTATE_LIST);
+		/* ACTIVE implies LIST */
+		ext4_set_inode_snapstate(active_snapshot,
+					EXT4_SNAPSTATE_LIST);
+		ext4_set_inode_snapstate(active_snapshot,
+					EXT4_SNAPSTATE_ACTIVE);
 	}
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST

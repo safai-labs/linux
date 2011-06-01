@@ -5232,15 +5232,6 @@ void ext4_truncate(struct inode *inode)
 	ext4_lblk_t last_block;
 	unsigned blocksize = inode->i_sb->s_blocksize;
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	/* prevent partial truncate of snapshot files */
-	if (ext4_snapshot_file(inode) && inode->i_size != 0) {
-		snapshot_debug(1, "snapshot file (%lu) cannot be partly "
-				"truncated!\n", inode->i_ino);
-		return;
-	}
-
-#endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_PERM
 	/* prevent truncate of files on snapshot list */
 	if (ext4_snapshot_list(inode)) {
@@ -6184,6 +6175,14 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 	}
 
 	if (attr->ia_valid & ATTR_SIZE) {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+		/* prevent size modification of snapshot files */
+		if (ext4_snapshot_file(inode) && attr->ia_size != 0) {
+			snapshot_debug(1, "snapshot file (%lu) only can be "
+					"truncated to 0!\n", inode->i_ino);
+			return -EPERM;
+		}
+#endif
 		if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))) {
 			struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
 

@@ -802,7 +802,7 @@ alloc_inode_blocks:
 	count = 1;
 	if (imap_blk == bmap_blk + 1)
 		count++;
-	if (inode_blk == imap_blk + 1)
+	if ((count > 1) && (inode_blk == imap_blk + 1))
 		count++;
 	/* try to allocate all blocks at once */
 	err = ext4_snapshot_map_blocks(handle, inode,

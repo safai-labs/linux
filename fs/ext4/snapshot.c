@@ -933,7 +933,8 @@ out:
  * @move:	if false, only test if @block needs to be moved
  *
  * Return values:
- * > 0 - blocks  were (or needs to be) moved to snapshot
+ * > 0 - blocks a) were moved to snapshot for @move = 1;
+ *		b) needs to be moved for @move = 0
  * = 0 - blocks dont need to be moved
  * < 0 - error
  */

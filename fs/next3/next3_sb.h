@@ -64,6 +64,9 @@ struct next3_sb_info {
 	unsigned long s_groups_count;	/* Number of groups in the fs */
 	unsigned long s_overhead_last;  /* Last calculated overhead */
 	unsigned long s_blocks_last;    /* Last seen block count */
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	loff_t s_bitmap_maxbytes;	/* max bytes for bitmap files */
+#endif
 	struct buffer_head * s_sbh;	/* Buffer containing the super block */
 	struct next3_super_block * s_es;	/* Pointer to the super block in the buffer */
 	struct buffer_head ** s_group_desc;

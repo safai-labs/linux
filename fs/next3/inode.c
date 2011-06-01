@@ -314,7 +314,11 @@ static int verify_chain(Indirect *from, Indirect *to)
  */
 
 static int next3_block_to_path(struct inode *inode,
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+			__u32 i_block, int offsets[4], int *boundary)
+#else
 			long i_block, int offsets[4], int *boundary)
+#endif
 {
 	int ptrs = NEXT3_ADDR_PER_BLOCK(inode->i_sb);
 	int ptrs_bits = NEXT3_ADDR_PER_BLOCK_BITS(inode->i_sb);
@@ -327,9 +331,13 @@ static int next3_block_to_path(struct inode *inode,
 	int tind;
 #endif
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	if (i_block < direct_blocks) {
+#else
 	if (i_block < 0) {
 		next3_warning (inode->i_sb, "next3_block_to_path", "block < 0");
 	} else if (i_block < direct_blocks) {
+#endif
 		offsets[n++] = i_block;
 		final = direct_blocks;
 	} else if ( (i_block -= direct_blocks) < indirect_blocks) {
@@ -3834,15 +3842,6 @@ void next3_truncate(struct inode *inode)
 	unsigned blocksize = inode->i_sb->s_blocksize;
 	struct page *page;
 
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	/* prevent partial truncate of snapshot files */
-	if (next3_snapshot_file(inode) && inode->i_size != 0) {
-		snapshot_debug(1, "snapshot file (%lu) cannot be partly "
-				"truncated!\n", inode->i_ino);
-		return;
-	}
-
-#endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_PERM
 	/* prevent truncate of files on snapshot list */
 	if (next3_snapshot_list(inode)) {
@@ -4841,6 +4840,20 @@ int next3_setattr(struct dentry *dentry, struct iattr *attr)
 		next3_journal_stop(handle);
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	if (attr->ia_valid & ATTR_SIZE) {
+		/* prevent size modification of snapshot files */
+		if (next3_snapshot_file(inode) && attr->ia_size != 0) {
+			snapshot_debug(1, "snapshot file (%lu) can only be "
+					"truncated to 0!\n", inode->i_ino);
+			return -EPERM;
+		}
+
+		if (attr->ia_size > NEXT3_SB(inode->i_sb)->s_bitmap_maxbytes)
+			return -EFBIG;
+	}
+
+#endif
 	if (S_ISREG(inode->i_mode) &&
 	    attr->ia_valid & ATTR_SIZE && attr->ia_size < inode->i_size) {
 		handle_t *handle;

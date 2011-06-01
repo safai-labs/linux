@@ -1706,20 +1706,10 @@ static loff_t next3_max_size(int bits)
 	 * __u32 i_blocks representing the total number of
 	 * 512 bytes blocks of the file
 	 */
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	/*
-	 * We use 48 bit ext4_inode i_blocks
-	 * With EXT4_HUGE_FILE_FL set the i_blocks
-	 * represent total number of blocks in
-	 * file system block size
-	 */
-	upper_limit = (1LL << 48) - 1;
-#else
 	upper_limit = (1LL << 32) - 1;
 
 	/* total blocks in file system block size */
 	upper_limit >>= (bits - 9);
-#endif
 
 
 	/* indirect blocks */
@@ -1734,11 +1724,7 @@ static loff_t next3_max_size(int bits)
 
 	res += 1LL << (bits-2);
 	res += 1LL << (2*(bits-2));
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	res += NEXT3_SNAPSHOT_NTIND_BLOCKS * (1LL << (3*(bits-2)));
-#else
 	res += 1LL << (3*(bits-2));
-#endif
 	res <<= bits;
 	if (res > upper_limit)
 		res = upper_limit;
@@ -2006,7 +1992,13 @@ static int next3_fill_super (struct super_block *sb, void *data, int silent)
 		}
 	}
 
+#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	sbi->s_bitmap_maxbytes = next3_max_size(sb->s_blocksize_bits);
+	/* 32-bit of snapshot file logical offset */
+	sb->s_maxbytes = 1LL << (sb->s_blocksize_bits + 32);
+#else
 	sb->s_maxbytes = next3_max_size(sb->s_blocksize_bits);
+#endif
 
 	if (le32_to_cpu(es->s_rev_level) == NEXT3_GOOD_OLD_REV) {
 		sbi->s_inode_size = NEXT3_GOOD_OLD_INODE_SIZE;

@@ -3161,13 +3161,12 @@ static int ext4_ext_move_to_snapshot(handle_t *handle, struct inode *inode,
 				     struct ext4_map_blocks *map,
 				     struct ext4_ext_path *path,
 				     ext4_fsblk_t oldblock,
-				     ext4_fsblk_t newblock,
-				     int len, int flags)
+				     ext4_fsblk_t newblock)
 {
 	struct ext4_extent *ex;
-	int err, depth;
+	int err, depth, len;
 
-	map->m_len = len;
+	len = map->m_len;
 	err = ext4_snapshot_get_move_access(handle, inode,
 			oldblock, &map->m_len, 1);
 	if (err <= 0 || map->m_len != len) {
@@ -3179,10 +3178,9 @@ static int ext4_ext_move_to_snapshot(handle_t *handle, struct inode *inode,
 	} else {
 		/*
 		 * Move to snapshot successfully.
-		 * TODO merge extent after finishing MOW
 		 */
 		err = ext4_split_extent(handle, inode, path, map, 0,
-					flags | EXT4_GET_BLOCKS_PRE_IO);
+					EXT4_GET_BLOCKS_PRE_IO);
 		if (err < 0)
 			goto out;
 
@@ -3204,6 +3202,7 @@ static int ext4_ext_move_to_snapshot(handle_t *handle, struct inode *inode,
 		if (!err) {
 			/* splice new blocks to the inode*/
 			ext4_ext_store_pblock(ex, newblock);
+			ext4_ext_try_to_merge(inode, path, ex);
 			err = ext4_ext_dirty(handle, inode,
 					     path + depth);
 		}
@@ -3367,42 +3366,34 @@ found:
 		BUG_ON(!ext4_snapshot_should_move_data(inode));
 		/*
 		 * Should move 1 block to snapshot?
-		 *
-		 * XXX With delayed-move-write support,
-		 * multi-blocks should be moved each time.
 		 */
-		allocated = allocated < map->m_len ? allocated : map->m_len;
+		allocated = min(map->m_len, allocated);
 		err = ext4_snapshot_get_move_access(handle, inode, newblock,
-				&allocated, 0);
+						    &allocated, 0);
 		map->m_len = allocated;
 		if (err > 0) {
-			if (!(flags & EXT4_GET_BLOCKS_CREATE)) {
-				/* Do not map found block. */
-				map->m_flags |= EXT4_MAP_REMAP;
-				err = 0;
-				goto out;
-			} else {
-				oldblock = newblock;
-			}
+			map->m_flags |= EXT4_MAP_REMAP;
+			err = 0;
+			oldblock = newblock;
 		} else if (err < 0)
 			goto out2;
-
-		if ((path == NULL) && (flags & EXT4_GET_BLOCKS_CREATE)) {
-			/* find extent for this block */
-			path = ext4_ext_find_extent(inode, map->m_lblk, NULL);
-			if (IS_ERR(path)) {
-				err = PTR_ERR(path);
-				path = NULL;
-				goto out2;
-			}
-			depth = ext_depth(inode);
-			ex = path[depth].p_ext;
-		}
 	}
 
 	if (!(flags & EXT4_GET_BLOCKS_CREATE))
 		goto out;
 
+	map->m_flags &= ~EXT4_MAP_REMAP;
+	if ((path == NULL) && (flags & EXT4_GET_BLOCKS_CREATE)) {
+		/* find extent for this block */
+		path = ext4_ext_find_extent(inode, map->m_lblk, NULL);
+		if (IS_ERR(path)) {
+			err = PTR_ERR(path);
+			path = NULL;
+			goto out2;
+		}
+		depth = ext_depth(inode);
+		ex = path[depth].p_ext;
+	}
 #endif
 	/*
 	 * Okay, we need to do block allocation.
@@ -3499,9 +3490,10 @@ found:
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
 	if (oldblock) {
+		map->m_len = ar.len;
 		BUG_ON(!(flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE));
 		err = ext4_ext_move_to_snapshot(handle, inode, map, path,
-					oldblock, newblock, ar.len, flags);
+						oldblock, newblock);
 	} else
 		err = ext4_ext_insert_extent(handle, inode,
 					     path, &newex, flags);

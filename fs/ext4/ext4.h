@@ -1442,13 +1442,6 @@ enum {
 #endif
 };
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-#define EXT4_SNAPSTATE_MASK		\
-	((1UL << EXT4_SNAPSTATE_LAST) - 1)
-
-
-/* atomic single bit funcs */
-#endif
 #define EXT4_INODE_BIT_FNS(name, field, offset)				\
 static inline int ext4_test_inode_##name(struct inode *inode, int bit)	\
 {									\
@@ -1464,22 +1457,12 @@ static inline void ext4_clear_inode_##name(struct inode *inode, int bit) \
 }
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
-/* non-atomic multi bit funcs */
-#define EXT4_INODE_FLAGS_FNS(name, field, offset)			\
+#define EXT4_INODE_FLAGS_FNS(name, field, offset, count)		\
 static inline int ext4_get_##name##_flags(struct inode *inode)		\
 {									\
-	return EXT4_I(inode)->i_##field >> (offset);			\
+	return (EXT4_I(inode)->i_##field >> (offset)) &			\
+				((1UL << (count)) - 1);			\
 }									\
-static inline void ext4_set_##name##_flags(struct inode *inode,		\
-						unsigned long flags)	\
-{									\
-	EXT4_I(inode)->i_##field |= (flags << (offset));		\
-}									\
-static inline void ext4_clear_##name##_flags(struct inode *inode,	\
-						unsigned long flags)	\
-{									\
-	EXT4_I(inode)->i_##field &= ~(flags << (offset));		\
-}
 
 #endif
 EXT4_INODE_BIT_FNS(flag, flags, 0)
@@ -1487,7 +1470,8 @@ EXT4_INODE_BIT_FNS(flag, flags, 0)
 EXT4_INODE_BIT_FNS(state, state_flags, 0)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 EXT4_INODE_BIT_FNS(snapstate, state_flags, EXT4_STATE_LAST)
-EXT4_INODE_FLAGS_FNS(snapstate, state_flags, EXT4_STATE_LAST)
+EXT4_INODE_FLAGS_FNS(snapstate, state_flags, EXT4_STATE_LAST, \
+					EXT4_SNAPSTATE_LAST)
 #endif
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
@@ -1498,7 +1482,8 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 EXT4_INODE_BIT_FNS(state, flags, 32)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE
 EXT4_INODE_BIT_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
-EXT4_INODE_FLAGS_FNS(snapstate, flags, 32 + EXT4_STATE_LAST)
+EXT4_INODE_FLAGS_FNS(snapstate, flags, 32 + EXT4_STATE_LAST, \
+					EXT4_SNAPSTATE_LAST)
 #endif
 
 static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)

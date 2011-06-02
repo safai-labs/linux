@@ -535,7 +535,7 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 			if (!exclude)
 				break;
 		} else if (n) {
-			snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
+			snapshot_debug(2, "excluded blocks: [%d-%d/%d]\n",
 					bit-n, bit-1, block_group);
 			excluded += n;
 			n = 0;
@@ -547,7 +547,7 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 	if (n && !exclude) {
 		EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
 		ext4_error(sb, where,
-			"snapshot file block [%d/%lu] not in exclude bitmap! - "
+			"snapshot file block [%d/%d] not in exclude bitmap! - "
 			"running fsck to fix exclude bitmap is recommended.\n",
 			bit, block_group);
 		err = -EIO;
@@ -555,7 +555,7 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 	}
 
 	if (n) {
-		snapshot_debug(2, "excluded blocks: [%d-%d/%ld]\n",
+		snapshot_debug(2, "excluded blocks: [%d-%d/%d]\n",
 				bit-n, bit-1, block_group);
 		excluded += n;
 	}

@@ -61,18 +61,15 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
 	ext4_fsblk_t tmp;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	/* block bitmap, inode bitmap, and inode table blocks */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	int used_blocks = sbi->s_itb_per_group + 2;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (EXT4_HAS_COMPAT_FEATURE(sb,
 				    EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP))
 		/* exclude bitmap */
 		used_blocks += 1;
 
-#else
-	int used_blocks = sbi->s_itb_per_group + 2;
 #endif
-
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
 		if (!ext4_block_in_group(sb, ext4_block_bitmap(sb, gdp),
 					block_group))

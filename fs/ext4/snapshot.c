@@ -495,14 +495,27 @@ ext4_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
  * < 0 - error
  */
 int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
-		struct super_block *sb, ext4_fsblk_t block, int maxblocks,
+		struct super_block *sb, ext4_fsblk_t block, int count,
 		int exclude)
 {
 	struct buffer_head *exclude_bitmap_bh = NULL;
-	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
+	struct buffer_head *gdp_bh = NULL;
+	struct ext4_group_desc *gdp = NULL;
+	ext4_group_t block_group = SNAPSHOT_BLOCK_GROUP(block);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(block);
-	int err = 0, n = 0, excluded = 0;
-	int count = maxblocks;
+	int err = 0, n = 0, excluded = 0, exclude_uninit;
+
+	err = -EIO;
+	gdp = ext4_get_group_desc(sb, block_group, &gdp_bh);
+	if (!gdp)
+		goto out;
+
+	exclude_uninit = gdp->bg_flags & cpu_to_le16(EXT4_BG_EXCLUDE_UNINIT);
+	if (exclude && exclude_uninit) {
+		err = ext4_journal_get_write_access(handle, gdp_bh);
+		if (err)
+			goto out;
+	}
 
 	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
 	if (!exclude_bitmap_bh)
@@ -550,6 +563,14 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 	if (exclude && excluded) {
 		err = ext4_handle_dirty_metadata(handle,
 						 NULL, exclude_bitmap_bh);
+		if (err)
+			goto out;
+
+		if (exclude_uninit) {
+			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_EXCLUDE_UNINIT);
+			err = ext4_handle_dirty_metadata(handle, NULL, gdp_bh);
+		}
+
 		trace_cow_add(handle, excluded, excluded);
 	}
 out:
@@ -912,7 +933,8 @@ out:
  * @move:	if false, only test if @block needs to be moved
  *
  * Return values:
- * > 0 - blocks  were (or needs to be) moved to snapshot
+ * > 0 - blocks a) were moved to snapshot for @move = 1;
+ *		b) needs to be moved for @move = 0
  * = 0 - blocks dont need to be moved
  * < 0 - error
  */

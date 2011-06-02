@@ -2759,9 +2759,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	struct super_block *sb;
 	ext4_fsblk_t block;
 	int err, len;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	struct buffer_head *exclude_bitmap_bh = NULL;
-#endif
 
 	BUG_ON(ac->ac_status != AC_STATUS_FOUND);
 	BUG_ON(ac->ac_b_ex.fe_len <= 0);
@@ -2770,24 +2767,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	sbi = EXT4_SB(sb);
 
 	err = -EIO;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (EXT4_SNAPSHOTS(sb) && ext4_snapshot_excluded(ac->ac_inode)) {
-		/*
-		 * try to read exclude bitmap
-		 */
-		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb,
-							ac->ac_b_ex.fe_group);
-		if (!exclude_bitmap_bh)
-			goto out_err;
-		err = ext4_journal_get_write_access_exclude(handle,
-							    exclude_bitmap_bh);
-		if (err) {
-			brelse(exclude_bitmap_bh);
-			goto out_err;
-		}
-	}
 
-#endif
 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
 	if (!bitmap_bh)
 		goto out_err;
@@ -2844,11 +2824,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 #endif
 	mb_set_bits(bitmap_bh->b_data, ac->ac_b_ex.fe_start,ac->ac_b_ex.fe_len);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (exclude_bitmap_bh)
-		mb_set_bits(exclude_bitmap_bh->b_data, ac->ac_b_ex.fe_start,
-			    ac->ac_b_ex.fe_len);
-#endif
+
 	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
 		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
 		ext4_free_blks_set(sb, gdp,
@@ -2876,21 +2852,22 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 
 	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (!err && exclude_bitmap_bh)
-		err = ext4_handle_dirty_metadata(handle, NULL,
-					     exclude_bitmap_bh);
-#endif
 	if (err)
 		goto out_err;
+
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	if (EXT4_SNAPSHOTS(sb) && ext4_snapshot_excluded(ac->ac_inode)) {
+		err = ext4_snapshot_exclude_blocks(handle, sb, block, ac->ac_b_ex.fe_len);
+		if (err < 0)
+			goto out_err;
+	}
+#endif
+
 	err = ext4_handle_dirty_metadata(handle, NULL, gdp_bh);
 
 out_err:
 	ext4_mark_super_dirty(sb);
 	brelse(bitmap_bh);
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	brelse(exclude_bitmap_bh);
-#endif
 	return err;
 }
 
@@ -4732,6 +4709,7 @@ do_more:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh) {
 		unsigned long i;
+		printk("test excluded block %llu - %llu\n", block, block + count);
 		if (excluded_file)
 			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
 						  bit + count, bit) - bit;
@@ -4747,7 +4725,7 @@ do_more:
 				   inode ? inode->i_ino : 0,
 				   bit + i, bit + count,
 				   block_group, block + i,
-				   excluded_file ? "" : "not ");
+				   excluded_file ? "not " : "");
 			if (!excluded_file)
 				excluded_block = 1;
 		}

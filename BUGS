@@ -76,3 +76,18 @@ due to flex_bg shrink bug.
 
 
 ============================================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Mon Jun 2 18:12:04 2011 +0300
+HEAD: d5fa928b
+
+next3_block_to_path() i_block arg overflow
+
+snapshot file max i_size is 2^32-1 blocks, but blocks
+are mapped in +1036 offset (block 0 is first dind mapped block).
+when trying to map the last 1036 blocks of the maximum size snapshot,
+i_block overflows and maps the blocks to direct/indirect blocks.
+since first 3 direct blocks are used as extra tind blocks, this is
+no good.
+
+
+============================================================================================================

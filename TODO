@@ -5,9 +5,8 @@
      Partial-write need to be handle more elegently for snapshot.
      A private block_write_begin() is needed.
 
--extent merge
-     Try to merge extent after MOW. A more sophiscated extent splitting
-     function is needed. 
-
 -flex bg
      Shrink snapshots correctly in non-first flex group
+
+-exclude bitmap
+     Use efficient multi bit clear/set bmalloc function helpers

@@ -4731,7 +4731,7 @@ do_more:
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh) {
-		int i;
+		unsigned long i;
 		if (excluded_file)
 			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
 						  bit + count, bit) - bit;
@@ -4741,12 +4741,13 @@ do_more:
 		if (i < count) {
 			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
 			ext4_error(sb, "%sexcluded file (ino=%lu)"
-				   " block [%d/%u] was %sexcluded!"
+				   " block [%lu-%lu/%u, %llu] was %sexcluded!"
 				   " - run fsck to fix exclude bitmap.\n",
 				   excluded_file ? "" : "non-",
 				   inode ? inode->i_ino : 0,
-				   bit + i, block_group,
-				   excluded_block ? "" : "not ");
+				   bit + i, bit + count,
+				   block_group, block + i,
+				   excluded_file ? "" : "not ");
 			if (!excluded_file)
 				excluded_block = 1;
 		}

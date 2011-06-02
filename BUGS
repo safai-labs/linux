@@ -2,7 +2,7 @@ Reported-by: Amir Goldstein <amir73il@users.sf.net>
 Date:   Mon Mar 28 16:52:23 2011 +0200
 HEAD: 6fabd57c
 
-when running xfstest 70 with acl,user_xattr mount options, the test hangs on fsstress task:
+when running xfstest 70 with an fs with a snapshot, the test hangs on fsstress task:
 
 [ 1801.310348] INFO: task fsstress:15061 blocked for more than 120 seconds.
 [ 1801.310351] "echo 0 > /proc/sys/kernel/hung_task_timeout_secs" disables this message.
@@ -55,4 +55,39 @@ Mar 29 22:19:41 qalab kernel: [27505.976657] snapshot: warning: insufficient buf
 Mar 29 22:19:41 qalab kernel: [27505.976671] snapshot: warning: insufficient buffer/user credits (1340/0) for COW operation?
 Mar 29 22:19:41 qalab kernel: [27505.988038] snapshot: snapshot (871) deleted
 
+============================================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Mon May 2 16:12:04 2011 +0300
+HEAD: d5fa928b
 
+snapshot shrink leaves unreclaimed block when ext4 has flex_bg layout
+
+Running 'e4snapshot tests 6' will create snapshots 1-6 with size 1M-6M.
+
+Running 'e4snapshot test 7' will create snapshot 7, mount snapshot 1 and
+delete snapshots 2-6.
+This should free up space of snapshots 2-6, but it doesn't because of
+flex_bg shrink bug.
+
+Running 'e4snapshot test 8' will create snapshot 8, umount snapshot 1 and
+deletes snapshot 7.
+This merges snapshots 2-7 to snapshot 1, which is much too big (16M)
+due to flex_bg shrink bug.
+
+
+============================================================================================================
+Reported-by: Amir Goldstein <amir73il@users.sf.net>
+Date:   Mon Jun 2 18:12:04 2011 +0300
+HEAD: d5fa928b
+
+next3_block_to_path() i_block arg overflow
+
+snapshot file max i_size is 2^32-1 blocks, but blocks
+are mapped in +1036 offset (block 0 is first dind mapped block).
+when trying to map the last 1036 blocks of the maximum size snapshot,
+i_block overflows and maps the blocks to direct/indirect blocks.
+since first 3 direct blocks are used as extra tind blocks, this is
+no good.
+
+
+============================================================================================================

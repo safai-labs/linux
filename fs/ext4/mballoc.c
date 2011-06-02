@@ -4709,7 +4709,7 @@ do_more:
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	if (exclude_bitmap_bh) {
 		unsigned long i;
-		printk("test excluded block %llu - %llu\n", block, block + count);
+
 		if (excluded_file)
 			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
 						  bit + count, bit) - bit;

@@ -61,7 +61,17 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
 	ext4_fsblk_t tmp;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	/* block bitmap, inode bitmap, and inode table blocks */
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
 	int used_blocks = sbi->s_itb_per_group + 2;
+
+	if (EXT4_HAS_COMPAT_FEATURE(sb,
+				    EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP))
+		/* exclude bitmap */
+		used_blocks += 1;
+
+#else
+	int used_blocks = sbi->s_itb_per_group + 2;
+#endif
 
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
 		if (!ext4_block_in_group(sb, ext4_block_bitmap(sb, gdp),
@@ -155,7 +165,16 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
 		tmp = ext4_block_bitmap(sb, gdp);
 		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
 			ext4_set_bit(tmp - start, bh->b_data);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+		if (EXT4_HAS_COMPAT_FEATURE(sb,
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+			tmp = ext4_exclude_bitmap(sb, gdp);
+			if (!flex_bg ||
+			    ext4_block_in_group(sb, tmp, block_group))
+				ext4_set_bit(tmp - start, bh->b_data);
+		}
 
+#endif
 		tmp = ext4_inode_bitmap(sb, gdp);
 		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
 			ext4_set_bit(tmp - start, bh->b_data);

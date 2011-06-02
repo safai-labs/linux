@@ -316,8 +316,9 @@ static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
  * If @move is true, then down_write(&i_data_sem) is held.
  *
  * Return values:
- * = 1 - @block was moved or may not be overwritten
- * = 0 - blocks may be overwritten
+ * > 0 - @blocks a) were moved for @move = 1;
+ *		 b) need to be moved for @move = 0.
+ * = 0 - blocks don't need to be moved.
  * < 0 - error
  */
 static inline int ext4_snapshot_get_move_access(handle_t *handle,

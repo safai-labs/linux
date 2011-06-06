@@ -264,8 +264,10 @@ static void ext4_put_nojournal(handle_t *handle)
  * ext4 prevents a new handle from being started by s_frozen, which
  * is in an upper layer.
  */
-handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
+handle_t *__ext4_journal_start(const char *where,
+		struct super_block *sb, int nblocks)
 {
+	int credits;
 	journal_t *journal;
 	handle_t  *handle;
 
@@ -296,7 +298,18 @@ handle_t *ext4_journal_start_sb(struct super_block *sb, int nblocks)
 		ext4_abort(sb, "Detected aborted journal");
 		return ERR_PTR(-EROFS);
 	}
-	return jbd2_journal_start(journal, nblocks);
+
+	credits = EXT4_SNAPSHOTS(sb) ?
+		EXT4_SNAPSHOT_START_TRANS_BLOCKS(nblocks) : nblocks;
+	handle = jbd2_journal_start(journal, credits);
+	if (EXT4_SNAPSHOTS(sb) && !IS_ERR(handle)) {
+		if (handle->h_ref == 1) {
+			handle->h_base_credits = nblocks;
+			handle->h_user_credits = nblocks;
+		}
+		ext4_journal_trace(SNAP_WARN, where, handle, nblocks);
+	}
+	return handle;
 }
 
 /*
@@ -3872,6 +3885,27 @@ static journal_t *ext4_get_journal(struct super_block *sb,
 		ext4_msg(sb, KERN_ERR, "invalid journal inode");
 		iput(journal_inode);
 		return NULL;
+	}
+
+	if (EXT4_SNAPSHOTS(sb) &&
+			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
+			EXT4_MIN_JOURNAL_BLOCKS) {
+		ext4_msg(sb, KERN_ERR,
+			"journal is too small (%lld < %u) for snapshots",
+			journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb),
+			EXT4_MIN_JOURNAL_BLOCKS);
+		iput(journal_inode);
+		return NULL;
+	}
+
+	if (EXT4_SNAPSHOTS(sb) &&
+			(journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb)) <
+			EXT4_BIG_JOURNAL_BLOCKS) {
+		snapshot_debug(1, "warning: journal is not big enough "
+			"(%lld < %u) - this might affect concurrent "
+			"filesystem writers performance!\n",
+			journal_inode->i_size >> EXT4_BLOCK_SIZE_BITS(sb),
+			EXT4_BIG_JOURNAL_BLOCKS);
 	}
 
 	journal = jbd2_journal_init_inode(journal_inode);

@@ -131,6 +131,7 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 				 handle_t *handle, struct inode *inode,
 				 struct buffer_head *bh)
 {
+	struct super_block *sb;
 	int err = 0;
 
 	if (ext4_handle_valid(handle)) {
@@ -138,6 +139,26 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 		if (err)
 			ext4_journal_abort_handle(where, line, __func__,
 						  bh, handle, err);
+		if (err)
+			return err;
+		sb = handle->h_transaction->t_journal->j_private;
+		if (EXT4_SNAPSHOTS(sb) && !IS_COWING(handle)) {
+			struct journal_head *jh = bh2jh(bh);
+			jbd_lock_bh_state(bh);
+			/*
+			 * buffer_credits was decremented when buffer was
+			 * modified for the first time in the current
+			 * transaction, which may have been during a COW
+			 * operation.  We decrement user_credits and mark
+			 * b_modified = 2, on the first time that the buffer
+			 * is modified not during a COW operation (!h_cowing).
+			 */
+			if (jh->b_modified == 1) {
+				jh->b_modified = 2;
+				handle->h_user_credits--;
+			}
+			jbd_unlock_bh_state(bh);
+		}
 	} else {
 		if (inode)
 			mark_buffer_dirty_inode(bh, inode);

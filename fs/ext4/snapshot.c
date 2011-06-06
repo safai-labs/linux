@@ -248,9 +248,48 @@ ext4_snapshot_read_cow_bitmap(handle_t *handle, struct inode *snapshot,
 
 	bitmap_blk = ext4_block_bitmap(sb, desc);
 
-	ext4_lock_group(sb, block_group);
-	cow_bitmap_blk = grp->bg_cow_bitmap;
-	ext4_unlock_group(sb, block_group);
+	/*
+	 * Handle concurrent COW bitmap operations.
+	 * bg_cow_bitmap has 3 states:
+	 * = 0 - uninitialized (after mount and after snapshot take).
+	 * = bg_block_bitmap - marks pending COW of block bitmap.
+	 * other - location of initialized COW bitmap block.
+	 *
+	 * The first task to access block group after mount or snapshot take,
+	 * will read the uninitialized state, mark pending COW state, initialize
+	 * the COW bitmap block and update COW bitmap cache.  Other tasks will
+	 * busy wait until the COW bitmap cache is in initialized state, before
+	 * reading the COW bitmap block.
+	 */
+	do {
+		ext4_lock_group(sb, block_group);
+		cow_bitmap_blk = grp->bg_cow_bitmap;
+		if (cow_bitmap_blk == 0)
+			/* mark pending COW of bitmap block */
+			grp->bg_cow_bitmap = bitmap_blk;
+		ext4_unlock_group(sb, block_group);
+
+		if (cow_bitmap_blk == 0) {
+			snapshot_debug(3, "initializing COW bitmap #%u "
+					"of snapshot (%u)...\n",
+					block_group, snapshot->i_generation);
+			/* sleep 1 tunable delay unit */
+			snapshot_test_delay(SNAPTEST_BITMAP);
+			break;
+		}
+		if (cow_bitmap_blk == bitmap_blk) {
+			/* wait for another task to COW bitmap block */
+			snapshot_debug_once(2, "waiting for pending COW "
+					    "bitmap #%d...\n", block_group);
+			/*
+			 * This is an unlikely event that can happen only once
+			 * per block_group/snapshot, so msleep(1) is sufficient
+			 * and there is no need for a wait queue.
+			 */
+			msleep(1);
+		}
+		/* XXX: Should we fail after N retries? */
+	} while (cow_bitmap_blk == 0 || cow_bitmap_blk == bitmap_blk);
 	if (cow_bitmap_blk)
 		return sb_bread(sb, cow_bitmap_blk);
 

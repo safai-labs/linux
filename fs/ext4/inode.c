@@ -5183,6 +5183,17 @@ struct inode *ext4_iget(struct super_block *sb, unsigned long ino)
 	 */
 	for (block = 0; block < EXT4_N_BLOCKS; block++)
 		ei->i_data[block] = raw_inode->i_block[block];
+	/* snapshot on-disk list is stored in snapshot inode on-disk version */
+	if (ext4_snapshot_file(inode)) {
+		ei->i_next_snapshot_ino =
+			le32_to_cpu(raw_inode->i_disk_version);
+		/*
+		 * snapshot volume size is stored in i_disksize.
+		 * in-memory i_size of snapshot files is set to 0 (disabled).
+		 * enabling a snapshot is setting i_size to i_disksize.
+		 */
+		inode->i_size = 0;
+	}
 	INIT_LIST_HEAD(&ei->i_orphan);
 
 	/*
@@ -5447,12 +5458,22 @@ static int ext4_do_update_inode(handle_t *handle,
 		for (block = 0; block < EXT4_N_BLOCKS; block++)
 			raw_inode->i_block[block] = ei->i_data[block];
 
-	raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
-	if (ei->i_extra_isize) {
-		if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
-			raw_inode->i_version_hi =
-			cpu_to_le32(inode->i_version >> 32);
-		raw_inode->i_extra_isize = cpu_to_le16(ei->i_extra_isize);
+	if (ext4_snapshot_file(inode)) {
+		/*
+		 * Snapshot on-disk list overrides snapshot on-disk version.
+		 * Snapshot files are not writable and have a fixed version.
+		 */
+		raw_inode->i_disk_version =
+			cpu_to_le32(ei->i_next_snapshot_ino);
+	} else {
+		raw_inode->i_disk_version = cpu_to_le32(inode->i_version);
+		if (ei->i_extra_isize) {
+			if (EXT4_FITS_IN_INODE(raw_inode, ei, i_version_hi))
+				raw_inode->i_version_hi =
+					cpu_to_le32(inode->i_version >> 32);
+			raw_inode->i_extra_isize =
+				cpu_to_le16(ei->i_extra_isize);
+		}
 	}
 
 	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");

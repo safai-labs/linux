@@ -288,6 +288,14 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 
 /* snapshot_ctl.c */
 
+/*
+ * Snapshot constructor/destructor
+ */
+extern int ext4_snapshot_load(struct super_block *sb,
+		struct ext4_super_block *es, int read_only);
+extern int ext4_snapshot_update(struct super_block *sb, int cleanup,
+		int read_only);
+extern void ext4_snapshot_destroy(struct super_block *sb);
 
 static inline int init_ext4_snapshot(void)
 {
@@ -299,7 +307,105 @@ static inline void exit_ext4_snapshot(void)
 }
 
 
+/* tests if @inode is a snapshot file */
+static inline int ext4_snapshot_file(struct inode *inode)
+{
+	if (!S_ISREG(inode->i_mode))
+		/* a snapshots directory */
+		return 0;
+	return ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE);
+}
 
+/* tests if @inode is on the on-disk snapshot list */
+static inline int ext4_snapshot_list(struct inode *inode)
+{
+	return ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_LIST);
+}
+
+/*
+ * ext4_snapshot_excluded():
+ * Checks if the file should be excluded from snapshot.
+ *
+ * Returns 0 for normal file.
+ * Returns > 0 for 'excluded' file.
+ * Returns < 0 for 'ignored' file (stonger than 'excluded').
+ *
+ * Excluded and ignored file blocks are not moved to snapshot.
+ * Ignored file metadata blocks are not COWed to snapshot.
+ * Excluded file metadata blocks are zeroed in the snapshot file.
+ * XXX: Excluded files code is experimental,
+ *      but ignored files code isn't.
+ */
+static inline int ext4_snapshot_excluded(struct inode *inode)
+{
+	/* directory blocks and global filesystem blocks cannot be 'excluded' */
+	if (!inode || !S_ISREG(inode->i_mode))
+		return 0;
+	/* snapshot files are 'ignored' */
+	if (ext4_snapshot_file(inode))
+		return -1;
+	return 0;
+}
+
+/* tests if the file system has an active snapshot */
+static inline int ext4_snapshot_active(struct ext4_sb_info *sbi)
+{
+	if (unlikely((sbi)->s_active_snapshot))
+		return 1;
+	return 0;
+}
+
+/*
+ * tests if the file system has an active snapshot and returns its inode.
+ * active snapshot is only changed under journal_lock_updates(),
+ * so it is safe to use the returned inode during a transaction.
+ */
+static inline struct inode *ext4_snapshot_has_active(struct super_block *sb)
+{
+	return EXT4_SB(sb)->s_active_snapshot;
+}
+
+/*
+ * tests if @inode is the current active snapshot.
+ * active snapshot is only changed under journal_lock_updates(),
+ * so the test result never changes during a transaction.
+ */
+static inline int ext4_snapshot_is_active(struct inode *inode)
+{
+	return (inode == EXT4_SB(inode->i_sb)->s_active_snapshot);
+}
+
+
+#define SNAPSHOT_TRANSACTION_ID(sb)				\
+	((EXT4_I(EXT4_SB(sb)->s_active_snapshot))->i_datasync_tid)
+
+/**
+ * set transaction ID for active snapshot
+ *
+ * this function is called after freeze_super() returns but before
+ * calling unfreeze_super() to record the tid at time when a snapshot is
+ * taken.
+ */
+static inline void ext4_snapshot_set_tid(struct super_block *sb)
+{
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	SNAPSHOT_TRANSACTION_ID(sb) =
+			EXT4_SB(sb)->s_journal->j_transaction_sequence;
+}
+
+/* get trancation ID of active snapshot */
+static inline tid_t ext4_snapshot_get_tid(struct super_block *sb)
+{
+	BUG_ON(!ext4_snapshot_active(EXT4_SB(sb)));
+	return SNAPSHOT_TRANSACTION_ID(sb);
+}
+
+/* test if thereis a mow that is in or before current transcation */
+static inline int ext4_snapshot_mow_in_tid(struct inode *inode)
+{
+	return tid_geq(EXT4_I(inode)->i_datasync_tid,
+		      ext4_snapshot_get_tid(inode->i_sb));
+}
 
 
 #else /* CONFIG_EXT4_FS_SNAPSHOT */

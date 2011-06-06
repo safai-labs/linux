@@ -115,6 +115,8 @@ ext4_snapshot_complete_cow(handle_t *handle, struct inode *snapshot,
 	if (sync)
 		sync_dirty_buffer(sbh);
 out:
+	/* COW operation is complete */
+	ext4_snapshot_end_pending_cow(sbh);
 	return err;
 }
 
@@ -688,6 +690,12 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 	 * we allocated this block -
 	 * copy block data to snapshot and complete COW operation
 	 */
+	snapshot_debug(3, "COWing block [%llu/%llu] of snapshot "
+			"(%u)...\n",
+			SNAPSHOT_BLOCK_TUPLE(block),
+			active_snapshot->i_generation);
+	/* sleep 1 tunable delay unit */
+	snapshot_test_delay(SNAPTEST_COW);
 	err = ext4_snapshot_copy_buffer_cow(handle, active_snapshot,
 			sbh, bh);
 	if (err)
@@ -700,6 +708,9 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 
 	trace_cow_inc(handle, copied);
 test_pending_cow:
+	if (sbh)
+		/* wait for pending COW to complete */
+		ext4_snapshot_test_pending_cow(sbh, block);
 
 cowed:
 	/* mark the buffer COWed in the current transaction */

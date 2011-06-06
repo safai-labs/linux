@@ -1049,6 +1049,7 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	int depth;
 	int count = 0;
 	ext4_fsblk_t first_block = 0;
+	struct buffer_head *sbh = NULL;
 
 	trace_ext4_ind_map_blocks_enter(inode, map->m_lblk, map->m_len, flags);
 	J_ASSERT(!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)));
@@ -1155,6 +1156,25 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	if (err)
 		goto cleanup;
 
+	if (SNAPMAP_ISCOW(flags)) {
+		/*
+		 * COWing block or creating COW bitmap.
+		 * we now have exclusive access to the COW destination block
+		 * and we are about to create the snapshot block mapping
+		 * and make it public.
+		 * grab the buffer cache entry and mark it new
+		 * to indicate a pending COW operation.
+		 * the refcount for the buffer cache will be released
+		 * when the COW operation is either completed or canceled.
+		 */
+		sbh = sb_getblk(inode->i_sb, le32_to_cpu(chain[depth-1].key));
+		if (!sbh) {
+			err = -EIO;
+			goto cleanup;
+		}
+		ext4_snapshot_start_pending_cow(sbh);
+	}
+
 	if (map->m_flags & EXT4_MAP_REMAP) {
 		map->m_len = count;
 		/* move old block to snapshot */
@@ -1198,6 +1218,12 @@ got_it:
 	/* Clean up and exit */
 	partial = chain + depth - 1;	/* the whole chain */
 cleanup:
+	/* cancel pending COW operation on failure to alloc snapshot block */
+	if (SNAPMAP_ISCOW(flags)) {
+		if (err < 0 && sbh)
+			ext4_snapshot_end_pending_cow(sbh);
+		brelse(sbh);
+	}
 	while (partial > chain) {
 		BUFFER_TRACE(partial->bh, "call brelse");
 		brelse(partial->bh);

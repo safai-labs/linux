@@ -183,6 +183,7 @@ static int ext4_snapshot_read_through(struct inode *inode, sector_t iblock,
 	int err;
 	struct ext4_map_blocks map;
 	struct inode *prev_snapshot;
+	struct buffer_head *sbh = NULL;
 
 	map.m_lblk = iblock;
 	map.m_pblk = 0;
@@ -214,6 +215,45 @@ get_block:
 	bh_result->b_state = (bh_result->b_state & ~EXT4_MAP_FLAGS) |
 		map.m_flags;
 
+	/*
+	 * On read of active snapshot, a mapped block may belong to a non
+	 * completed COW operation.  Use the buffer cache to test this
+	 * condition.  if (bh_result->b_blocknr == SNAPSHOT_BLOCK(iblock)),
+	 * then this is either read through to block device or moved block.
+	 * Either way, it is not a COWed block, so it cannot be pending COW.
+	 */
+	if (ext4_snapshot_is_active(inode) &&
+	    bh_result->b_blocknr != SNAPSHOT_BLOCK(iblock))
+		sbh = sb_find_get_block(inode->i_sb, bh_result->b_blocknr);
+	if (!sbh)
+		return 0;
+	/* wait for pending COW to complete */
+	ext4_snapshot_test_pending_cow(sbh, SNAPSHOT_BLOCK(iblock));
+	lock_buffer(sbh);
+	if (buffer_uptodate(sbh)) {
+		/*
+		 * Avoid disk I/O and copy out snapshot page directly
+		 * from block device page when possible.
+		 */
+		BUG_ON(!sbh->b_page);
+		BUG_ON(!bh_result->b_page);
+		lock_buffer(bh_result);
+		copy_highpage(bh_result->b_page, sbh->b_page);
+		set_buffer_uptodate(bh_result);
+		unlock_buffer(bh_result);
+	} else if (buffer_dirty(sbh)) {
+		/*
+		 * If snapshot data buffer is dirty (just been COWed),
+		 * then it is not safe to read it from disk yet.
+		 * We shouldn't get here because snapshot data buffer
+		 * only becomes dirty during COW and because we waited
+		 * for pending COW to complete, which means that a
+		 * dirty snapshot data buffer should be uptodate.
+		 */
+		WARN_ON(1);
+	}
+	unlock_buffer(sbh);
+	brelse(sbh);
 	return 0;
 }
 

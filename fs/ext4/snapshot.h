@@ -228,6 +228,37 @@ static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
 }
 
 /*
+ * get_move_access() - move block to snapshot
+ * @handle:	JBD handle
+ * @inode:	owner of @block
+ * @block:	address of @block
+ * @pcount      pointer to no. of blocks about to move or approve
+ * @move:	if false, only test if blocks need to be moved
+ *
+ * Called from ext4_ind_map_blocks() before overwriting a data block, when the
+ * buffer_move_on_write() flag is set.  Specifically, only data blocks of
+ * regular files are moved. Directory blocks are COWed on get_write_access().
+ * Snapshots and excluded files blocks are never moved-on-write.
+ * If @move is true, then down_write(&i_data_sem) is held.
+ *
+ * Return values:
+ * > 0 - @blocks a) were moved for @move = 1;
+ *		 b) need to be moved for @move = 0.
+ * = 0 - blocks don't need to be moved.
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_move_access(handle_t *handle,
+						struct inode *inode,
+						ext4_fsblk_t block,
+						int *pcount, int move)
+{
+	if (!EXT4_SNAPSHOTS(inode->i_sb))
+		return 0;
+
+	return ext4_snapshot_move(handle, inode, block, pcount, move);
+}
+
+/*
  * get_delete_access() - move blocks to snapshot or approve to free them
  * @handle:	JBD handle
  * @inode:	owner of blocks if known (or NULL otherwise)

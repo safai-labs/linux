@@ -3179,6 +3179,29 @@ ext4_mb_use_preallocated(struct ext4_allocation_context *ac)
 	struct ext4_prealloc_space *pa, *cpa = NULL;
 	ext4_fsblk_t goal_block;
 
+	/*
+	 * All inode preallocations allocated before the time when the
+	 * active snapshot is taken need to be discarded, otherwise blocks
+	 * maybe used by both a regular file and the snapshot file that we
+	 * are taking in the below case.
+	 *
+	 * Case: An user take a snapshot when an inode has a preallocation
+	 * 12/512, of which 12/64 has been used by the inode. Here 12 is the
+	 * logical block number. After the snapshot is taken, an user issues
+	 * a write request on the 12th block, then an allocation on 12 is
+	 * needed and allocator will use blocks from the preallocations.As
+	 * a result, the event above happens.
+	 *
+	 *
+	 * For now, all preallocations are discarded.
+	 *
+	 * Please refer to code and comments about preallocation in
+	 * mballoc.c for more information.
+	 */
+	if (ext4_snapshot_active(EXT4_SB(ac->ac_inode->i_sb)) &&
+	    !ext4_snapshot_mow_in_tid(ac->ac_inode)) {
+		ext4_discard_preallocations(ac->ac_inode);
+	}
 	/* only data can be preallocated */
 	if (!(ac->ac_flags & EXT4_MB_HINT_DATA))
 		return 0;

@@ -143,9 +143,10 @@ struct ext4_allocation_request {
 #define EXT4_MAP_UNWRITTEN	(1 << BH_Unwritten)
 #define EXT4_MAP_BOUNDARY	(1 << BH_Boundary)
 #define EXT4_MAP_UNINIT		(1 << BH_Uninit)
+#define EXT4_MAP_REMAP		(1 << BH_Remap)
 #define EXT4_MAP_FLAGS		(EXT4_MAP_NEW | EXT4_MAP_MAPPED |\
 				 EXT4_MAP_UNWRITTEN | EXT4_MAP_BOUNDARY |\
-				 EXT4_MAP_UNINIT)
+				 EXT4_MAP_UNINIT | EXT4_MAP_REMAP)
 
 struct ext4_map_blocks {
 	ext4_fsblk_t m_pblk;
@@ -512,6 +513,12 @@ struct ext4_new_group_data {
 	/* Convert extent to initialized after IO complete */
 #define EXT4_GET_BLOCKS_IO_CONVERT_EXT		(EXT4_GET_BLOCKS_CONVERT|\
 					 EXT4_GET_BLOCKS_CREATE_UNINIT_EXT)
+	/* Look up if mapped block is used by snapshot,
+	 * if so and EXT4_GET_BLOCKS_CREATE is set, move it to snapshot
+	 * and allocate a new block for new data.
+	 * if EXT4_GET_BLOCKS_CREATE is not set, return REMAP flags.
+	 */
+#define EXT4_GET_BLOCKS_MOVE_ON_WRITE		0x0100
 
 /*
  * Flags used by ext4_free_blocks
@@ -2130,10 +2137,16 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
 enum ext4_state_bits {
 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
 	  = BH_JBDPrivateStart,
+	BH_Remap,	/* Data block need to be remapped,
+			 * now used by snapshot to do mow
+			 */
+	BH_Partial_Write,	/* Buffer should be uptodate before write */
 };
 
 BUFFER_FNS(Uninit, uninit)
 TAS_BUFFER_FNS(Uninit, uninit)
+BUFFER_FNS(Remap, remap)
+BUFFER_FNS(Partial_Write, partial_write)
 
 /*
  * Add new method to test wether block and inode bitmaps are properly

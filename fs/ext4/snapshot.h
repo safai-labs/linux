@@ -401,6 +401,11 @@ static inline void exit_ext4_snapshot(void)
 {
 }
 
+/* snapshot_inode.c */
+extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
+		sector_t iblock, unsigned long maxblocks,
+		struct buffer_head *cow_bh,
+		int shrink, int *pmapped);
 
 /* tests if @inode is a snapshot file */
 static inline int ext4_snapshot_file(struct inode *inode)

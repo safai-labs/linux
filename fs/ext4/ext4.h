@@ -1894,6 +1894,16 @@ extern void ext4_free_branches(handle_t *handle, struct inode *inode,
 				struct buffer_head *parent_bh,
 				__le32 *first, __le32 *last,
 				int depth);
+extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
+			   struct buffer_head *this_bh,
+			   __le32 *first, __le32 *last,
+			   const char *bitmap, int bit,
+			   int *pfreed_blocks);
+
+#define ext4_free_data(handle, inode, bh, first, last)		\
+	ext4_free_data_cow(handle, inode, bh, first, last,	\
+			    NULL, 0, NULL)
+
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);

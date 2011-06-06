@@ -4523,11 +4523,15 @@ no_top:
  * Return 0 on success, 1 on invalid block range
  * and < 0 on fatal error.
  */
-static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
-			     struct buffer_head *bh,
-			     ext4_fsblk_t block_to_free,
-			     unsigned long count, __le32 *first,
-			     __le32 *last)
+/*
+ * ext4_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
+ * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
+ * @bit:	bit number representing the @first block
+ */
+static int ext4_clear_blocks_cow(handle_t *handle, struct inode *inode,
+		struct buffer_head *bh, ext4_fsblk_t block_to_free,
+		unsigned long count, __le32 *first, __le32 *last,
+		const char *bitmap, int bit)
 {
 	__le32 *p;
 	int	flags = EXT4_FREE_BLOCKS_FORGET | EXT4_FREE_BLOCKS_VALIDATED;
@@ -4567,8 +4571,12 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 		}
 	}
 
-	for (p = first; p < last; p++)
+	for (p = first; p < last; p++) {
+		if (*p && bitmap && ext4_test_bit(bit + (p - first), bitmap))
+			/* don't free block used by older snapshot */
+			continue;
 		*p = 0;
+	}
 
 	ext4_free_blocks(handle, inode, NULL, block_to_free, count, flags);
 	return 0;
@@ -4596,9 +4604,17 @@ out_err:
  * @this_bh will be %NULL if @first and @last point into the inode's direct
  * block pointers.
  */
-static void ext4_free_data(handle_t *handle, struct inode *inode,
+/*
+ * ext4_free_data_cow - free a list of data blocks (consult COW bitmap)
+ * @bitmap:	   COW bitmap to consult when shrinking deleted snapshot
+ * @bit:	   bit number representing the @first block
+ * @pfreed_blocks: return number of freed blocks
+ */
+void ext4_free_data_cow(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
-			   __le32 *first, __le32 *last)
+			   __le32 *first, __le32 *last,
+			   const char *bitmap, int bit,
+			   int *pfreed_blocks)
 {
 	ext4_fsblk_t block_to_free = 0;    /* Starting block # of a run */
 	unsigned long count = 0;	    /* Number of blocks in the run */
@@ -4622,6 +4638,11 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 
 	for (p = first; p < last; p++) {
 		nr = le32_to_cpu(*p);
+		if (nr && bitmap && ext4_test_bit(bit + (p - first), bitmap))
+			/* don't free block used by older snapshot */
+			nr = 0;
+		if (nr && pfreed_blocks)
+			++(*pfreed_blocks);
 		if (nr) {
 			/* accumulate blocks to free if they're contiguous */
 			if (count == 0) {
@@ -4631,9 +4652,10 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 			} else if (nr == block_to_free + count) {
 				count++;
 			} else {
-				err = ext4_clear_blocks(handle, inode, this_bh,
-						        block_to_free, count,
-						        block_to_free_p, p);
+				err = ext4_clear_blocks_cow(handle, inode,
+					       this_bh, block_to_free, count,
+					       block_to_free_p, p, bitmap,
+					       bit + (block_to_free_p - first));
 				if (err)
 					break;
 				block_to_free = nr;
@@ -4643,9 +4665,10 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 		}
 	}
 
-	if (!err && count > 0)
-		err = ext4_clear_blocks(handle, inode, this_bh, block_to_free,
-					count, block_to_free_p, p);
+	if (count > 0)
+		err = ext4_clear_blocks_cow(handle, inode, this_bh,
+				block_to_free, count, block_to_free_p, p,
+				bitmap, bit + (block_to_free_p - first));
 	if (err < 0)
 		/* fatal error */
 		return;

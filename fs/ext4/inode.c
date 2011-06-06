@@ -4158,8 +4158,7 @@ static int ext4_no_writepage(struct page *page,
  * the snapshot COW bitmaps and a few initial blocks copied on snapshot_take().
  */
 static const struct address_space_operations ext4_snapfile_aops = {
-	.readpage		= ext4_readpage,
-	.readpages		= ext4_readpages,
+	.readpage		= ext4_snapshot_readpage,
 	.writepage		= ext4_no_writepage,
 	.bmap			= ext4_bmap,
 	.invalidatepage		= ext4_invalidatepage,

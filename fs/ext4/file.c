@@ -228,7 +228,8 @@ loff_t ext4_llseek(struct file *file, loff_t offset, int origin)
 	struct inode *inode = file->f_mapping->host;
 	loff_t maxbytes;
 
-	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
+	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS) &&
+			!ext4_snapshot_file(inode))
 		maxbytes = EXT4_SB(inode->i_sb)->s_bitmap_maxbytes;
 	else
 		maxbytes = inode->i_sb->s_maxbytes;

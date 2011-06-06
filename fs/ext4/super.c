@@ -3302,6 +3302,9 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 				EXT4_FEATURE_RO_COMPAT_HUGE_FILE);
 	sbi->s_bitmap_maxbytes = ext4_max_bitmap_size(sb->s_blocksize_bits,
 						      has_huge_files);
+	if (EXT4_SNAPSHOTS(sb))
+		/* Snapshot files are huge files */
+		has_huge_files = 1;
 	sb->s_maxbytes = ext4_max_size(sb->s_blocksize_bits, has_huge_files);
 
 	if (le32_to_cpu(es->s_rev_level) == EXT4_GOOD_OLD_REV) {

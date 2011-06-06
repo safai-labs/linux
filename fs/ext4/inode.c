@@ -335,6 +335,7 @@ static int ext4_block_to_path(struct inode *inode,
 		double_blocks = (1 << (ptrs_bits * 2));
 	int n = 0;
 	int final = 0;
+	int tind;
 
 	if (i_block < direct_blocks) {
 		offsets[n++] = i_block;
@@ -350,6 +351,18 @@ static int ext4_block_to_path(struct inode *inode,
 		final = ptrs;
 	} else if (((i_block -= double_blocks) >> (ptrs_bits * 2)) < ptrs) {
 		offsets[n++] = EXT4_TIND_BLOCK;
+		offsets[n++] = i_block >> (ptrs_bits * 2);
+		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
+		offsets[n++] = i_block & (ptrs - 1);
+		final = ptrs;
+	} else if (ext4_snapshot_file(inode) &&
+			(i_block >> (ptrs_bits * 3)) <
+			EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS + 1) {
+		tind = i_block >> (ptrs_bits * 3);
+		BUG_ON(tind == 0);
+		/* use up to 4 triple indirect blocks to map 2^32 blocks */
+		i_block -= (tind << (ptrs_bits * 3));
+		offsets[n++] = (EXT4_TIND_BLOCK + tind) % EXT4_NDIR_BLOCKS;
 		offsets[n++] = i_block >> (ptrs_bits * 2);
 		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
 		offsets[n++] = i_block & (ptrs - 1);
@@ -4841,6 +4854,10 @@ do_indirects:
 	/* Kill the remaining (whole) subtrees */
 	switch (offsets[0]) {
 	default:
+		if (ext4_snapshot_file(inode) &&
+				offsets[0] < EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS)
+			/* Freeing snapshot extra tind branches */
+			break;
 		nr = i_data[EXT4_IND_BLOCK];
 		if (nr) {
 			ext4_free_branches(handle, inode, NULL, &nr, &nr+1, 1);
@@ -4860,6 +4877,19 @@ do_indirects:
 		}
 	case EXT4_TIND_BLOCK:
 		;
+	}
+
+	if (ext4_snapshot_file(inode)) {
+		int i;
+
+		/* Kill the remaining snapshot file triple indirect trees */
+		for (i = 0; i < EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS; i++) {
+			nr = i_data[i];
+			if (!nr)
+				continue;
+			ext4_free_branches(handle, inode, NULL, &nr, &nr+1, 3);
+			i_data[i] = 0;
+		}
 	}
 
 out_unlock:
@@ -5096,7 +5126,8 @@ static blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
 	struct super_block *sb = inode->i_sb;
 
 	if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
-				EXT4_FEATURE_RO_COMPAT_HUGE_FILE)) {
+				EXT4_FEATURE_RO_COMPAT_HUGE_FILE) ||
+			ext4_snapshot_file(inode)) {
 		/* we are using combined 48 bit field */
 		i_blocks = ((u64)le16_to_cpu(raw_inode->i_blocks_high)) << 32 |
 					le32_to_cpu(raw_inode->i_blocks_lo);
@@ -5335,7 +5366,9 @@ static int ext4_inode_blocks_set(handle_t *handle,
 		ext4_clear_inode_flag(inode, EXT4_INODE_HUGE_FILE);
 		return 0;
 	}
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE))
+	/* snapshot files may be represented as huge files */
+	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_HUGE_FILE) &&
+			!ext4_snapshot_file(inode))
 		return -EFBIG;
 
 	if (i_blocks <= 0xffffffffffffULL) {
@@ -5625,6 +5658,12 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 	}
 
 	if (attr->ia_valid & ATTR_SIZE) {
+		/* prevent size modification of snapshot files */
+		if (ext4_snapshot_file(inode) && attr->ia_size != 0) {
+			snapshot_debug(1, "snapshot file (%lu) can only be "
+					"truncated to 0!\n", inode->i_ino);
+			return -EPERM;
+		}
 		if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))) {
 			struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
 

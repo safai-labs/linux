@@ -400,6 +400,90 @@ __ext4_snapshot_trace_cow(const char *where, handle_t *handle,
 #define ext4_snapshot_trace_cow(where, handle, sb, inode, bh, blk, cnt, cmd)
 #endif
 /*
+ * The last transaction ID during which the buffer has been COWed is stored in
+ * the b_cow_tid field of the journal_head struct.  If we know that the buffer
+ * was COWed during the current transaction, we don't need to COW it again.
+ * [jbd_lock_bh_state()]
+ */
+
+void init_ext4_snapshot_cow_cache(void)
+{
+#ifdef CONFIG_EXT4_DEBUG
+	cow_cache_enabled = 1;
+#endif
+}
+
+#ifdef CONFIG_EXT4_DEBUG
+#define cow_cache_enabled()	(cow_cache_enabled)
+#else
+#define cow_cache_enabled()	(1)
+#endif
+
+#define test_cow_tid(jh, handle)	\
+	((jh)->b_cow_tid == (handle)->h_transaction->t_tid)
+#define set_cow_tid(jh, handle)		\
+	((jh)->b_cow_tid = (handle)->h_transaction->t_tid)
+
+/*
+ * Journal COW cache functions.
+ * a block can only be COWed once per snapshot,
+ * so a block can only be COWed once per transaction,
+ * so a buffer that was COWed in the current transaction,
+ * doesn't need to be COWed.
+ *
+ * Return values:
+ * 1 - block was COWed in current transaction
+ * 0 - block wasn't COWed in current transaction
+ */
+static int
+ext4_snapshot_test_cowed(handle_t *handle, struct buffer_head *bh)
+{
+	struct journal_head *jh;
+
+	if (!cow_cache_enabled())
+		return 0;
+
+	/* check the COW tid in the journal head */
+	if (bh && buffer_jbd(bh)) {
+		jbd_lock_bh_state(bh);
+		jh = bh2jh(bh);
+		if (jh && !test_cow_tid(jh, handle))
+			jh = NULL;
+		jbd_unlock_bh_state(bh);
+		if (jh)
+			/*
+			 * Block was already COWed in the running transaction,
+			 * so we don't need to COW it again.
+			 */
+			return 1;
+	}
+	return 0;
+}
+
+static void
+ext4_snapshot_mark_cowed(handle_t *handle, struct buffer_head *bh)
+{
+	struct journal_head *jh;
+
+	if (!cow_cache_enabled())
+		return;
+
+	if (bh && buffer_jbd(bh)) {
+		jbd_lock_bh_state(bh);
+		jh = bh2jh(bh);
+		if (jh && !test_cow_tid(jh, handle))
+			/*
+			 * this is the first time this block was COWed
+			 * in the running transaction.
+			 * update the COW tid in the journal head
+			 * to mark that this block doesn't need to be COWed.
+			 */
+			set_cow_tid(jh, handle);
+		jbd_unlock_bh_state(bh);
+	}
+}
+
+/*
  * Begin COW or move operation.
  * No locks needed here, because @handle is a per-task struct.
  */
@@ -478,6 +562,13 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 		/* active snapshot may only be modified during COW */
 		snapshot_debug_hl(4, "active snapshot access denied!\n");
 		return -EPERM;
+	}
+	/* check if the buffer was COWed in the current transaction */
+	if (ext4_snapshot_test_cowed(handle, bh)) {
+		snapshot_debug_hl(4, "buffer found in COW cache - "
+				  "skip block cow!\n");
+		trace_cow_inc(handle, ok_jh);
+		return 0;
 	}
 
 	/* BEGIN COWing */
@@ -572,6 +663,8 @@ int ext4_snapshot_test_and_cow(const char *where, handle_t *handle,
 test_pending_cow:
 
 cowed:
+	/* mark the buffer COWed in the current transaction */
+	ext4_snapshot_mark_cowed(handle, bh);
 out:
 	brelse(sbh);
 	/* END COWing */

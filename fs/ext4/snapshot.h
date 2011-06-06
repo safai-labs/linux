@@ -342,6 +342,7 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 	return ext4_snapshot_move(handle, inode, block, pcount, 1);
 }
 
+extern void init_ext4_snapshot_cow_cache(void);
 
 /* snapshot_ctl.c */
 
@@ -364,6 +365,7 @@ extern void ext4_snapshot_destroy(struct super_block *sb);
 
 static inline int init_ext4_snapshot(void)
 {
+	init_ext4_snapshot_cow_cache();
 	return 0;
 }
 

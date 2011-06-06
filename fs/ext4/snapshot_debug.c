@@ -47,10 +47,12 @@ static const char *snapshot_test_names[SNAPSHOT_TESTS_NUM] = {
 
 u16 snapshot_enable_test[SNAPSHOT_TESTS_NUM] __read_mostly = {0};
 u8 snapshot_enable_debug __read_mostly = 1;
+u8 cow_cache_enabled __read_mostly = 1;
 
 static struct dentry *snapshot_debug;
 static struct dentry *snapshot_version;
 static struct dentry *snapshot_test[SNAPSHOT_TESTS_NUM];
+static struct dentry *cow_cache;
 
 static char snapshot_version_str[] = EXT4_SNAPSHOT_VERSION;
 static struct debugfs_blob_wrapper snapshot_version_blob = {
@@ -79,6 +81,9 @@ void ext4_snapshot_create_debugfs_entry(struct dentry *debugfs_dir)
 					      S_IRUGO|S_IWUSR,
 					      debugfs_dir,
 					      &snapshot_enable_test[i]);
+	cow_cache = debugfs_create_u8("cow-cache", S_IRUGO|S_IWUSR,
+					   debugfs_dir,
+					   &cow_cache_enabled);
 }
 
 /*
@@ -89,6 +94,8 @@ void ext4_snapshot_remove_debugfs_entry(void)
 {
 	int i;
 
+	if (cow_cache)
+		debugfs_remove(cow_cache);
 	for (i = 0; i < SNAPSHOT_TESTS_NUM && i < SNAPSHOT_TEST_NAMES; i++)
 		if (snapshot_test[i])
 			debugfs_remove(snapshot_test[i]);

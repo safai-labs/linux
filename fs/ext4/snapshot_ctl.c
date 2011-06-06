@@ -112,7 +112,24 @@ static int ext4_snapshot_set_active(struct super_block *sb,
 
 	return 0;
 }
-#define ext4_snapshot_reset_bitmap_cache(sb, init) 0
+/*
+ * ext4_snapshot_reset_bitmap_cache():
+ *
+ * Resets the COW/exclude bitmap cache for all block groups.
+ *
+ * Called from snapshot_take() under journal_lock_updates().
+ */
+static void ext4_snapshot_reset_bitmap_cache(struct super_block *sb)
+{
+	struct ext4_group_info *grp;
+	int i;
+
+	for (i = 0; i < EXT4_SB(sb)->s_groups_count; i++) {
+		grp = ext4_get_group_info(sb, i);
+		grp->bg_cow_bitmap = 0;
+		cond_resched();
+	}
+}
 
 /*
  * Snapshot constructor/destructor

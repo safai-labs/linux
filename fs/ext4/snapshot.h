@@ -346,6 +346,14 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 /* snapshot_ctl.c */
 
 /*
+ * Snapshot control functions
+ */
+extern void ext4_snapshot_get_flags(struct inode *inode, struct file *filp);
+extern int ext4_snapshot_set_flags(handle_t *handle, struct inode *inode,
+				    unsigned int flags);
+extern int ext4_snapshot_take(struct inode *inode);
+
+/*
  * Snapshot constructor/destructor
  */
 extern int ext4_snapshot_load(struct super_block *sb,

@@ -83,6 +83,21 @@ long ext4_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			if (!capable(CAP_SYS_RESOURCE))
 				goto flags_out;
 		}
+
+		/*
+		 * The SNAPFILE flag can only be changed on directories by
+		 * the relevant capability.
+		 * It can only be inherited by regular files.
+		 */
+		if ((flags ^ oldflags) & EXT4_SNAPFILE_FL) {
+			if (!S_ISDIR(inode->i_mode)) {
+				err = -ENOTDIR;
+				goto flags_out;
+			}
+			if (!capable(CAP_SYS_RESOURCE))
+				goto flags_out;
+		}
+
 		if (oldflags & EXT4_EXTENTS_FL) {
 			/* We don't support clearning extent flags */
 			if (!(flags & EXT4_EXTENTS_FL)) {
@@ -135,6 +150,102 @@ flags_err:
 		if (migrate)
 			err = ext4_ext_migrate(inode);
 flags_out:
+		mutex_unlock(&inode->i_mutex);
+		mnt_drop_write(filp->f_path.mnt);
+		return err;
+	}
+	case EXT4_IOC_GETSNAPFLAGS:
+		if (!EXT4_SNAPSHOTS(inode->i_sb))
+			return -EOPNOTSUPP;
+
+		ext4_snapshot_get_flags(inode, filp);
+		flags = ext4_get_snapstate_flags(inode);
+		return put_user(flags, (int __user *) arg);
+
+	case EXT4_IOC_SETSNAPFLAGS: {
+		handle_t *handle = NULL;
+		struct ext4_iloc iloc;
+		unsigned int oldflags;
+		int err;
+
+		if (!EXT4_SNAPSHOTS(inode->i_sb))
+			return -EOPNOTSUPP;
+
+		if (!is_owner_or_cap(inode))
+			return -EACCES;
+
+		if (get_user(flags, (int __user *) arg))
+			return -EFAULT;
+
+		err = mnt_want_write(filp->f_path.mnt);
+		if (err)
+			return err;
+
+		/*
+		 * Snapshot file state flags can only be changed by
+		 * the relevant capability and under snapshot_mutex lock.
+		 */
+		if (!ext4_snapshot_file(inode) ||
+				!capable(CAP_SYS_RESOURCE))
+			return -EPERM;
+
+		/* update snapshot 'open' flag under i_mutex */
+		mutex_lock(&inode->i_mutex);
+		ext4_snapshot_get_flags(inode, filp);
+		oldflags = ext4_get_snapstate_flags(inode);
+
+		/*
+		 * snapshot_mutex should be held throughout the trio
+		 * snapshot_{set_flags,take,update}().  It must be taken
+		 * before starting the transaction, otherwise
+		 * journal_lock_updates() inside snapshot_take()
+		 * can deadlock:
+		 * A: journal_start()
+		 * A: snapshot_mutex_lock()
+		 * B: journal_start()
+		 * B: snapshot_mutex_lock() (waiting for A)
+		 * A: journal_stop()
+		 * A: snapshot_take() ->
+		 * A: journal_lock_updates() (waiting for B)
+		 */
+		mutex_lock(&EXT4_SB(inode->i_sb)->s_snapshot_mutex);
+
+		handle = ext4_journal_start(inode, 1);
+		if (IS_ERR(handle)) {
+			err = PTR_ERR(handle);
+			goto snapflags_out;
+		}
+		err = ext4_reserve_inode_write(handle, inode, &iloc);
+		if (err)
+			goto snapflags_err;
+
+		err = ext4_snapshot_set_flags(handle, inode, flags);
+		if (err)
+			goto snapflags_err;
+
+		err = ext4_mark_iloc_dirty(handle, inode, &iloc);
+snapflags_err:
+		ext4_journal_stop(handle);
+		if (err)
+			goto snapflags_out;
+
+		if (!(oldflags & 1UL<<EXT4_SNAPSTATE_LIST)  &&
+				(flags & 1UL<<EXT4_SNAPSTATE_LIST))
+			/* setting list flag - take snapshot */
+			err = ext4_snapshot_take(inode);
+snapflags_out:
+		if ((oldflags|flags) & 1UL<<EXT4_SNAPSTATE_LIST) {
+			/* if clearing list flag, cleanup snapshot list */
+			int ret;
+
+			/* update/cleanup snapshots list even if take failed */
+			ret = ext4_snapshot_update(inode->i_sb,
+					!(flags & 1UL<<EXT4_SNAPSTATE_LIST), 0);
+			if (!err)
+				err = ret;
+		}
+
+		mutex_unlock(&EXT4_SB(inode->i_sb)->s_snapshot_mutex);
 		mutex_unlock(&inode->i_mutex);
 		mnt_drop_write(filp->f_path.mnt);
 		return err;
@@ -210,6 +321,8 @@ setversion_out:
 
 		if (get_user(n_blocks_count, (__u32 __user *)arg))
 			return -EFAULT;
+		/* avoid snapshot_take() in the middle of group_extend() */
+		mutex_lock(&EXT4_SB(sb)->s_snapshot_mutex);
 
 		err = mnt_want_write(filp->f_path.mnt);
 		if (err)
@@ -223,6 +336,7 @@ setversion_out:
 		}
 		if (err == 0)
 			err = err2;
+		mutex_unlock(&EXT4_SB(sb)->s_snapshot_mutex);
 		mnt_drop_write(filp->f_path.mnt);
 
 		return err;
@@ -285,6 +399,8 @@ mext_out:
 		if (err)
 			return err;
 
+		/* avoid snapshot_take() in the middle of group_add() */
+		mutex_lock(&EXT4_SB(sb)->s_snapshot_mutex);
 		err = ext4_group_add(sb, &input);
 		if (EXT4_SB(sb)->s_journal) {
 			jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
@@ -293,6 +409,7 @@ mext_out:
 		}
 		if (err == 0)
 			err = err2;
+		mutex_unlock(&EXT4_SB(sb)->s_snapshot_mutex);
 		mnt_drop_write(filp->f_path.mnt);
 
 		return err;

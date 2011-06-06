@@ -137,6 +137,43 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 			EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT);
 }
 
+/*
+ * snapshot_map_blocks() command flags passed to ext4_map_blocks() on its
+ * @flags argument. The higher bits are used for mapping snapshot blocks.
+ */
+/* original meaning - only check if blocks are mapped */
+#define SNAPMAP_READ	0
+/* original meaning - allocate missing blocks and indirect blocks */
+#define SNAPMAP_WRITE	EXT4_GET_BLOCKS_CREATE
+/* creating COWed block */
+#define SNAPMAP_COW	(SNAPMAP_WRITE|EXT4_GET_BLOCKS_COW)
+/* moving blocks to snapshot */
+#define SNAPMAP_MOVE	(SNAPMAP_WRITE|EXT4_GET_BLOCKS_MOVE)
+ /* creating COW bitmap - handle COW races and bypass journal */
+#define SNAPMAP_BITMAP	(SNAPMAP_COW|EXT4_GET_BLOCKS_SYNC)
+
+/* test special cases when mapping snapshot blocks */
+#define SNAPMAP_ISCOW(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_COW))
+#define SNAPMAP_ISMOVE(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_MOVE))
+#define SNAPMAP_ISSYNC(cmd)	(unlikely((cmd) & EXT4_GET_BLOCKS_SYNC))
+
+#define IS_COWING(handle)	(unlikely((handle)->h_cowing))
+
+/* snapshot.c */
+
+/* helper functions for ext4_snapshot_create() */
+extern int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
+				     ext4_snapblk_t block,
+				     unsigned long maxblocks,
+				     ext4_fsblk_t *mapped, int cmd);
+/* helper function for ext4_snapshot_take() */
+extern void ext4_snapshot_copy_buffer(struct buffer_head *sbh,
+					   struct buffer_head *bh,
+					   const char *mask);
+/* helper function for ext4_snapshot_get_block() */
+extern int ext4_snapshot_read_block_bitmap(struct super_block *sb,
+		unsigned int block_group, struct buffer_head *bitmap_bh);
+
 #define ext4_snapshot_cow(handle, inode, block, bh, cow) 0
 
 #define ext4_snapshot_move(handle, inode, block, pcount, move) (0)

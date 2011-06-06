@@ -735,7 +735,9 @@ ext4_xattr_block_set(handle_t *handle, struct inode *inode,
 			int offset = (char *)s->here - bs->bh->b_data;
 
 			unlock_buffer(bs->bh);
-			ext4_handle_release_buffer(handle, bs->bh);
+			error = ext4_handle_release_buffer(handle, bs->bh);
+			if (error)
+				goto cleanup;
 			if (ce) {
 				mb_cache_entry_release(ce);
 				ce = NULL;

@@ -264,12 +264,11 @@ static inline void ext4_handle_sync(handle_t *handle)
 		handle->h_sync = 1;
 }
 
-static inline void ext4_handle_release_buffer(handle_t *handle,
-						struct buffer_head *bh)
-{
-	if (ext4_handle_valid(handle))
-		jbd2_journal_release_buffer(handle, bh);
-}
+int __ext4_handle_release_buffer(const char *where, handle_t *handle,
+				struct buffer_head *bh);
+
+#define ext4_handle_release_buffer(handle, bh) \
+	__ext4_handle_release_buffer(__func__, (handle), (bh))
 
 static inline int ext4_handle_is_aborted(handle_t *handle)
 {

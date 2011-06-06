@@ -129,8 +129,9 @@ void ext4_journal_abort_handle(const char *caller, unsigned int line,
 			       const char *err_fn,
 		struct buffer_head *bh, handle_t *handle, int err);
 
-int __ext4_journal_get_undo_access(const char *where, unsigned int line,
-				   handle_t *handle, struct buffer_head *bh);
+int __ext4_handle_get_bitmap_access(const char *where, unsigned int line,
+				    handle_t *handle, struct super_block *sb,
+				    ext4_group_t group, struct buffer_head *bh);
 
 int __ext4_journal_get_write_access_inode(const char *where, unsigned int line,
 					 handle_t *handle, struct inode *inode,
@@ -149,8 +150,9 @@ int __ext4_handle_dirty_metadata(const char *where, unsigned int line,
 int __ext4_handle_dirty_super(const char *where, unsigned int line,
 			      handle_t *handle, struct super_block *sb);
 
-#define ext4_journal_get_undo_access(handle, bh) \
-	__ext4_journal_get_undo_access(__func__, __LINE__, (handle), (bh))
+#define ext4_handle_get_bitmap_access(handle, sb, group, bh) \
+	__ext4_handle_get_bitmap_access(__func__, __LINE__, \
+					(handle), (sb), (group), (bh))
 #define ext4_journal_get_write_access_exclude(handle, bh) \
 	__ext4_journal_get_write_access_inode(__func__, __LINE__, \
 						 (handle), NULL, (bh), 1)

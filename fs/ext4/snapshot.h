@@ -196,6 +196,37 @@ static inline int ext4_snapshot_get_create_access(handle_t *handle,
 	return err;
 }
 
+/*
+ * get_bitmap_access() is called before modifying a block bitmap.
+ * this call initializes the COW bitmap for @group.
+ *
+ * Return values:
+ * = 0 - COW bitmap is initialized
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
+		struct super_block *sb, ext4_group_t group,
+		struct buffer_head *bh)
+{
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
+	/*
+	 * With flex_bg, block bitmap may reside in a different group than
+	 * the group it describes, so we need to init both COW bitmaps:
+	 * 1. init the COW bitmap for @group by testing
+	 *    if the first block in the group should be COWed
+	 */
+	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
+		int err = ext4_snapshot_cow(handle, NULL,
+				ext4_group_first_block_no(sb, group),
+				NULL, 0);
+		if (err < 0)
+			return err;
+	}
+	/* 2. COW the block bitmap itself, which may be in another group */
+	return ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 1);
+}
+
 
 
 /* snapshot_ctl.c */

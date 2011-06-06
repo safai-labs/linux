@@ -145,6 +145,57 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
  * Block access functions
  */
 
+/*
+ * get_write_access() is called before writing to a metadata block
+ * if @inode is not NULL, then this is an inode's indirect block
+ * otherwise, this is a file system global metadata block
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_write_access(handle_t *handle,
+		struct inode *inode, struct buffer_head *bh)
+{
+	struct super_block *sb;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
+
+	return ext4_snapshot_cow(handle, inode, bh->b_blocknr, bh, 1);
+}
+
+/*
+ * get_create_access() is called after allocating a new metadata block
+ *
+ * Return values:
+ * = 0 - block was COWed or doesn't need to be COWed
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_create_access(handle_t *handle,
+		struct buffer_head *bh)
+{
+	struct super_block *sb;
+	int err;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
+
+	/* Should block be COWed? */
+	err = ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 0);
+	/*
+	 * A new block shouldn't need to be COWed if get_delete_access() was
+	 * called for all deleted blocks.  However, it may need to be COWed
+	 * if fsck was run and if it had freed some blocks without moving them
+	 * to snapshot.  In the latter case, -EIO will be returned.
+	 */
+	if (err > 0)
+		err = -EIO;
+	return err;
+}
+
 
 
 /* snapshot_ctl.c */

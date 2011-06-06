@@ -874,7 +874,8 @@ static int ext4_splice_branch(handle_t *handle, struct inode *inode,
 	 */
 	if (where->bh) {
 		BUFFER_TRACE(where->bh, "get_write_access");
-		err = ext4_journal_get_write_access(handle, where->bh);
+		err = ext4_journal_get_write_access_inode(handle, inode,
+							   where->bh);
 		if (err)
 			goto err_out;
 	}
@@ -4149,7 +4150,8 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 			goto out_err;
 		if (bh) {
 			BUFFER_TRACE(bh, "retaking write access");
-			err = ext4_journal_get_write_access(handle, bh);
+			err = ext4_journal_get_write_access_inode(handle,
+								  inode, bh);
 			if (unlikely(err))
 				goto out_err;
 		}
@@ -4200,7 +4202,8 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 
 	if (this_bh) {				/* For indirect block */
 		BUFFER_TRACE(this_bh, "get_write_access");
-		err = ext4_journal_get_write_access(handle, this_bh);
+		err = ext4_journal_get_write_access_inode(handle, inode,
+							   this_bh);
 		/* Important: if we can't update the indirect pointers
 		 * to the blocks, we can't free them. */
 		if (err)
@@ -4363,8 +4366,8 @@ static void ext4_free_branches(handle_t *handle, struct inode *inode,
 				 * pointed to by an indirect block: journal it
 				 */
 				BUFFER_TRACE(parent_bh, "get_write_access");
-				if (!ext4_journal_get_write_access(handle,
-								   parent_bh)){
+				if (!ext4_journal_get_write_access_inode(
+					    handle, inode, parent_bh)){
 					*p = 0;
 					BUFFER_TRACE(parent_bh,
 					"call ext4_handle_dirty_metadata");
@@ -4741,9 +4744,14 @@ has_buffer:
 
 int ext4_get_inode_loc(struct inode *inode, struct ext4_iloc *iloc)
 {
-	/* We have all inode data except xattrs in memory here. */
-	return __ext4_get_inode_loc(inode, iloc,
+	int in_mem = (!EXT4_SNAPSHOTS(inode->i_sb) &&
 		!ext4_test_inode_state(inode, EXT4_STATE_XATTR));
+
+	/*
+	 * We have all inode's data except xattrs in memory here,
+	 * but we must always read-in the entire inode block for COW.
+	 */
+	return __ext4_get_inode_loc(inode, iloc, in_mem);
 }
 
 void ext4_set_inode_flags(struct inode *inode)

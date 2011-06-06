@@ -1194,6 +1194,7 @@ struct ext4_sb_info {
 	struct block_device *journal_bdev;
 	struct mutex s_snapshot_mutex;		/* protects 2 fields below: */
 	struct inode *s_active_snapshot;	/* [ s_snapshot_mutex ] */
+	struct list_head s_snapshot_list;	/* [ s_snapshot_mutex ] */
 #ifdef CONFIG_JBD2_DEBUG
 	struct timer_list turn_ro_timer;	/* For turning read-only (crash simulation) */
 	wait_queue_head_t ro_wait_queue;	/* For people waiting for the fs to go read-only */

@@ -3543,6 +3543,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	mutex_init(&sbi->s_snapshot_mutex);
 	sbi->s_active_snapshot = NULL;
+	INIT_LIST_HEAD(&sbi->s_snapshot_list); /* snapshot files */
 
 	needs_recovery = (es->s_last_orphan != 0 ||
 			  EXT4_HAS_INCOMPAT_FEATURE(sb,

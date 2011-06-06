@@ -1737,6 +1737,12 @@ struct ext4_features {
 	struct completion f_kobj_unregister;
 };
 
+typedef struct {
+	__le32	*p;
+	__le32	key;
+	struct buffer_head *bh;
+} Indirect;
+
 /*
  * Function prototypes
  */
@@ -1878,6 +1884,16 @@ extern void ext4_da_update_reserve_space(struct inode *inode,
 /* snapshot_inode.c */
 extern int ext4_snapshot_readpage(struct file *file, struct page *page);
 
+extern int ext4_block_to_path(struct inode *inode,
+			      ext4_lblk_t i_block,
+			      ext4_lblk_t offsets[4], int *boundary);
+extern Indirect *ext4_get_branch(struct inode *inode, int depth,
+				 ext4_lblk_t  *offsets,
+				 Indirect chain[4], int *err);
+extern void ext4_free_branches(handle_t *handle, struct inode *inode,
+				struct buffer_head *parent_bh,
+				__le32 *first, __le32 *last,
+				int depth);
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
 extern long ext4_compat_ioctl(struct file *, unsigned int, unsigned long);

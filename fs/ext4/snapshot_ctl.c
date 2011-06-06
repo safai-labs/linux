@@ -1149,6 +1149,53 @@ out_err:
 }
 
 /*
+ * ext4_snapshot_clean() frees snapshot file blocks
+ * before removing snapshot file from snapshots list.
+ * Called from ext4_snapshot_remove() under snapshot_mutex.
+ *
+ * Returns 0 on success and < 0 on error.
+ */
+static int ext4_snapshot_clean(handle_t *handle, struct inode *inode)
+{
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	int i;
+
+	if (!ext4_snapshot_list(inode)) {
+		snapshot_debug(1, "ext4_snapshot_clean() called with "
+			       "snapshot file (ino=%lu) not on list\n",
+			       inode->i_ino);
+		return -EINVAL;
+	}
+
+	if (ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_ACTIVE)) {
+		snapshot_debug(1, "clean of active snapshot (%u) "
+			       "is not allowed.\n",
+			       inode->i_generation);
+		return -EPERM;
+	}
+
+	/*
+	 * A very simplified version of ext4_truncate() for snapshot files.
+	 * A non-active snapshot file never allocates new blocks and only frees
+	 * blocks under snapshot_mutex, so no need to take truncate_mutex here.
+	 * No need to add inode to orphan list for post crash truncate, because
+	 * snapshot is still on the snapshot list and marked for deletion.
+	 * Free DIND branch last, to keep snapshot's super block around longer.
+	 */
+	for (i = EXT4_SNAPSHOT_N_BLOCKS - 1; i >= EXT4_DIND_BLOCK; i--) {
+		int depth = (i == EXT4_DIND_BLOCK ? 2 : 3);
+		int j = i%EXT4_N_BLOCKS;
+
+		if (!ei->i_data[j])
+			continue;
+		ext4_free_branches(handle, inode, NULL,
+				ei->i_data+j, ei->i_data+j+1, depth);
+		ei->i_data[j] = 0;
+	}
+	return 0;
+}
+
+/*
  * ext4_snapshot_enable() enables snapshot mount
  * sets the in-use flag and the active snapshot
  * Called under i_mutex and snapshot_mutex
@@ -1277,6 +1324,17 @@ static int ext4_snapshot_remove(struct inode *inode)
 	}
 	sbi = EXT4_SB(inode->i_sb);
 
+	/* free snapshot inode blocks */
+	err = ext4_snapshot_clean(handle, inode);
+	if (err)
+		goto out_handle;
+
+	/* reset i_size and i_disksize and invalidate page cache */
+	SNAPSHOT_SET_REMOVED(inode);
+
+	err = ext4_mark_inode_dirty(handle, inode);
+	if (err)
+		goto out_handle;
 
 	err = extend_or_restart_transaction_inode(handle, inode, 2);
 	if (err)
@@ -1318,6 +1376,34 @@ out_err:
 				inode->i_generation);
 	}
 	return err;
+}
+
+/*
+ * ext4_snapshot_cleanup - shrink/merge/remove snapshot marked for deletion
+ * @inode - inode in question
+ * @used_by - latest non-deleted snapshot
+ * @deleted - true if snapshot is marked for deletion and not active
+ * @need_shrink - counter of deleted snapshots to shrink
+ * @need_merge - counter of deleted snapshots to merge
+ *
+ * Deleted snapshot with no older non-deleted snapshot - remove from list
+ * Deleted snapshot with no older enabled snapshot - add to merge count
+ * Deleted snapshot with older enabled snapshot - add to shrink count
+ * Non-deleted snapshot - shrink and merge deleted snapshots group
+ *
+ * Called from ext4_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
+ */
+static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
+		int deleted, int *need_shrink, int *need_merge)
+{
+	int err = 0;
+
+	if (deleted && !used_by)
+		/* remove permanently unused deleted snapshot */
+		return ext4_snapshot_remove(inode);
+
+	return 0;
 }
 
 /*
@@ -1462,6 +1548,8 @@ int ext4_snapshot_update(struct super_block *sb, int cleanup, int read_only)
 	int found_active = 0;
 	int found_enabled = 0;
 	struct list_head *prev;
+	int need_shrink = 0;
+	int need_merge = 0;
 	int err = 0;
 
 	BUG_ON(read_only && cleanup);
@@ -1521,9 +1609,9 @@ update_snapshot:
 		/* snapshot is not in use by older enabled snapshots */
 		ext4_clear_inode_snapstate(inode, EXT4_SNAPSTATE_INUSE);
 
-	if (cleanup && deleted && !used_by)
-		/* remove permanently unused deleted snapshot */
-		err = ext4_snapshot_remove(inode);
+	if (cleanup)
+		err = ext4_snapshot_cleanup(inode, used_by, deleted,
+				&need_shrink, &need_merge);
 
 	if (!deleted) {
 		if (!found_active)

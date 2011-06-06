@@ -873,6 +873,20 @@ struct ext4_inode_info {
 #define EXT2_FLAGS_SIGNED_HASH		0x0001  /* Signed dirhash in use */
 #define EXT2_FLAGS_UNSIGNED_HASH	0x0002  /* Unsigned dirhash in use */
 #define EXT2_FLAGS_TEST_FILESYS		0x0004	/* to test development code */
+#define EXT4_FLAGS_IS_SNAPSHOT		0x0010 /* Is a snapshot image */
+#define EXT4_FLAGS_FIX_SNAPSHOT		0x0020 /* Corrupted snapshot */
+#define EXT4_FLAGS_FIX_EXCLUDE		0x0040 /* Bad exclude bitmap */
+
+#define EXT4_SET_FLAGS(sb, mask)				 \
+	do {							 \
+		EXT4_SB(sb)->s_es->s_flags |= cpu_to_le32(mask); \
+	} while (0)
+#define EXT4_CLEAR_FLAGS(sb, mask)				 \
+	do {							 \
+		EXT4_SB(sb)->s_es->s_flags &= ~cpu_to_le32(mask);\
+	} while (0)
+#define EXT4_TEST_FLAGS(sb, mask)				 \
+	(EXT4_SB(sb)->s_es->s_flags & cpu_to_le32(mask))
 
 /*
  * Mount flags
@@ -1338,6 +1352,7 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_RO_COMPAT_GDT_CSUM		0x0010
 #define EXT4_FEATURE_RO_COMPAT_DIR_NLINK	0x0020
 #define EXT4_FEATURE_RO_COMPAT_EXTRA_ISIZE	0x0040
+#define EXT4_FEATURE_RO_COMPAT_HAS_SNAPSHOT	0x0080 /* Ext4 has snapshots */
 
 #define EXT4_FEATURE_INCOMPAT_COMPRESSION	0x0001
 #define EXT4_FEATURE_INCOMPAT_FILETYPE		0x0002

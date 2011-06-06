@@ -18,6 +18,8 @@
  * You should have received a copy of the GNU General Public Licens
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-
+ *
+ * Snapshot move-on-write (MOW), Yongqiang Yang <xiaoqiangnk@gmail.com>, 2011
  */
 
 /*
@@ -43,6 +45,7 @@
 #include <linux/fiemap.h>
 #include "ext4_jbd2.h"
 #include "ext4_extents.h"
+#include "snapshot.h"
 
 #include <trace/events/ext4.h>
 

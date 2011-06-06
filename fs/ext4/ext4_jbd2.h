@@ -10,6 +10,8 @@
  * option, any later version, incorporated herein by reference.
  *
  * Ext4-specific journaling extensions.
+ *
+ * Snapshot extra COW credits, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #ifndef _EXT4_JBD2_H
@@ -18,6 +20,7 @@
 #include <linux/fs.h>
 #include <linux/jbd2.h>
 #include "ext4.h"
+#include "snapshot.h"
 
 #define EXT4_JOURNAL(inode)	(EXT4_SB((inode)->i_sb)->s_journal)
 
@@ -272,6 +275,11 @@ static inline int ext4_should_journal_data(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 1;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (EXT4_SNAPSHOTS(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 0;
+#endif
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_JOURNAL_DATA)
 		return 1;
 	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
@@ -285,6 +293,11 @@ static inline int ext4_should_order_data(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (EXT4_SNAPSHOTS(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 1;
+#endif
 	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
 		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_ORDERED_DATA)
@@ -298,6 +311,11 @@ static inline int ext4_should_writeback_data(struct inode *inode)
 		return 0;
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 1;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (EXT4_SNAPSHOTS(inode->i_sb))
+		/* snapshots enforce ordered data */
+		return 0;
+#endif
 	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
 		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)
@@ -320,6 +338,11 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 		return 0;
 	if (!S_ISREG(inode->i_mode))
 		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	if (EXT4_SNAPSHOTS(inode->i_sb))
+		/* XXX: should snapshots support dioread_nolock? */
+		return 0;
+#endif
 	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
 		return 0;
 	if (ext4_should_journal_data(inode))
@@ -327,4 +350,6 @@ static inline int ext4_should_dioread_nolock(struct inode *inode)
 	return 1;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+#endif
 #endif	/* _EXT4_JBD2_H */

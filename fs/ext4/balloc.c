@@ -20,6 +20,7 @@
 #include "ext4.h"
 #include "ext4_jbd2.h"
 #include "mballoc.h"
+#include "snapshot.h"
 
 #include <trace/events/ext4.h>
 
@@ -156,7 +157,6 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
 		tmp = ext4_block_bitmap(sb, gdp);
 		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
 			ext4_set_bit(tmp - start, bh->b_data);
-
 		tmp = ext4_inode_bitmap(sb, gdp);
 		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
 			ext4_set_bit(tmp - start, bh->b_data);

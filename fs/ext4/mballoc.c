@@ -25,6 +25,7 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <trace/events/ext4.h>
+#include "snapshot.h"
 
 /*
  * MUSTDO:
@@ -2740,6 +2741,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	sbi = EXT4_SB(sb);
 
 	err = -EIO;
+
 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
 	if (!bitmap_bh)
 		goto out_err;
@@ -2791,6 +2793,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 #endif
 	mb_set_bits(bitmap_bh->b_data, ac->ac_b_ex.fe_start,ac->ac_b_ex.fe_len);
+
 	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
 		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
 		ext4_free_blks_set(sb, gdp,
@@ -2820,6 +2823,8 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
 	if (err)
 		goto out_err;
+
+
 	err = ext4_handle_dirty_metadata(handle, NULL, gdp_bh);
 
 out_err:

@@ -48,6 +48,7 @@
 #include "xattr.h"
 #include "acl.h"
 #include "mballoc.h"
+#include "snapshot.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/ext4.h>
@@ -2625,6 +2626,24 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 			return 0;
 		}
 	}
+	/* Enforce snapshots requirements: */
+	if (EXT4_SNAPSHOTS(sb)) {
+		if (EXT4_HAS_INCOMPAT_FEATURE(sb,
+					EXT4_FEATURE_INCOMPAT_META_BG|
+					EXT4_FEATURE_INCOMPAT_64BIT)) {
+			ext4_msg(sb, KERN_ERR,
+				"has_snapshot feature cannot be mixed with "
+				"features: meta_bg, 64bit");
+			return 0;
+		}
+		if (EXT4_TEST_FLAGS(sb, EXT4_FLAGS_IS_SNAPSHOT)) {
+			ext4_msg(sb, KERN_ERR,
+				"A snapshot image must be mounted read-only. "
+				"If this is an exported snapshot image, you "
+				"must run fsck -xy to make it writable.");
+			return 0;
+		}
+	}
 	return 1;
 }
 
@@ -3235,6 +3254,15 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	blocksize = BLOCK_SIZE << le32_to_cpu(es->s_log_block_size);
 
+	/* Enforce snapshots blocksize == pagesize */
+	if (EXT4_SNAPSHOTS(sb) && blocksize != PAGE_SIZE) {
+		ext4_msg(sb, KERN_ERR,
+				"snapshots require that filesystem blocksize "
+				"(%d) be equal to system page size (%lu)",
+				blocksize, PAGE_SIZE);
+		goto failed_mount;
+	}
+
 	if (blocksize < EXT4_MIN_BLOCK_SIZE ||
 	    blocksize > EXT4_MAX_BLOCK_SIZE) {
 		ext4_msg(sb, KERN_ERR,
@@ -3590,6 +3618,15 @@ no_journal:
 	if (!EXT4_SB(sb)->dio_unwritten_wq) {
 		printk(KERN_ERR "EXT4-fs: failed to create DIO workqueue\n");
 		goto failed_mount_wq;
+	}
+
+	/* Enforce journal ordered mode with snapshots */
+	if (EXT4_SNAPSHOTS(sb) && !(sb->s_flags & MS_RDONLY) &&
+		(!EXT4_SB(sb)->s_journal ||
+		 test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA)) {
+		ext4_msg(sb, KERN_ERR,
+				"snapshots require journal ordered mode");
+		goto failed_mount4;
 	}
 
 	/*
@@ -4959,10 +4996,15 @@ static int __init ext4_init_fs(void)
 	err = register_filesystem(&ext4_fs_type);
 	if (err)
 		goto out;
+	err = init_ext4_snapshot();
+	if (err)
+		goto out_fs;
 
 	ext4_li_info = NULL;
 	mutex_init(&ext4_li_mtx);
 	return 0;
+out_fs:
+	unregister_filesystem(&ext4_fs_type);
 out:
 	unregister_as_ext2();
 	unregister_as_ext3();
@@ -4986,6 +5028,7 @@ out7:
 
 static void __exit ext4_exit_fs(void)
 {
+	exit_ext4_snapshot();
 	ext4_destroy_lazyinit_thread();
 	unregister_as_ext2();
 	unregister_as_ext3();

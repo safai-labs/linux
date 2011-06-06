@@ -1,8 +1,11 @@
 /*
  * Interface between ext4 and JBD
+ *
+ * Snapshot metadata COW hooks, Amir Goldstein <amir73il@users.sf.net>, 2011
  */
 
 #include "ext4_jbd2.h"
+#include "snapshot.h"
 
 #include <trace/events/ext4.h>
 

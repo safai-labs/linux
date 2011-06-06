@@ -1594,6 +1594,107 @@ out_err:
 }
 
 /*
+ * ext4_snapshot_merge - merge deleted snapshots
+ * @handle: JBD handle for this transaction
+ * @start:	latest non-deleted snapshot before deleted snapshots group
+ * @end:	first non-deleted snapshot after deleted snapshots group
+ * @need_merge: no. of deleted snapshots in the group
+ *
+ * Move all blocks from deleted snapshots group starting after @start and
+ * ending before @end to @start snapshot.  All moved blocks are 'in-use' by
+ * @start snapshot, because these deleted snapshots have already been shrunk
+ * (blocks 'in-use' are set in snapshot COW bitmap and not copied to snapshot).
+ * Called from ext4_snapshot_update() under snapshot_mutex.
+ * Returns 0 on success and <0 on error.
+ */
+static int ext4_snapshot_merge(struct inode *start, struct inode *end,
+				int need_merge)
+{
+	struct list_head *l, *n;
+	handle_t *handle = NULL;
+	struct ext4_sb_info *sbi = EXT4_SB(start->i_sb);
+	int err, ret;
+
+	snapshot_debug(3, "snapshot (%u-%u) merge: need_merge=%d\n",
+			start->i_generation, end->i_generation, need_merge);
+
+	/* iterate safe on (@start < snapshot < @end) */
+	list_for_each_prev_safe(l, n, &EXT4_I(start)->i_snaplist) {
+		struct inode *inode = &list_entry(l, struct ext4_inode_info,
+						  i_snaplist)->vfs_inode;
+
+		ext4_fsblk_t block = 1; /* skip super block */
+		/* blocks beyond the size of @start are not in-use by @start */
+		int count = SNAPSHOT_BLOCKS(start) - block;
+
+		if (n == &sbi->s_snapshot_list || inode == end ||
+		    !(ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK)))
+			break;
+
+		/* start large transaction that will be extended/restarted */
+		handle = ext4_journal_start(inode, EXT4_MAX_TRANS_DATA);
+		if (IS_ERR(handle))
+			return PTR_ERR(handle);
+
+		while (count > 0) {
+			/* we modify one indirect block and the inode itself
+			 * for both the source and destination inodes */
+			err = extend_or_restart_transaction(handle, 4);
+			if (err)
+				goto out_err;
+
+			err = ext4_snapshot_merge_blocks(handle, inode, start,
+						 SNAPSHOT_IBLOCK(block), count);
+
+			snapshot_debug(3, "snapshot (%u) -> snapshot (%u) "
+				       "merge: block = 0x%llu, count = 0x%x, "
+				       "err = 0x%x\n", inode->i_generation,
+				       start->i_generation, block, count, err);
+
+			if (err <= 0)
+				goto out_err;
+
+			block += err;
+			count -= err;
+			/* indicate merge progress via i_size */
+			SNAPSHOT_SET_PROGRESS(inode, block);
+			cond_resched();
+		}
+
+		/* reset i_size that was used as progress indicator */
+		SNAPSHOT_SET_DISABLED(inode);
+
+		err = ext4_journal_stop(handle);
+		handle = NULL;
+		if (err)
+			goto out_err;
+
+		/* we finished moving all blocks of interest from 'inode'
+		 * into 'start' so it is now safe to remove 'inode' from the
+		 * snapshots list forever */
+		err = ext4_snapshot_remove(inode);
+		if (err)
+			goto out_err;
+
+		if (--need_merge <= 0)
+			break;
+	}
+
+	err = 0;
+out_err:
+	if (handle) {
+		ret = ext4_journal_stop(handle);
+		if (!err)
+			err = ret;
+	}
+	if (need_merge)
+		snapshot_debug(1, "snapshot (%u-%u) merge: need_merge=%d(>0!), "
+			       "err=%d\n", start->i_generation,
+			       end->i_generation, need_merge, err);
+	return err;
+}
+
+/*
  * ext4_snapshot_cleanup - shrink/merge/remove snapshot marked for deletion
  * @inode - inode in question
  * @used_by - latest non-deleted snapshot
@@ -1623,6 +1724,10 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 		if (!ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_SHRUNK))
 			/* deleted snapshot needs shrinking */
 			(*need_shrink)++;
+		if (!ext4_test_inode_snapstate(inode, EXT4_SNAPSTATE_INUSE))
+			/* temporarily unused deleted
+			 * snapshot needs merging */
+			(*need_merge)++;
 		return 0;
 	}
 
@@ -1634,6 +1739,14 @@ static int ext4_snapshot_cleanup(struct inode *inode, struct inode *used_by,
 		if (err)
 			return err;
 		*need_shrink = 0;
+	}
+	if (*need_merge) {
+		/* pass 2: merge all shrunk snapshots
+		 * between 'used_by' and 'inode' */
+		err = ext4_snapshot_merge(used_by, inode, *need_merge);
+		if (err)
+			return err;
+		*need_merge = 0;
 	}
 	return 0;
 }

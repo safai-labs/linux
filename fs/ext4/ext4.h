@@ -2238,12 +2238,18 @@ enum ext4_state_bits {
 			 * now used by snapshot to do mow
 			 */
 	BH_Partial_Write,	/* Buffer should be uptodate before write */
+	BH_Tracked_Read,	/* Buffer read I/O is being tracked,
+				 * to serialize write I/O to block device.
+				 * that is, don't write over this block
+				 * until I finished reading it.
+				 */
 };
 
 BUFFER_FNS(Uninit, uninit)
 TAS_BUFFER_FNS(Uninit, uninit)
 BUFFER_FNS(Remap, remap)
 BUFFER_FNS(Partial_Write, partial_write)
+BUFFER_FNS(Tracked_Read, tracked_read)
 
 /*
  * Add new method to test wether block and inode bitmaps are properly

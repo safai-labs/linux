@@ -538,6 +538,82 @@ static inline void ext4_snapshot_test_pending_cow(struct buffer_head *sbh,
 		/* XXX: Should we fail after N retries? */
 	}
 }
+/*
+ * A tracked reader takes 0x10000 reference counts on the block device buffer.
+ * b_count is not likely to reach 0x10000 by get_bh() calls, but even if it
+ * does, that will only affect the result of buffer_tracked_readers_count().
+ * After 0x10000 subsequent calls to get_bh_tracked_reader(), b_count will
+ * overflow, but that requires 0x10000 parallel readers from 0x10000 different
+ * snapshots and very slow disk I/O...
+ */
+#define BH_TRACKED_READERS_COUNT_SHIFT 16
+
+static inline void get_bh_tracked_reader(struct buffer_head *bdev_bh)
+{
+	atomic_add(1<<BH_TRACKED_READERS_COUNT_SHIFT, &bdev_bh->b_count);
+}
+
+static inline void put_bh_tracked_reader(struct buffer_head *bdev_bh)
+{
+	atomic_sub(1<<BH_TRACKED_READERS_COUNT_SHIFT, &bdev_bh->b_count);
+}
+
+static inline int buffer_tracked_readers_count(struct buffer_head *bdev_bh)
+{
+	return atomic_read(&bdev_bh->b_count)>>BH_TRACKED_READERS_COUNT_SHIFT;
+}
+
+/* buffer.c */
+extern int start_buffer_tracked_read(struct buffer_head *bh);
+extern void cancel_buffer_tracked_read(struct buffer_head *bh);
+extern int ext4_read_full_page(struct page *page, get_block_t *get_block);
+
+#ifdef CONFIG_EXT4_DEBUG
+extern void __ext4_trace_bh_count(const char *fn, struct buffer_head *bh);
+#define ext4_trace_bh_count(bh) __ext4_trace_bh_count(__func__, bh)
+#else
+#define ext4_trace_bh_count(bh)
+#define __ext4_trace_bh_count(fn, bh)
+#endif
+
+#define sb_bread(sb, blk) ext4_sb_bread(__func__, sb, blk)
+#define sb_getblk(sb, blk) ext4_sb_getblk(__func__, sb, blk)
+#define sb_find_get_block(sb, blk) ext4_sb_find_get_block(__func__, sb, blk)
+
+static inline struct buffer_head *
+ext4_sb_bread(const char *fn, struct super_block *sb, sector_t block)
+{
+	struct buffer_head *bh;
+
+	bh = __bread(sb->s_bdev, block, sb->s_blocksize);
+	if (bh)
+		__ext4_trace_bh_count(fn, bh);
+	return bh;
+}
+
+static inline struct buffer_head *
+ext4_sb_getblk(const char *fn, struct super_block *sb, sector_t block)
+{
+	struct buffer_head *bh;
+
+	bh = __getblk(sb->s_bdev, block, sb->s_blocksize);
+	if (bh)
+		__ext4_trace_bh_count(fn, bh);
+	return bh;
+}
+
+static inline struct buffer_head *
+ext4_sb_find_get_block(const char *fn, struct super_block *sb, sector_t block)
+{
+	struct buffer_head *bh;
+
+	bh = __find_get_block(sb->s_bdev, block, sb->s_blocksize);
+	if (bh)
+		__ext4_trace_bh_count(fn, bh);
+	return bh;
+}
+
+
 
 #else /* CONFIG_EXT4_FS_SNAPSHOT */
 

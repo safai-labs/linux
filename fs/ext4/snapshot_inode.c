@@ -195,11 +195,35 @@ get_block:
 	err = ext4_snapshot_get_block_access(inode, &prev_snapshot);
 	if (err < 0)
 		return err;
+	if (!prev_snapshot) {
+		/*
+		 * Possible read through to block device.
+		 * Start tracked read before checking if block is mapped to
+		 * avoid race condition with COW that maps the block after
+		 * we checked if the block is mapped.  If we find that the
+		 * block is mapped, we will cancel the tracked read before
+		 * returning from this function.
+		 */
+		map_bh(bh_result, inode->i_sb, SNAPSHOT_BLOCK(iblock));
+		err = start_buffer_tracked_read(bh_result);
+		if (err < 0) {
+			snapshot_debug(1,
+					"snapshot (%u) failed to start "
+					"tracked read on block (%lld) "
+					"(err=%d)\n", inode->i_generation,
+					(long long)bh_result->b_blocknr, err);
+			return err;
+		}
+	}
 	err = ext4_map_blocks(NULL, inode, &map, 0);
 	snapshot_debug(4, "ext4_snapshot_read_through(%lld): block = "
 		       "(%lld), err = %d\n prev_snapshot = %u",
 		       (long long)iblock, map.m_pblk, err,
 		       prev_snapshot ? prev_snapshot->i_generation : 0);
+	/* if it's not a hole - cancel tracked read before we deadlock
+	 * on pending COW */
+	if (err && buffer_tracked_read(bh_result))
+		cancel_buffer_tracked_read(bh_result);
 	if (err < 0)
 		return err;
 	if (!err && prev_snapshot) {

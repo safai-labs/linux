@@ -107,6 +107,23 @@ ext4_snapshot_complete_cow(handle_t *handle, struct inode *snapshot,
 {
 	int err = 0;
 
+	/* wait for completion of tracked reads before completing COW */
+	while (bh && buffer_tracked_readers_count(bh) > 0) {
+		snapshot_debug_once(2, "waiting for tracked reads: "
+			"block = [%llu/%llu], "
+			"tracked_readers_count = %d...\n",
+			SNAPSHOT_BLOCK_TUPLE(bh->b_blocknr),
+			buffer_tracked_readers_count(bh));
+		/*
+		 * Quote from LVM snapshot pending_complete() function:
+		 * "Check for conflicting reads. This is extremely improbable,
+		 *  so msleep(1) is sufficient and there is no need for a wait
+		 *  queue." (drivers/md/dm-snap.c).
+		 */
+		msleep(1);
+		/* XXX: Should we fail after N retries? */
+	}
+
 	unlock_buffer(sbh);
 	err = ext4_jbd2_file_inode(handle, snapshot);
 	if (err)

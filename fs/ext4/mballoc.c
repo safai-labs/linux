@@ -4451,9 +4451,9 @@ ext4_mb_free_metadata(handle_t *handle, struct ext4_buddy *e4b,
  * @count:		number of blocks to count
  * @metadata: 		Are these metadata blocks
  */
-void ext4_free_blocks(handle_t *handle, struct inode *inode,
-		      struct buffer_head *bh, ext4_fsblk_t block,
-		      unsigned long count, int flags)
+void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
+			struct inode *inode, struct buffer_head *bh,
+			ext4_fsblk_t block, unsigned long count, int flags)
 {
 	struct buffer_head *bitmap_bh = NULL;
 	struct super_block *sb = inode->i_sb;
@@ -4467,6 +4467,7 @@ void ext4_free_blocks(handle_t *handle, struct inode *inode,
 	struct ext4_buddy e4b;
 	int err = 0;
 	int ret;
+	int maxblocks;
 
 	if (bh) {
 		if (block)
@@ -4549,6 +4550,29 @@ do_more:
 		goto error_return;
 	}
 
+	maxblocks = count;
+	ret = ext4_snapshot_get_delete_access(handle, inode,
+					      block, &maxblocks);
+	if (ret < 0) {
+		ext4_journal_abort_handle(where, line, __func__,
+					  NULL, handle, ret);
+		err = ret;
+		goto error_return;
+	}
+	if (ret > 0) {
+		/* 'ret' blocks were moved to snapshot - skip them */
+		block += maxblocks;
+		count -= maxblocks;
+		count += overflow;
+		cond_resched();
+		if (count > 0)
+			goto do_more;
+		/* no more blocks to free/move to snapshot */
+		ext4_mark_super_dirty(sb);
+		goto error_return;
+	}
+	overflow += count - maxblocks;
+	count = maxblocks;
 	BUFFER_TRACE(bitmap_bh, "getting write access");
 	err = ext4_handle_get_bitmap_access(handle, sb, block_group, bitmap_bh);
 	if (err)

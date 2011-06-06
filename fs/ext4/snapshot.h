@@ -227,6 +227,32 @@ static inline int ext4_snapshot_get_bitmap_access(handle_t *handle,
 	return ext4_snapshot_cow(handle, NULL, bh->b_blocknr, bh, 1);
 }
 
+/*
+ * get_delete_access() - move blocks to snapshot or approve to free them
+ * @handle:	JBD handle
+ * @inode:	owner of blocks if known (or NULL otherwise)
+ * @block:	address of start @block
+ * @pcount:	pointer to no. of blocks about to move or approve
+ *
+ * Called from ext4_free_blocks() before deleting blocks with
+ * i_data_sem held
+ *
+ * Return values:
+ * > 0 - blocks were moved to snapshot and may not be freed
+ * = 0 - blocks may be freed
+ * < 0 - error
+ */
+static inline int ext4_snapshot_get_delete_access(handle_t *handle,
+		struct inode *inode, ext4_fsblk_t block, int *pcount)
+{
+	struct super_block *sb;
+
+	sb = handle->h_transaction->t_journal->j_private;
+	if (!EXT4_SNAPSHOTS(sb))
+		return 0;
+
+	return ext4_snapshot_move(handle, inode, block, pcount, 1);
+}
 
 
 /* snapshot_ctl.c */

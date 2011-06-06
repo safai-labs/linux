@@ -711,6 +711,8 @@ int ext4_snapshot_take(struct inode *inode)
 	int fixing = 0;
 	int i;
 	int err = -EIO;
+	u64 snapshot_r_blocks;
+	struct kstatfs statfs;
 
 	if (!sbi->s_sbh)
 		goto out_err;
@@ -739,6 +741,47 @@ int ext4_snapshot_take(struct inode *inode)
 	}
 
 	err = -EIO;
+	/* update fs statistics to calculate snapshot reserved space */
+	if (ext4_statfs_sb(sb, &statfs)) {
+		snapshot_debug(1, "failed to statfs before snapshot (%u) "
+			       "take\n", inode->i_generation);
+		goto out_err;
+	}
+	/*
+	 * Estimate maximum disk space for snapshot file metadata based on:
+	 * 1 indirect block per 1K fs blocks (to map moved data blocks)
+	 * +1 data block per 1K fs blocks (to copy indirect blocks)
+	 * +1 data block per fs meta block (to copy meta blocks)
+	 * +1 data block per directory (to copy small directory index blocks)
+	 * +1 data block per X inodes (to copy large directory index blocks)
+	 *
+	 * We estimate no. of dir blocks from no. of allocated inode, assuming
+	 * an avg. dir record size of 64 bytes. This assumption can break in
+	 * 2 cases:
+	 *   1. long file names (in avg.)
+	 *   2. large no. of hard links (many dir records for the same inode)
+	 *
+	 * Under estimation can lead to potential ENOSPC during COW, which
+	 * will trigger an ext4_error(). Hopefully, error behavior is set to
+	 * remount-ro, so snapshot will not be corrupted.
+	 *
+	 * XXX: reserved space may be too small in data jounaling mode,
+	 *      which is currently not supported.
+	 */
+#define AVG_DIR_RECORD_SIZE_BITS 6 /* 64 bytes */
+#define AVG_INODES_PER_DIR_BLOCK \
+	(SNAPSHOT_BLOCK_SIZE_BITS - AVG_DIR_RECORD_SIZE_BITS)
+	snapshot_r_blocks = 2 * (statfs.f_blocks >>
+			SNAPSHOT_ADDR_PER_BLOCK_BITS) +
+		statfs.f_spare[0] + statfs.f_spare[1] +
+		((statfs.f_files - statfs.f_ffree) >>
+		 AVG_INODES_PER_DIR_BLOCK);
+
+	/* verify enough free space before taking the snapshot */
+	if (statfs.f_bfree < snapshot_r_blocks) {
+		err = -ENOSPC;
+		goto out_err;
+	}
 
 	/*
 	 * flush journal to disk and clear the RECOVER flag
@@ -876,6 +919,7 @@ next_inode:
 		goto out_unlockfs;
 
 	/* set as on-disk active snapshot */
+	sbi->s_es->s_snapshot_r_blocks_count = cpu_to_le64(snapshot_r_blocks);
 
 	sbi->s_es->s_snapshot_id =
 		cpu_to_le32(le32_to_cpu(sbi->s_es->s_snapshot_id) + 1);

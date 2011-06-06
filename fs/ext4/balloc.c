@@ -372,12 +372,37 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 static int ext4_has_free_blocks(struct ext4_sb_info *sbi, s64 nblocks)
 {
 	s64 free_blocks, dirty_blocks, root_blocks;
+	ext4_fsblk_t snapshot_r_blocks;
+	handle_t *handle = journal_current_handle();
 	struct percpu_counter *fbc = &sbi->s_freeblocks_counter;
 	struct percpu_counter *dbc = &sbi->s_dirtyblocks_counter;
 
 	free_blocks  = percpu_counter_read_positive(fbc);
 	dirty_blocks = percpu_counter_read_positive(dbc);
 	root_blocks = ext4_r_blocks_count(sbi->s_es);
+
+	if (ext4_snapshot_active(sbi)) {
+		if (unlikely(free_blocks < (nblocks + dirty_blocks)))
+			/* sorry, but we're really out of space */
+			return 0;
+		if (handle && unlikely(IS_COWING(handle)))
+			/* any available space may be used by COWing task */
+			return 1;
+		/* reserve blocks for active snapshot */
+		snapshot_r_blocks =
+			le64_to_cpu(sbi->s_es->s_snapshot_r_blocks_count);
+		/*
+		 * The last snapshot_r_blocks are reserved for active snapshot
+		 * and may not be allocated even by root.
+		 */
+		if (free_blocks < (nblocks + dirty_blocks + snapshot_r_blocks))
+			return 0;
+		/*
+		 * Mortal users must reserve blocks for both snapshot and
+		 * root user.
+		 */
+		root_blocks += snapshot_r_blocks;
+	}
 
 	if (free_blocks - (nblocks + root_blocks + dirty_blocks) <
 						EXT4_FREEBLOCKS_WATERMARK) {

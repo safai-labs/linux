@@ -4296,10 +4296,16 @@ ext4_fsblk_t ext4_mb_new_blocks(handle_t *handle,
 			return 0;
 		}
 		reserv_blks = ar->len;
+		if (unlikely(ar->flags & EXT4_MB_HINT_COWING)) {
+			/* don't fail when allocating blocks for COW */
+			dquot_alloc_block_nofail(ar->inode, ar->len);
+			goto nofail;
+		}
 		while (ar->len && dquot_alloc_block(ar->inode, ar->len)) {
 			ar->flags |= EXT4_MB_HINT_NOPREALLOC;
 			ar->len--;
 		}
+nofail:
 		inquota = ar->len;
 		if (ar->len == 0) {
 			*errp = -EDQUOT;

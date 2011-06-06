@@ -1963,6 +1963,8 @@ extern __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 group,
 				   struct ext4_group_desc *gdp);
 extern int ext4_group_desc_csum_verify(struct ext4_sb_info *sbi, __u32 group,
 				       struct ext4_group_desc *gdp);
+struct kstatfs;
+extern int ext4_statfs_sb(struct super_block *sb, struct kstatfs *buf);
 
 static inline ext4_fsblk_t ext4_blocks_count(struct ext4_super_block *es)
 {

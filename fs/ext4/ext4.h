@@ -1839,6 +1839,8 @@ struct buffer_head *ext4_bread(handle_t *, struct inode *,
 int ext4_get_block(struct inode *inode, sector_t iblock,
 				struct buffer_head *bh_result, int create);
 
+extern blkcnt_t ext4_inode_blocks(struct ext4_inode *raw_inode,
+		struct ext4_inode_info *ei);
 extern struct inode *ext4_iget(struct super_block *, unsigned long);
 extern int  ext4_write_inode(struct inode *, struct writeback_control *);
 extern int  ext4_setattr(struct dentry *, struct iattr *);

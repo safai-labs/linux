@@ -229,10 +229,36 @@ int __ext4_handle_dirty_super(const char *where, unsigned int line,
 #define ext4_handle_dirty_super(handle, sb) \
 	__ext4_handle_dirty_super(__func__, __LINE__, (handle), (sb))
 
+/*
+ * macros for ext4 to update transaction COW statistics.
+ * if the kernel was compiled without CONFIG_JBD2_DEBUG
+ * then the h_cow_* fields are not allocated in handle objects.
+ */
+#ifdef CONFIG_JBD2_DEBUG
+#define trace_cow_add(handle, name, num)	\
+	(handle)->h_cow_##name += (num)
+#define trace_cow_inc(handle, name)		\
+	(handle)->h_cow_##name++;
+
+#else
 #define trace_cow_add(handle, name, num)
 #define trace_cow_inc(handle, name)
 
+#endif
+#ifdef CONFIG_EXT4_DEBUG
+void __ext4_journal_trace(int debug, const char *fn, const char *caller,
+		handle_t *handle, int nblocks);
+
+#define ext4_journal_trace(n, caller, handle, nblocks)			\
+	do {								\
+		if ((n) <= snapshot_enable_debug)			\
+			__ext4_journal_trace((n), __func__, (caller),	\
+						(handle), (nblocks));	\
+	} while (0)
+
+#else
 #define ext4_journal_trace(n, caller, handle, nblocks)
+#endif
 
 handle_t *__ext4_journal_start(const char *where,
 		struct super_block *sb, int nblocks);

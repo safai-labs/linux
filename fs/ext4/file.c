@@ -168,6 +168,13 @@ static int ext4_file_open(struct inode * inode, struct file * filp)
 	struct path path;
 	char buf[64], *cp;
 
+	if (ext4_snapshot_file(inode) &&
+		(filp->f_flags & O_ACCMODE) != O_RDONLY)
+		/*
+		 * allow only read-only access to snapshot files
+		 */
+		return -EPERM;
+
 	if (unlikely(!(sbi->s_mount_flags & EXT4_MF_MNTDIR_SAMPLED) &&
 		     !(sb->s_flags & MS_RDONLY))) {
 		sbi->s_mount_flags |= EXT4_MF_MNTDIR_SAMPLED;

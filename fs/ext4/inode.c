@@ -4727,6 +4727,13 @@ void ext4_truncate(struct inode *inode)
 
 	trace_ext4_truncate_enter(inode);
 
+	/* prevent truncate of files on snapshot list */
+	if (ext4_snapshot_list(inode)) {
+		snapshot_debug(1, "snapshot (%u) cannot be truncated!\n",
+				inode->i_generation);
+		return;
+	}
+
 	if (!ext4_can_truncate(inode))
 		return;
 

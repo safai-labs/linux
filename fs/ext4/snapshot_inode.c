@@ -149,6 +149,7 @@ static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(bh->b_blocknr);
 	ext4_grpblk_t bit = SNAPSHOT_BLOCK_GROUP_OFFSET(bh->b_blocknr);
 	struct buffer_head *bitmap_bh;
+	struct buffer_head *exclude_bitmap_bh = NULL;
 	int err = 0;
 
 	if (PageReadahead(bh->b_page))
@@ -166,6 +167,16 @@ static int ext4_snapshot_get_blockdev_access(struct super_block *sb,
 		return -EIO;
 	}
 
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
+	if (exclude_bitmap_bh &&
+		ext4_test_bit(bit, exclude_bitmap_bh->b_data)) {
+		snapshot_debug(2, "warning: attempt to read through to "
+				"excluded block [%d/%lu] - read ahead?\n",
+				bit, block_group);
+		err = -EIO;
+	}
+
+	brelse(exclude_bitmap_bh);
 	brelse(bitmap_bh);
 	return err;
 }

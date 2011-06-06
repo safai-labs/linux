@@ -126,6 +126,18 @@ ext4_fsblk_t ext4_inode_bitmap(struct super_block *sb,
 		 (ext4_fsblk_t)le32_to_cpu(bg->bg_inode_bitmap_hi) << 32 : 0);
 }
 
+ext4_fsblk_t ext4_exclude_bitmap(struct super_block *sb,
+			       struct ext4_group_desc *bg)
+{
+	if (!EXT4_HAS_COMPAT_FEATURE(sb,
+				EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP))
+		return 0;
+
+	return le32_to_cpu(bg->bg_exclude_bitmap_lo) |
+		(EXT4_DESC_SIZE(sb) >= EXT4_MIN_DESC_SIZE_64BIT ?
+		 (ext4_fsblk_t)le32_to_cpu(bg->bg_exclude_bitmap_hi) << 32 : 0);
+}
+
 ext4_fsblk_t ext4_inode_table(struct super_block *sb,
 			      struct ext4_group_desc *bg)
 {
@@ -2067,6 +2079,7 @@ static int ext4_check_descriptors(struct super_block *sb,
 	ext4_fsblk_t block_bitmap;
 	ext4_fsblk_t inode_bitmap;
 	ext4_fsblk_t inode_table;
+	ext4_fsblk_t exclude_bitmap;
 	int flexbg_flag = 0;
 	ext4_group_t i, grp = sbi->s_groups_count;
 
@@ -2110,10 +2123,23 @@ static int ext4_check_descriptors(struct super_block *sb,
 			       "(block %llu)!", i, inode_table);
 			return 0;
 		}
+		if (EXT4_HAS_COMPAT_FEATURE(sb,
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+			exclude_bitmap = ext4_exclude_bitmap(sb, gdp);
+			if (exclude_bitmap < first_block ||
+			    exclude_bitmap > last_block) {
+				ext4_msg(sb, KERN_ERR,
+					 "ext4_check_descriptors: "
+					 "Exclude bitmap for group %u "
+					 "not in group (block %llu)!",
+					 i, exclude_bitmap);
+				return 0;
+			}
+		}
 		ext4_lock_group(sb, i);
 		if (!ext4_group_desc_csum_verify(sbi, i, gdp)) {
 			ext4_msg(sb, KERN_ERR, "ext4_check_descriptors: "
-				 "Checksum for group %u failed (%u!=%u)",
+				 "Checksum for group %u failed (%x!=%x)",
 				 i, le16_to_cpu(ext4_group_desc_csum(sbi, i,
 				     gdp)), le16_to_cpu(gdp->bg_checksum));
 			if (!(sb->s_flags & MS_RDONLY)) {
@@ -2651,6 +2677,13 @@ static int ext4_feature_set_ok(struct super_block *sb, int readonly)
 			ext4_msg(sb, KERN_ERR,
 				"has_snapshot feature cannot be mixed with "
 				"features: meta_bg, 64bit");
+			return 0;
+		}
+		if (!EXT4_HAS_COMPAT_FEATURE(sb,
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+			ext4_msg(sb, KERN_ERR,
+				"exclude_bitmap feature is required "
+				"for snapshots");
 			return 0;
 		}
 		if (EXT4_TEST_FLAGS(sb, EXT4_FLAGS_IS_SNAPSHOT)) {

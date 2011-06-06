@@ -341,6 +341,34 @@ static inline int ext4_snapshot_get_delete_access(handle_t *handle,
 
 	return ext4_snapshot_move(handle, inode, block, pcount, 1);
 }
+extern int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
+		struct super_block *sb, ext4_fsblk_t block, int maxblocks,
+		int exclude);
+
+/*
+ * ext4_snapshot_exclude_blocks() - exclude snapshot blocks
+ *
+ * Called from ext4_snapshot_test_and_{cow,move}() when copying/moving
+ * blocks to active snapshot.
+ *
+ * Return <0 on error.
+ */
+#define ext4_snapshot_exclude_blocks(handle, sb, block, count) \
+	ext4_snapshot_test_and_exclude(__func__, (handle), (sb), \
+			(block), (count), 1)
+
+/*
+ * ext4_snapshot_test_excluded() - test that snapshot blocks are excluded
+ *
+ * Called from ext4_count_branches() and
+ * ext4_count_blocks() under snapshot_mutex.
+ *
+ * Return <0 on error or if snapshot blocks are not excluded.
+ */
+#define ext4_snapshot_test_excluded(inode, block, count) \
+	ext4_snapshot_test_and_exclude(__func__, NULL, (inode)->i_sb, \
+			(block), (count), 0)
+
 
 extern void init_ext4_snapshot_cow_cache(void);
 

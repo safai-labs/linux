@@ -65,6 +65,11 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
 	/* block bitmap, inode bitmap, and inode table blocks */
 	int used_blocks = sbi->s_itb_per_group + 2;
 
+	if (EXT4_HAS_COMPAT_FEATURE(sb,
+				    EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP))
+		/* exclude bitmap */
+		used_blocks += 1;
+
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
 		if (!ext4_block_in_group(sb, ext4_block_bitmap(sb, gdp),
 					block_group))
@@ -157,6 +162,14 @@ unsigned ext4_init_block_bitmap(struct super_block *sb, struct buffer_head *bh,
 		tmp = ext4_block_bitmap(sb, gdp);
 		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
 			ext4_set_bit(tmp - start, bh->b_data);
+		if (EXT4_HAS_COMPAT_FEATURE(sb,
+					EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP)) {
+			tmp = ext4_exclude_bitmap(sb, gdp);
+			if (!flex_bg ||
+			    ext4_block_in_group(sb, tmp, block_group))
+				ext4_set_bit(tmp - start, bh->b_data);
+		}
+
 		tmp = ext4_inode_bitmap(sb, gdp);
 		if (!flex_bg || ext4_block_in_group(sb, tmp, block_group))
 			ext4_set_bit(tmp - start, bh->b_data);
@@ -354,6 +367,100 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 		return NULL;
 	}
 	ext4_valid_block_bitmap(sb, desc, block_group, bh);
+	/*
+	 * file system mounted not to panic on error,
+	 * continue with corrupt bitmap
+	 */
+	return bh;
+}
+
+/* Initializes an uninitialized exclude bitmap if given, and returns 0 */
+unsigned ext4_init_exclude_bitmap(struct super_block *sb,
+				  struct buffer_head *bh,
+				  ext4_group_t block_group,
+				  struct ext4_group_desc *gdp)
+{
+	if (!bh)
+		/* we can return no. of blocks in exclude bitmap */
+		return 0;
+
+	J_ASSERT_BH(bh, buffer_locked(bh));
+	memset(bh->b_data, 0, sb->s_blocksize);
+	return 0;
+}
+
+/**
+ * read_exclude_bitmap()
+ * @sb:			super block
+ * @block_group:	given block group
+ *
+ * Read the exclude bitmap for a given block_group
+ *
+ * Return buffer_head on success or NULL in case of failure.
+ */
+struct buffer_head *
+ext4_read_exclude_bitmap(struct super_block *sb, ext4_group_t block_group)
+{
+	struct ext4_group_desc *desc;
+	struct buffer_head *bh = NULL;
+	ext4_fsblk_t bitmap_blk;
+
+	desc = ext4_get_group_desc(sb, block_group, NULL);
+	if (!desc)
+		return NULL;
+	bitmap_blk = ext4_exclude_bitmap(sb, desc);
+	if (!bitmap_blk)
+		return NULL;
+	bh = sb_getblk(sb, bitmap_blk);
+	if (unlikely(!bh)) {
+		ext4_error(sb, "Cannot read exclude bitmap - "
+			    "block_group = %d, exclude_bitmap = %llu",
+			    block_group, bitmap_blk);
+		return NULL;
+	}
+
+	if (bitmap_uptodate(bh))
+		return bh;
+
+	lock_buffer(bh);
+	if (bitmap_uptodate(bh)) {
+		unlock_buffer(bh);
+		return bh;
+	}
+
+	ext4_lock_group(sb, block_group);
+	if (desc->bg_flags & cpu_to_le16(EXT4_BG_EXCLUDE_UNINIT)) {
+		ext4_init_exclude_bitmap(sb, bh, block_group, desc);
+		set_bitmap_uptodate(bh);
+		set_buffer_uptodate(bh);
+		ext4_unlock_group(sb, block_group);
+		unlock_buffer(bh);
+		return bh;
+	}
+	ext4_unlock_group(sb, block_group);
+	if (buffer_uptodate(bh)) {
+		/*
+		 * if not uninit if bh is uptodate,
+		 * bitmap is also uptodate
+		 */
+		set_bitmap_uptodate(bh);
+		unlock_buffer(bh);
+		return bh;
+	}
+	/*
+	 * submit the buffer_head for read. We can
+	 * safely mark the bitmap as uptodate now.
+	 * We do it here so the bitmap uptodate bit
+	 * get set with buffer lock held.
+	 */
+	set_bitmap_uptodate(bh);
+	if (bh_submit_read(bh) < 0) {
+		put_bh(bh);
+		ext4_error(sb, "Cannot read exclude bitmap - "
+			    "block_group = %u, block_bitmap = %llu",
+			    block_group, bitmap_blk);
+		return NULL;
+	}
 	/*
 	 * file system mounted not to panic on error,
 	 * continue with corrupt bitmap

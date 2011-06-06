@@ -2846,6 +2846,11 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	if (err)
 		goto out_err;
 
+	if (EXT4_SNAPSHOTS(sb) && ext4_snapshot_excluded(ac->ac_inode)) {
+		err = ext4_snapshot_exclude_blocks(handle, sb, block, ac->ac_b_ex.fe_len);
+		if (err < 0)
+			goto out_err;
+	}
 
 	err = ext4_handle_dirty_metadata(handle, NULL, gdp_bh);
 
@@ -4515,6 +4520,12 @@ void __ext4_free_blocks(const char *where, unsigned int line, handle_t *handle,
 	int err = 0;
 	int ret;
 	int maxblocks;
+	struct buffer_head *exclude_bitmap_bh = NULL;
+	int  exclude_bitmap_dirty = 0;
+	/* excluded_block is determined by testing exclude bitmap */
+	int excluded_block;
+	/* excluded_file is an attribute of the inode */
+	int excluded_file = ext4_snapshot_excluded(inode);
 
 	if (bh) {
 		if (block)
@@ -4634,6 +4645,26 @@ do_more:
 	err = ext4_journal_get_write_access(handle, gd_bh);
 	if (err)
 		goto error_return;
+	/*
+	 * we may be freeing blocks of snapshot/excluded file
+	 * which we would need to clear from exclude bitmap -
+	 * try to read exclude bitmap and if it fails
+	 * skip the exclude bitmap update
+	 */
+	if (EXT4_SNAPSHOTS(sb)) {
+		brelse(exclude_bitmap_bh);
+		exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
+		if (!exclude_bitmap_bh) {
+			err = -EIO;
+			goto error_return;
+		}
+		err = ext4_journal_get_write_access_exclude(handle,
+						    exclude_bitmap_bh);
+		if (err)
+			goto error_return;
+		exclude_bitmap_dirty = 0;
+	}
+
 #ifdef AGGRESSIVE_CHECK
 	{
 		int i;
@@ -4641,6 +4672,29 @@ do_more:
 			BUG_ON(!mb_test_bit(bit + i, bitmap_bh->b_data));
 	}
 #endif
+	if (exclude_bitmap_bh) {
+		unsigned long i;
+
+		if (excluded_file)
+			i = mb_find_next_zero_bit(exclude_bitmap_bh->b_data,
+						  bit + count, bit) - bit;
+		else
+			i = mb_find_next_bit(exclude_bitmap_bh->b_data,
+					     bit + count, bit) - bit;
+		if (i < count) {
+			EXT4_SET_FLAGS(sb, EXT4_FLAGS_FIX_EXCLUDE);
+			ext4_error(sb, "%sexcluded file (ino=%lu)"
+				   " block [%lu-%lu/%u, %llu] was %sexcluded!"
+				   " - run fsck to fix exclude bitmap.\n",
+				   excluded_file ? "" : "non-",
+				   inode ? inode->i_ino : 0,
+				   bit + i, bit + count,
+				   block_group, block + i,
+				   excluded_file ? "not " : "");
+			if (!excluded_file)
+				excluded_block = 1;
+		}
+	}
 	trace_ext4_mballoc_free(sb, inode, block_group, bit, count);
 
 	err = ext4_mb_load_buddy(sb, block_group, &e4b);
@@ -4675,6 +4729,14 @@ do_more:
 		mb_clear_bits(bitmap_bh->b_data, bit, count);
 		mb_free_blocks(inode, &e4b, bit, count);
 	}
+		/*
+		 * A free block should never be excluded from snapshot, so we
+		 * always clear exclude bitmap just to be on the safe side.
+		 */
+	if (exclude_bitmap_bh && (excluded_file || excluded_block)) {
+		mb_clear_bits(exclude_bitmap_bh->b_data, bit, count);
+		exclude_bitmap_dirty = 1;
+	}
 
 	ret = ext4_free_blks_count(sb, gdp) + count;
 	ext4_free_blks_set(sb, gdp, ret);
@@ -4694,6 +4756,12 @@ do_more:
 	/* We dirtied the bitmap block */
 	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
 	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
+	if (exclude_bitmap_bh && exclude_bitmap_dirty) {
+		ret = ext4_handle_dirty_metadata(handle, NULL,
+						 exclude_bitmap_bh);
+		if (!err)
+			err = ret;
+	}
 
 	/* And the group descriptor block */
 	BUFFER_TRACE(gd_bh, "dirtied group descriptor block");
@@ -4711,6 +4779,7 @@ do_more:
 error_return:
 	if (freed)
 		dquot_free_block(inode, freed);
+	brelse(exclude_bitmap_bh);
 	brelse(bitmap_bh);
 	ext4_std_error(sb, err);
 	return;

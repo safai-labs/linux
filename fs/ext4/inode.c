@@ -699,8 +699,17 @@ static int ext4_alloc_blocks(handle_t *handle, struct inode *inode,
 	ar.goal = goal;
 	ar.len = target;
 	ar.logical = iblock;
-	if (S_ISREG(inode->i_mode))
-		/* enable in-core preallocation only for regular files */
+	if (IS_COWING(handle)) {
+		/*
+		 * This hint is used to tell the allocator not to fail
+		 * on quota limits and allow allocation from blocks which
+		 * are reserved for snapshots.
+		 * Failing allocation during COW operations would result
+		 * in I/O error, which is not desirable.
+		 */
+		ar.flags = EXT4_MB_HINT_COWING;
+	} else if (S_ISREG(inode->i_mode) && !ext4_snapshot_file(inode))
+		/* Enable preallocation only for non-snapshot regular files */
 		ar.flags = EXT4_MB_HINT_DATA;
 
 	current_block = ext4_mb_new_blocks(handle, &ar, err);
@@ -1362,6 +1371,21 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		    struct ext4_map_blocks *map, int flags)
 {
 	int retval;
+	int cowing = 0;
+
+	if (handle && IS_COWING(handle)) {
+		/*
+		 * locking order for locks validator:
+		 * inode (VFS operation) -> active snapshot (COW operation)
+		 *
+		 * The i_data_sem lock is nested during COW operation, but
+		 * the active snapshot i_data_sem write lock is not taken
+		 * otherwise, because snapshot file has read-only aops and
+		 * because truncate/unlink of active snapshot is not permitted.
+		 */
+		BUG_ON(!ext4_snapshot_is_active(inode));
+		cowing = 1;
+	}
 
 	map->m_flags = 0;
 	ext_debug("ext4_map_blocks(): inode %lu, flag %d, max_blocks %u,"
@@ -1371,7 +1395,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	 * Try to see if we can get the block without requesting a new
 	 * file system block.
 	 */
-	down_read((&EXT4_I(inode)->i_data_sem));
+	down_read_nested((&EXT4_I(inode)->i_data_sem), cowing);
 	if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
 		retval = ext4_ext_map_blocks(handle, inode, map,
 				flags & EXT4_GET_BLOCKS_MOVE_ON_WRITE);
@@ -1430,7 +1454,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	 * the write lock of i_data_sem, and call get_blocks()
 	 * with create == 1 flag.
 	 */
-	down_write((&EXT4_I(inode)->i_data_sem));
+	down_write_nested((&EXT4_I(inode)->i_data_sem), cowing);
 
 	/*
 	 * if the caller is from delayed allocation writeout path
@@ -1621,6 +1645,14 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
 		J_ASSERT(create != 0);
 		J_ASSERT(handle != NULL);
 
+		if (SNAPMAP_ISCOW(create)) {
+			/* COWing block or creating COW bitmap */
+			lock_buffer(bh);
+			clear_buffer_uptodate(bh);
+			/* flag locked buffer and return */
+			*errp = 1;
+			return bh;
+		}
 		/*
 		 * Now that we do not always journal data, we should
 		 * keep in mind whether this should always journal the

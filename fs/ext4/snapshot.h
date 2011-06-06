@@ -174,7 +174,17 @@ extern void ext4_snapshot_copy_buffer(struct buffer_head *sbh,
 extern int ext4_snapshot_read_block_bitmap(struct super_block *sb,
 		unsigned int block_group, struct buffer_head *bitmap_bh);
 
-#define ext4_snapshot_cow(handle, inode, block, bh, cow) 0
+extern int ext4_snapshot_test_and_cow(const char *where,
+		handle_t *handle, struct inode *inode,
+		ext4_fsblk_t block, struct buffer_head *bh, int cow);
+
+/*
+ * test if a metadata block should be COWed
+ * and if it should, copy the block to the active snapshot
+ */
+#define ext4_snapshot_cow(handle, inode, block, bh, cow)	\
+	ext4_snapshot_test_and_cow(__func__, handle, inode,	\
+			block, bh, cow)
 
 #define ext4_snapshot_move(handle, inode, block, pcount, move) (0)
 

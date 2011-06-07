@@ -1,10 +1,10 @@
 #!/bin/sh
 BASE=ext4-next
 REBASE=ext4-dev
+VER=v1
 export RBRANCH=extract_reverse_patches
 export BRANCH=extract_patches
-export QBRANCH=for-ext4
-RFC=RFC
+export QBRANCH=for-ext4-$VER
 
 if [ ! -d .git/patches/$RBRANCH ]; then
 	echo 'reverse patches must exist before doing this.'
@@ -41,7 +41,7 @@ for key in $( cat keys ) ; do
 done
 
 # exclude journal_error and ctl_dump debug patches from snapshot patch series
-git format-patch --subject-prefix="PATCH $RFC" -n -o .git/patches/$QBRANCH/ $BASE..$BRANCH~2 || exit 1
+git format-patch --subject-prefix="PATCH $VER" -n -o .git/patches/$QBRANCH/ $BASE..$BRANCH~2 || exit 1
 
 # re-create the branch from rebase head
 (git branch | grep $QBRANCH) && (git branch -D $QBRANCH || exit 1)
@@ -53,3 +53,4 @@ guilt-push -a
 guilt-pop
 guilt-pop
 
+git format-patch --subject-prefix="PATCH $VER" -n $REBASE..$QBRANCH || exit 1

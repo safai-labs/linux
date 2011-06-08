@@ -3385,7 +3385,6 @@ found:
 	if (!(flags & EXT4_GET_BLOCKS_CREATE))
 		goto out;
 
-	map->m_flags &= ~EXT4_MAP_REMAP;
 	if ((path == NULL) && (flags & EXT4_GET_BLOCKS_CREATE)) {
 		/* find extent for this block */
 		path = ext4_ext_find_extent(inode, map->m_lblk, NULL);

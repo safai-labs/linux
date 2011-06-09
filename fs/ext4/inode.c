@@ -361,6 +361,23 @@ static int ext4_block_to_path(struct inode *inode,
 	int tind;
 #endif
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
+	/*
+	 * Snapshot file i_block 0 is at the first double indirect mapped block
+	 * and it can map up to 2^32-1 blocks using 3 extra triple indirect
+	 * branches, replacing the the first 3 direct blocks.
+	 */
+	if (ext4_snapshot_file(inode)) {
+		i_block += SNAPSHOT_BLOCK_OFFSET;
+		if (i_block < SNAPSHOT_BLOCK_OFFSET) {
+			/* 32bit wrap around implies extra tind block */
+			i_block -= SNAPSHOT_BLOCK_OFFSET;
+			i_block -= double_blocks;
+			goto extra_tind_blocks;
+		}
+	}
+
+#endif
 	if (i_block < direct_blocks) {
 		offsets[n++] = i_block;
 		final = direct_blocks;
@@ -380,14 +397,18 @@ static int ext4_block_to_path(struct inode *inode,
 		offsets[n++] = i_block & (ptrs - 1);
 		final = ptrs;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE_HUGE
-	} else if (ext4_snapshot_file(inode) &&
-			(i_block >> (ptrs_bits * 3)) <
-			EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS + 1) {
+	} else if (ext4_snapshot_file(inode)) {
+extra_tind_blocks:
 		tind = i_block >> (ptrs_bits * 3);
-		BUG_ON(tind == 0);
-		/* use up to 4 triple indirect blocks to map 2^32 blocks */
+		/*
+		 * When mapping blocks 2^32-SNAPSHOT_BLOCKS_OFFSET..2^32-1 and
+		 * block size is 8K, could get here by goto extra_tind_blocks
+		 * and tind will be 0 (not an extra tind).
+		 */
+		BUG_ON(tind < 0 || tind > EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS);
 		i_block -= (tind << (ptrs_bits * 3));
-		offsets[n++] = (EXT4_TIND_BLOCK + tind) % EXT4_NDIR_BLOCKS;
+		/* map the 3 extra tind blocks in-place of direct blocks */
+		offsets[n++] = (EXT4_TIND_BLOCK + tind) % EXT4_N_BLOCKS;
 		offsets[n++] = i_block >> (ptrs_bits * 2);
 		offsets[n++] = (i_block >> ptrs_bits) & (ptrs - 1);
 		offsets[n++] = i_block & (ptrs - 1);
@@ -803,6 +824,9 @@ failed_out:
  *	@goal: preferred place for allocation
  *	@offsets: offsets (in the blocks) to store the pointers to next.
  *	@branch: place to store the chain in.
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
+ *	@flags: map block request flags.
+#endif
  *
  *	This function allocates blocks, zeroes out all but the last one,
  *	links them into chain and (if we are synchronous) writes them to disk.
@@ -822,10 +846,10 @@ failed_out:
  *	as described above and return 0.
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-static int ext4_alloc_branch_cow(handle_t *handle, struct inode *inode,
-			ext4_fsblk_t iblock, int indirect_blks,
-				  int *blks, ext4_fsblk_t goal,
-				  int *offsets, Indirect *branch, int flags)
+static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
+			     ext4_lblk_t iblock, int indirect_blks,
+			     int *blks, ext4_fsblk_t goal,
+			     ext4_lblk_t *offsets, Indirect *branch, int flags)
 #else
 static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 			     ext4_lblk_t iblock, int indirect_blks,
@@ -984,14 +1008,18 @@ failed:
  * @where: location of missing link
  * @num:   number of indirect blocks we are adding
  * @blks:  number of direct blocks we are adding
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
+ * @flags: map block request flags
+#endif
  *
  * This function fills the missing link and does all housekeeping needed in
  * inode (->i_blocks, etc.). In case of success we end up with the full
  * chain to new block and return 0.
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-static int ext4_splice_branch_cow(handle_t *handle, struct inode *inode,
-		long block, Indirect *where, int num, int blks, int flags)
+static int ext4_splice_branch(handle_t *handle, struct inode *inode,
+			      ext4_lblk_t block, Indirect *where, int num,
+			      int blks, int flags)
 #else
 static int ext4_splice_branch(handle_t *handle, struct inode *inode,
 			      ext4_lblk_t block, Indirect *where, int num,
@@ -1241,9 +1269,9 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	 * Block out ext4_truncate while we alter the tree
 	 */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	err = ext4_alloc_branch_cow(handle, inode, map->m_lblk, indirect_blks,
-				     &count, goal, offsets + (partial - chain),
-				     partial, flags);
+	err = ext4_alloc_branch(handle, inode, map->m_lblk, indirect_blks,
+				&count, goal, offsets + (partial - chain),
+				partial, flags);
 	if (err)
 		goto cleanup;
 #else
@@ -1300,8 +1328,8 @@ static int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
 	 * may need to return -EAGAIN upwards in the worst case.  --sct
 	 */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_BLOCK_MOVE
-	err = ext4_splice_branch_cow(handle, inode, map->m_lblk, partial,
-				     indirect_blks, count, flags);
+	err = ext4_splice_branch(handle, inode, map->m_lblk, partial,
+				 indirect_blks, count, flags);
 #else
 	if (!err)
 		err = ext4_splice_branch(handle, inode, map->m_lblk,
@@ -4814,6 +4842,35 @@ no_top:
 	return partial;
 }
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+/*
+ * ext4_clear_blocks - Zero a number of block pointers
+ * @handle:	handle for this transaction
+ * @inode:	inode we are dealing with
+ * @bh:		indirect buffer_head which contains *@first and *@last
+ * @block_to_free: first block to free
+ * @count:	number of sequential blocks to free
+ * @first:	array of block numbers
+ * @last:	points immediately past the end of array
+ * @bitmap:	if not NULL, don't free blocks marked used in bitmap
+ * @bit:	bit number representing the @first block in the bitmap
+ *
+ * Zero a number of block pointers in either an inode or an indirect block.
+ * If we restart the transaction we must again get write access to the
+ * indirect block for further modification.
+ *
+ * We release @count blocks on disk, but (@last - @first) may be greater
+ * than @count because there can be holes or blocks marked used in there.
+ *
+ * Return 0 on success, 1 on invalid block range
+ * and < 0 on fatal error.
+ */
+static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
+			     struct buffer_head *bh,
+			     ext4_fsblk_t block_to_free, unsigned long count,
+			     __le32 *first, __le32 *last,
+			     const char *bitmap, int bit)
+#else
 /*
  * Zero a number of block pointers in either an inode or an indirect block.
  * If we restart the transaction we must again get write access to the
@@ -4825,17 +4882,6 @@ no_top:
  * Return 0 on success, 1 on invalid block range
  * and < 0 on fatal error.
  */
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
-/*
- * ext4_clear_blocks_cow - Zero a number of block pointers (consult COW bitmap)
- * @bitmap:	COW bitmap to consult when shrinking deleted snapshot
- * @bit:	bit number representing the @first block
- */
-static int ext4_clear_blocks_cow(handle_t *handle, struct inode *inode,
-		struct buffer_head *bh, ext4_fsblk_t block_to_free,
-		unsigned long count, __le32 *first, __le32 *last,
-		const char *bitmap, int bit)
-#else
 static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 			     struct buffer_head *bh,
 			     ext4_fsblk_t block_to_free,
@@ -4911,9 +4957,19 @@ out_err:
  * @this_bh:	indirect buffer_head which contains *@first and *@last
  * @first:	array of block numbers
  * @last:	points immediately past the end of array
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
+ * @bitmap:	if not NULL, don't free blocks marked used in bitmap
+ * @bit:	bit number representing the @first block in the bitmap
+ * @pfreed_blocks: return number of freed blocks
+ *
+ * We are freeing all blocks refered from that array (numbers are stored as
+ * little-endian 32-bit) and not marked used in the bitmap and we are updating
+ * @inode->i_blocks appropriately.
+#else
  *
  * We are freeing all blocks refered from that array (numbers are stored as
  * little-endian 32-bit) and updating @inode->i_blocks appropriately.
+#endif
  *
  * We accumulate contiguous runs of blocks to free.  Conveniently, if these
  * blocks are contiguous then releasing them at one time will only affect one
@@ -4924,13 +4980,7 @@ out_err:
  * block pointers.
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
-/*
- * ext4_free_data_cow - free a list of data blocks (consult COW bitmap)
- * @bitmap:	   COW bitmap to consult when shrinking deleted snapshot
- * @bit:	   bit number representing the @first block
- * @pfreed_blocks: return number of freed blocks
- */
-void ext4_free_data_cow(handle_t *handle, struct inode *inode,
+void ext4_free_data_bitmap(handle_t *handle, struct inode *inode,
 			   struct buffer_head *this_bh,
 			   __le32 *first, __le32 *last,
 			   const char *bitmap, int bit,
@@ -4984,7 +5034,7 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 				count++;
 			} else {
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
-				err = ext4_clear_blocks_cow(handle, inode,
+				err = ext4_clear_blocks(handle, inode,
 					       this_bh, block_to_free, count,
 					       block_to_free_p, p, bitmap,
 					       bit + (block_to_free_p - first));
@@ -5009,7 +5059,7 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 	if (count > 0)
-		err = ext4_clear_blocks_cow(handle, inode, this_bh,
+		err = ext4_clear_blocks(handle, inode, this_bh,
 				block_to_free, count, block_to_free_p, p,
 				bitmap, bit + (block_to_free_p - first));
 #else
@@ -5055,8 +5105,8 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
  */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP
 void ext4_free_branches(handle_t *handle, struct inode *inode,
-			       struct buffer_head *parent_bh,
-			       __le32 *first, __le32 *last, int depth)
+			struct buffer_head *parent_bh,
+			__le32 *first, __le32 *last, int depth)
 #else
 static void ext4_free_branches(handle_t *handle, struct inode *inode,
 			       struct buffer_head *parent_bh,

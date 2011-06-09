@@ -2029,15 +2029,15 @@ extern void ext4_free_branches(handle_t *handle, struct inode *inode,
 				int depth);
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
-extern void ext4_free_data_cow(handle_t *handle, struct inode *inode,
-			   struct buffer_head *this_bh,
-			   __le32 *first, __le32 *last,
-			   const char *bitmap, int bit,
-			   int *pfreed_blocks);
+extern void ext4_free_data_bitmap(handle_t *handle, struct inode *inode,
+				  struct buffer_head *this_bh,
+				  __le32 *first, __le32 *last,
+				  const char *bitmap, int bit,
+				  int *pfreed_blocks);
 
 #define ext4_free_data(handle, inode, bh, first, last)		\
-	ext4_free_data_cow(handle, inode, bh, first, last,	\
-			    NULL, 0, NULL)
+	ext4_free_data_bitmap(handle, inode, bh, first, last,	\
+			      NULL, 0, NULL)
 
 #endif
 /* ioctl.c */

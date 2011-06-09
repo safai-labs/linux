@@ -41,7 +41,7 @@
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 
 /**
- * ext4_blks_to_skip - count the number blocks that can be skipped
+ * ext4_snapshot_blks_to_skip - count the number blocks that can be skipped
  * @inode: inode in question
  * @i_block: start block number
  * @maxblocks: max number of data blocks to be skipped
@@ -56,15 +56,12 @@
  * Returns the total number of data blocks to be skipped.
  */
 
-static int ext4_blks_to_skip(struct inode *inode, long i_block,
+static int ext4_snapshot_blks_to_skip(struct inode *inode, ext4_lblk_t i_block,
 		unsigned long maxblocks, Indirect chain[4], int depth,
 		int *offsets, int k)
 {
-	int ptrs = EXT4_ADDR_PER_BLOCK(inode->i_sb);
 	int ptrs_bits = EXT4_ADDR_PER_BLOCK_BITS(inode->i_sb);
-	const long direct_blocks = EXT4_NDIR_BLOCKS,
-		indirect_blocks = ptrs,
-		double_blocks = (1 << (ptrs_bits * 2));
+	const long double_blocks = (1 << (ptrs_bits * 2));
 	/* number of data blocks mapped with a single splice to the chain */
 	int data_ptrs_bits = ptrs_bits * (depth - k - 1);
 	int max_ptrs = maxblocks >> data_ptrs_bits;
@@ -76,15 +73,12 @@ static int ext4_blks_to_skip(struct inode *inode, long i_block,
 		i_block -= double_blocks;
 		/* fall through */
 	case 3: /* double indirect */
-		i_block -= indirect_blocks;
-		/* fall through */
+		/* Snapshot block 0 is first double indirect mapped block */
+		break;
 	case 2: /* indirect */
-		i_block -= direct_blocks;
-		final = (k == 0 ? 1 : ptrs);
-		break;
 	case 1: /* direct */
-		final = direct_blocks;
-		break;
+		/* Snapshot file has no direct and indirect mapped block */
+		BUG();
 	}
 	/* offset of block from start of splice point */
 	i_block &= ((1 << data_ptrs_bits) - 1);
@@ -125,7 +119,7 @@ static int ext4_blks_to_skip(struct inode *inode, long i_block,
  *  < 0 - error
  */
 int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
-		sector_t iblock, unsigned long maxblocks,
+		ext4_lblk_t iblock, unsigned long maxblocks,
 		struct buffer_head *cow_bh,
 		int shrink, int *pmapped)
 {
@@ -134,7 +128,7 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 	int err, blocks_to_boundary, depth, count;
 	struct buffer_head *sbh = NULL;
 	struct ext4_group_desc *desc = NULL;
-	ext4_snapblk_t block_bitmap, block = SNAPSHOT_BLOCK(iblock);
+	ext4_fsblk_t block_bitmap, block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	int mapped_blocks = 0, freed_blocks = 0;
 	const char *cow_bitmap;
@@ -143,8 +137,7 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 	       (!(ext4_test_inode_flag(inode, EXT4_INODE_SNAPFILE_DELETED)) ||
 		ext4_snapshot_is_active(inode)));
 
-	depth = ext4_block_to_path(inode, iblock, offsets,
-			&blocks_to_boundary);
+	depth = ext4_block_to_path(inode, iblock, offsets, &blocks_to_boundary);
 	if (depth == 0)
 		return -EIO;
 
@@ -157,10 +150,10 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		return err;
 
 	if (partial) {
-		/* block not mapped (hole) - count the number of holes to
-		 * skip */
-		count = ext4_blks_to_skip(inode, iblock, maxblocks, chain,
-					   depth, offsets, (partial - chain));
+		/* hole - count the number of blocks to skip */
+		count = ext4_snapshot_blks_to_skip(inode, iblock, maxblocks,
+						   chain, depth, offsets,
+						   (partial - chain));
 		snapshot_debug(3, "skipping snapshot (%u) blocks: block=0x%llx"
 			       ", count=0x%x\n", inode->i_generation,
 			       block, count);
@@ -220,9 +213,9 @@ int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 
 		BUG_ON(bit + count > SNAPSHOT_BLOCKS_PER_GROUP);
 		/* free blocks with or without consulting COW bitmap */
-		ext4_free_data_cow(handle, inode, partial->bh,
-				partial->p, partial->p + count,
-				cow_bitmap, bit, &freed_blocks);
+		ext4_free_data_bitmap(handle, inode, partial->bh,
+				      partial->p, partial->p + count,
+				      cow_bitmap, bit, &freed_blocks);
 	}
 
 shrink_indirect_blocks:
@@ -409,7 +402,7 @@ static int ext4_snapshot_count_branches(struct inode *inode,
 }
 
 /*
- * ext4_move_branches - move an array of branches
+ * ext4_snapshot_move_branches - move an array of branches
  * @handle: JBD handle for this transaction
  * @src:	inode we're moving blocks from
  * @ps:		array of src block numbers
@@ -424,9 +417,9 @@ static int ext4_snapshot_count_branches(struct inode *inode,
  * Returns the number of merged branches.
  * Return <0 on error or if blocks are not excluded.
  */
-static int ext4_move_branches(handle_t *handle, struct inode *src,
-		__le32 *ps, __le32 *pd, int depth,
-		int count, int *pmoved)
+static int ext4_snapshot_move_branches(handle_t *handle, struct inode *src,
+				       __le32 *ps, __le32 *pd, int depth,
+				       int count, int *pmoved)
 {
 	int i, err;
 
@@ -468,7 +461,7 @@ static int ext4_move_branches(handle_t *handle, struct inode *src,
  */
 int ext4_snapshot_merge_blocks(handle_t *handle,
 		struct inode *src, struct inode *dst,
-		sector_t iblock, unsigned long maxblocks)
+		ext4_lblk_t iblock, unsigned long maxblocks)
 {
 	Indirect S[4], D[4], *pS, *pD;
 	int offsets[4];
@@ -503,11 +496,11 @@ int ext4_snapshot_merge_blocks(handle_t *handle,
 
 	if (ks < kd) {
 		/* nothing to move from src to dst */
-		count = ext4_blks_to_skip(src, iblock, maxblocks,
-					S, depth, offsets, ks);
+		count = ext4_snapshot_blks_to_skip(src, iblock, maxblocks,
+						   S, depth, offsets, ks);
 		snapshot_debug(3, "skipping src snapshot (%u) holes: "
-			       "block=0x%llx, count=0x%x\n", src->i_generation,
-			       SNAPSHOT_BLOCK(iblock), count);
+			       "iblock=0x%x, count=0x%x\n", src->i_generation,
+			       iblock, count);
 		err = count;
 		goto out;
 	}
@@ -532,16 +525,16 @@ int ext4_snapshot_merge_blocks(handle_t *handle,
 		goto out;
 
 	/* move as many whole branches as possible */
-	err = ext4_move_branches(handle, src, pS->p, pD->p, depth-1-kd,
-			max_ptrs, &moved);
+	err = ext4_snapshot_move_branches(handle, src, pS->p, pD->p,
+					  depth-1-kd, max_ptrs, &moved);
 	if (err < 0)
 		goto out;
 	count = err;
 	if (moved) {
 		snapshot_debug(3, "moved snapshot (%u) -> snapshot (%d) "
-			       "branches: block=0x%llx, count=0x%x, k=%d/%d, "
+			       "branches: iblock=0x%x, count=0x%x, k=%d/%d, "
 			       "moved_blocks=%d\n", src->i_generation,
-			       dst->i_generation, SNAPSHOT_BLOCK(iblock),
+			       dst->i_generation, iblock,
 			       count, kd, depth, moved);
 		/* update src and dst inodes blocks usage */
 		dquot_free_block(src, moved);
@@ -556,8 +549,7 @@ int ext4_snapshot_merge_blocks(handle_t *handle,
 
 	/* we merged at least 1 partial branch and optionally count-1 full
 	   branches */
-	err = (count << data_ptrs_bits) -
-		(SNAPSHOT_BLOCK(iblock) & data_ptrs_mask);
+	err = (count << data_ptrs_bits) - (iblock & data_ptrs_mask);
 out:
 	/* count_branch_blocks may use the entire depth of S */
 	for (ks = 1; ks < depth; ks++) {
@@ -578,9 +570,8 @@ out:
  * return value 0 indicates snapshot inode read through access
  * in which case 'prev_snapshot' is pointed to the previous snapshot
  * on the list or set to NULL to indicate read through to block device.
- */
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_LIST_READ
-/*
+ *
  * In-memory snapshot list manipulation is protected by snapshot_mutex.
  * In this function we read the in-memory snapshot list without holding
  * snapshot_mutex, because we don't want to slow down snapshot read performance.
@@ -625,8 +616,8 @@ out:
  * 2. is_active(B) is tested after setting active_snapshot=B
  *    AND/OR after setting the 'list'+'active' flags -
  *    read through from B to block device.
- */
 #endif
+ */
 static int ext4_snapshot_get_block_access(struct inode *inode,
 		struct inode **prev_snapshot)
 {
@@ -784,9 +775,9 @@ get_block:
 	}
 #endif
 	err = ext4_map_blocks(NULL, inode, &map, 0);
-	snapshot_debug(4, "ext4_snapshot_read_through(%lld): block = "
+	snapshot_debug(4, "ext4_snapshot_read_through(%u): block = "
 		       "(%lld), err = %d\n prev_snapshot = %u",
-		       (long long)iblock, map.m_pblk, err,
+		       map.m_lblk, map.m_pblk, err,
 		       prev_snapshot ? prev_snapshot->i_generation : 0);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_RACE_READ
 	/* if it's not a hole - cancel tracked read before we deadlock
@@ -932,8 +923,7 @@ static int ext4_snapshot_get_block(struct inode *inode, sector_t iblock,
 	BUG_ON(create != 0);
 	BUG_ON(buffer_tracked_read(bh_result));
 
-	err = ext4_snapshot_read_through(inode, SNAPSHOT_IBLOCK(iblock),
-					 bh_result);
+	err = ext4_snapshot_read_through(inode, iblock, bh_result);
 	snapshot_debug(4, "ext4_snapshot_get_block(%lld): block = (%lld), "
 		       "err = %d\n",
 		       (long long)iblock, buffer_mapped(bh_result) ?

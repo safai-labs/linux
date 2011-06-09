@@ -22,12 +22,6 @@
 
 
 /*
- * use signed 64bit for snapshot image addresses
- * negative addresses are used to reference snapshot meta blocks
- */
-#define ext4_snapblk_t long long
-
-/*
  * We assert that file system block size == page size (on mount time)
  * and that the first file system block is block 0 (on snapshot create).
  * Snapshot inode direct blocks are reserved for snapshot meta blocks.
@@ -40,36 +34,40 @@
  */
 #define SNAPSHOT_BLOCK_SIZE		PAGE_SIZE
 #define SNAPSHOT_BLOCK_SIZE_BITS	PAGE_SHIFT
-#define	SNAPSHOT_ADDR_PER_BLOCK		(SNAPSHOT_BLOCK_SIZE / sizeof(__u32))
 #define SNAPSHOT_ADDR_PER_BLOCK_BITS	(SNAPSHOT_BLOCK_SIZE_BITS - 2)
+#define	SNAPSHOT_ADDR_PER_BLOCK		(1 << SNAPSHOT_ADDR_PER_BLOCK_BITS)
 #define SNAPSHOT_DIR_BLOCKS		EXT4_NDIR_BLOCKS
 #define SNAPSHOT_IND_BLOCKS		SNAPSHOT_ADDR_PER_BLOCK
+#define SNAPSHOT_BLOCK_OFFSET					\
+	(SNAPSHOT_DIR_BLOCKS + SNAPSHOT_IND_BLOCKS)
 
 #define SNAPSHOT_BLOCKS_PER_GROUP_BITS	(SNAPSHOT_BLOCK_SIZE_BITS + 3)
 #define SNAPSHOT_BLOCKS_PER_GROUP				\
-	(1<<SNAPSHOT_BLOCKS_PER_GROUP_BITS) /* 8*PAGE_SIZE */
+	(1 << SNAPSHOT_BLOCKS_PER_GROUP_BITS)
 #define SNAPSHOT_BLOCK_GROUP(block)				\
-	((block)>>SNAPSHOT_BLOCKS_PER_GROUP_BITS)
+	((block) >> SNAPSHOT_BLOCKS_PER_GROUP_BITS)
 #define SNAPSHOT_BLOCK_GROUP_OFFSET(block)			\
-	((block)&(SNAPSHOT_BLOCKS_PER_GROUP-1))
+	((block) & (SNAPSHOT_BLOCKS_PER_GROUP - 1))
 #define SNAPSHOT_BLOCK_TUPLE(block)				\
 	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP_OFFSET(block),	\
 	(ext4_fsblk_t)SNAPSHOT_BLOCK_GROUP(block)
 #define SNAPSHOT_IND_PER_BLOCK_GROUP_BITS			\
-	(SNAPSHOT_BLOCKS_PER_GROUP_BITS-SNAPSHOT_ADDR_PER_BLOCK_BITS)
+	(SNAPSHOT_BLOCKS_PER_GROUP_BITS - SNAPSHOT_ADDR_PER_BLOCK_BITS)
 #define SNAPSHOT_IND_PER_BLOCK_GROUP				\
-	(1<<SNAPSHOT_IND_PER_BLOCK_GROUP_BITS) /* 32 */
+	(1 << SNAPSHOT_IND_PER_BLOCK_GROUP_BITS)
 #define SNAPSHOT_DIND_BLOCK_GROUPS_BITS				\
-	(SNAPSHOT_ADDR_PER_BLOCK_BITS-SNAPSHOT_IND_PER_BLOCK_GROUP_BITS)
+	(SNAPSHOT_ADDR_PER_BLOCK_BITS - SNAPSHOT_IND_PER_BLOCK_GROUP_BITS)
 #define SNAPSHOT_DIND_BLOCK_GROUPS				\
-	(1<<SNAPSHOT_DIND_BLOCK_GROUPS_BITS)
+	(1 << SNAPSHOT_DIND_BLOCK_GROUPS_BITS)
 
-#define SNAPSHOT_BLOCK_OFFSET					\
-	(SNAPSHOT_DIR_BLOCKS+SNAPSHOT_IND_BLOCKS)
-#define SNAPSHOT_BLOCK(iblock)					\
-	((ext4_snapblk_t)(iblock) - SNAPSHOT_BLOCK_OFFSET)
-#define SNAPSHOT_IBLOCK(block)					\
-	(ext4_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
+/*
+ * A snapshot file maps physical block addresses in the snapshot image
+ * to logical block offsets in the snapshot file. Even though the mapping
+ * is trivial (iblock = block), the type casting is still needed, because
+ * the addresses are in a different address space.
+ */
+#define SNAPSHOT_BLOCK(iblock)	((ext4_fsblk_t)(iblock))
+#define SNAPSHOT_IBLOCK(block)	(ext4_lblk_t)((block))
 
 
 
@@ -166,7 +164,7 @@ static inline int EXT4_SNAPSHOTS(struct super_block *sb)
 
 /* helper functions for ext4_snapshot_create() */
 extern int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
-				     ext4_snapblk_t block,
+				     ext4_fsblk_t block,
 				     unsigned long maxblocks,
 				     ext4_fsblk_t *mapped, int cmd);
 /* helper function for ext4_snapshot_take() */
@@ -434,14 +432,14 @@ static inline void exit_ext4_snapshot(void)
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 /* snapshot_inode.c */
 extern int ext4_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
-		sector_t iblock, unsigned long maxblocks,
+		ext4_lblk_t iblock, unsigned long maxblocks,
 		struct buffer_head *cow_bh,
 		int shrink, int *pmapped);
 #endif
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_MERGE
 extern int ext4_snapshot_merge_blocks(handle_t *handle,
 		struct inode *src, struct inode *dst,
-		sector_t iblock, unsigned long maxblocks);
+		ext4_lblk_t iblock, unsigned long maxblocks);
 #endif
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_FILE

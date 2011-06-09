@@ -474,45 +474,55 @@ int __extend_or_restart_transaction(const char *where,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 /*
+ * ext4_snapshot_preallocate - Pre-allocates tind blocks of newly created
+ * snapshot file to reduce extra COW journal credits when it is activated.
  * helper function for snapshot_create().
- * places pre-allocated [d,t]ind blocks in position
- * after they have been allocated as direct blocks.
  */
-static inline int ext4_snapshot_shift_blocks(struct ext4_inode_info *ei,
-		int from, int to, int count)
+static inline int ext4_snapshot_preallocate(handle_t *handle,
+		struct inode *inode, int ntind)
 {
-	int i, err = -EIO;
+	struct ext4_inode_info *ei = EXT4_I(inode);
+	struct buffer_head *bh = NULL;
+	int i, err;
 
-	/* move from direct blocks range */
-	BUG_ON(from < 0 || from + count > EXT4_NDIR_BLOCKS);
-	/* to indirect blocks range */
-	BUG_ON(to < EXT4_NDIR_BLOCKS || to + count > EXT4_SNAPSHOT_N_BLOCKS);
+	if (ntind > 1 + EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS)
+		return -EFBIG;
 
-	/*
-	 * truncate_mutex is held whenever allocating or freeing inode
-	 * blocks.
-	 */
-	down_write(&ei->i_data_sem);
+	err = extend_or_restart_transaction_inode(handle, inode,
+			ntind * EXT4_DATA_TRANS_BLOCKS(inode->i_sb));
+	if (err)
+		return err;
 
-	/*
-	 * verify that 'from' blocks are allocated
-	 * and that 'to' blocks are not allocated.
-	 */
-	for (i = 0; i < count; i++)
-		if (!ei->i_data[from+i] ||
-				ei->i_data[(to+i)%EXT4_N_BLOCKS])
-			goto out;
-
-	/*
-	 * shift 'count' blocks from position 'from' to 'to'
-	 */
-	for (i = 0; i < count; i++) {
-		ei->i_data[(to+i)%EXT4_N_BLOCKS] = ei->i_data[from+i];
-		ei->i_data[from+i] = 0;
+	for (i = 0; i < ntind; i++) {
+		brelse(bh);
+		err = -EIO;
+		/* allocate the DIND branch */
+		bh = ext4_getblk(handle, inode, 0, SNAPMAP_WRITE, &err);
+		if (!bh)
+			break;
+		/* zero out indirect block and journal as dirty metadata */
+		err = ext4_journal_get_write_access(handle, bh);
+		if (err)
+			break;
+		lock_buffer(bh);
+		memset(bh->b_data, 0, bh->b_size);
+		set_buffer_uptodate(bh);
+		unlock_buffer(bh);
+		err = ext4_handle_dirty_metadata(handle, NULL, bh);
+		if (err)
+			break;
+		/* move allocated DIND branch to i'th TIND branch */
+		down_write(&ei->i_data_sem);
+		ei->i_data[(EXT4_TIND_BLOCK + i) % EXT4_N_BLOCKS] =
+			ei->i_data[EXT4_DIND_BLOCK];
+		ei->i_data[EXT4_DIND_BLOCK] = 0;
+		up_write(&ei->i_data_sem);
+		err = ext4_mark_inode_dirty(handle, inode);
+		if (err)
+			break;
 	}
-	err = 0;
-out:
-	up_write(&ei->i_data_sem);
+	
+	brelse(bh);
 	return err;
 }
 #endif
@@ -562,9 +572,8 @@ static int ext4_snapshot_create(struct inode *inode)
 	struct ext4_inode_info *ei = EXT4_I(inode);
 	int i, err, ret;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
-	int count, nind;
+	int count, ntind;
 	const long double_blocks = (1 << (2 * SNAPSHOT_ADDR_PER_BLOCK_BITS));
-	struct buffer_head *bh = NULL;
 	struct ext4_group_desc *desc;
 	unsigned long ino;
 	struct ext4_iloc iloc;
@@ -689,55 +698,18 @@ static int ext4_snapshot_create(struct inode *inode)
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_INIT
 	/* small filesystems can be mapped with just 1 double indirect block */
-	nind = 1;
+	ntind = 0;
 	if (snapshot_blocks > double_blocks)
 		/* add up to 4 triple indirect blocks to map 2^32 blocks */
-		nind += ((snapshot_blocks - double_blocks) >>
+		ntind += ((snapshot_blocks - double_blocks) >>
 			(3 * SNAPSHOT_ADDR_PER_BLOCK_BITS)) + 1;
-	if (nind > 2 + EXT4_SNAPSHOT_EXTRA_TIND_BLOCKS) {
-		snapshot_debug(1, "need too many [d,t]ind blocks (%d) "
-				"for snapshot (%u)\n",
-				nind, inode->i_generation);
-		err = -EFBIG;
-		goto out_handle;
-	}
-
-	err = extend_or_restart_transaction_inode(handle, inode,
-			nind * EXT4_DATA_TRANS_BLOCKS(sb));
-	if (err)
-		goto out_handle;
 
 	/* pre-allocate and zero out [d,t]ind blocks */
-	for (i = 0; i < nind; i++) {
-		brelse(bh);
-		bh = ext4_getblk(handle, inode, i, SNAPMAP_WRITE, &err);
-		if (!bh)
-			break;
-		/* zero out indirect block and journal as dirty metadata */
-		err = ext4_journal_get_write_access(handle, bh);
-		if (err)
-			break;
-		lock_buffer(bh);
-		memset(bh->b_data, 0, bh->b_size);
-		set_buffer_uptodate(bh);
-		unlock_buffer(bh);
-		err = ext4_handle_dirty_metadata(handle, NULL, bh);
-		if (err)
-			break;
-	}
-	brelse(bh);
-	if (!bh || err) {
-		snapshot_debug(1, "failed to initiate [d,t]ind block (%d) "
-				"for snapshot (%u)\n",
-				i, inode->i_generation);
-		goto out_handle;
-	}
-	/* place pre-allocated [d,t]ind blocks in position */
-	err = ext4_snapshot_shift_blocks(ei, 0, EXT4_DIND_BLOCK, nind);
+	err = ext4_snapshot_preallocate(handle, inode, ntind);
 	if (err) {
-		snapshot_debug(1, "failed to move pre-allocated [d,t]ind blocks"
+		snapshot_debug(1, "failed to pre-allocate %d tind blocks"
 				" for snapshot (%u)\n",
-				inode->i_generation);
+				ntind, inode->i_generation);
 		goto out_handle;
 	}
 

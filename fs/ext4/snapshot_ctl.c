@@ -1514,7 +1514,7 @@ out_err:
  */
 static int ext4_snapshot_shrink_range(handle_t *handle,
 		struct inode *start, struct inode *end,
-		sector_t iblock, unsigned long maxblocks,
+		ext4_lblk_t iblock, unsigned long maxblocks,
 		struct buffer_head *cow_bh)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(start->i_sb);

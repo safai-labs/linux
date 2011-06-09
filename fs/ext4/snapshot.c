@@ -33,7 +33,7 @@
  * < 0 - error
  */
 int ext4_snapshot_map_blocks(handle_t *handle, struct inode *inode,
-			      ext4_snapblk_t block, unsigned long maxblocks,
+			      ext4_fsblk_t block, unsigned long maxblocks,
 			      ext4_fsblk_t *mapped, int cmd)
 {
 	int err;

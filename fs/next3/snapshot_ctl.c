@@ -1855,7 +1855,7 @@ static __le32 next3_exclude_inode_getblk(handle_t *handle,
 		goto alloc_out;
 
 	/* exclude bitmap blocks are mapped on the DIND branch */
-	bh = next3_getblk(handle, inode, SNAPSHOT_IBLOCK(grp), create, &err);
+	bh = next3_getblk(handle, inode, EXCLUDE_IBLOCK(grp), create, &err);
 	if (!bh)
 		goto alloc_out;
 	brelse(bh);
@@ -1969,7 +1969,7 @@ static int next3_snapshot_init_bitmap_cache(struct super_block *sb, int create)
 	if (!create)
 		goto out;
 
-	i_size = SNAPSHOT_IBLOCK(max_groups) << SNAPSHOT_BLOCK_SIZE_BITS;
+	i_size = EXCLUDE_IBLOCK(max_groups) << SNAPSHOT_BLOCK_SIZE_BITS;
 	if (NEXT3_I(inode)->i_disksize >= i_size)
 		goto out;
 	i_size_write(inode, i_size);

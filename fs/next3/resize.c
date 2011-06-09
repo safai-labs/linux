@@ -1026,7 +1026,7 @@ int next3_group_add(struct super_block *sb, struct next3_new_group_data *input)
 		 * Offline resize can shrink f/s but it doesn't shrink
 		 * exclude inode.
 		 */
-		i_size = SNAPSHOT_IBLOCK(input->group)
+		i_size = EXCLUDE_IBLOCK(input->group)
 				 << SNAPSHOT_BLOCK_SIZE_BITS;
 		i_size_write(exclude_inode, i_size);
 		NEXT3_I(exclude_inode)->i_disksize = i_size;

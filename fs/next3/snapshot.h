@@ -21,13 +21,10 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-WIP (1-Jun-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-rc1 (15-Jun-2010)"
 
-/*
- * use signed 64bit for snapshot image addresses
- * negative addresses are used to reference snapshot meta blocks
- */
-#define next3_snapblk_t long long
+/* data type for snapshot file logical block number */
+typedef __u32 next3_lblk_t;
 
 #if ( LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34) )
 /* one snapshot patch fits all kernel versions */
@@ -86,12 +83,12 @@ static inline void dquot_free_block(struct inode *inode, qsize_t nr)
 #define SNAPSHOT_DIND_BLOCK_GROUPS			\
 	(1<<SNAPSHOT_DIND_BLOCK_GROUPS_BITS) /* 32 */
 
-#define SNAPSHOT_BLOCK_OFFSET				\
-	(SNAPSHOT_DIR_BLOCKS+SNAPSHOT_IND_BLOCKS)
-#define SNAPSHOT_BLOCK(iblock)					\
-	((next3_snapblk_t)(iblock) - SNAPSHOT_BLOCK_OFFSET)
-#define SNAPSHOT_IBLOCK(block)						\
-	(next3_fsblk_t)((block) + SNAPSHOT_BLOCK_OFFSET)
+#define SNAPSHOT_BLOCK_OFFSET					\
+	(SNAPSHOT_DIR_BLOCKS + SNAPSHOT_IND_BLOCKS)
+#define EXCLUDE_IBLOCK(grp)					\
+	(next3_lblk_t)((grp) + SNAPSHOT_BLOCK_OFFSET)
+#define SNAPSHOT_BLOCK(iblock)	((next3_fsblk_t)(iblock))
+#define SNAPSHOT_IBLOCK(block)	(next3_lblk_t)((block))
 
 #define SNAPSHOT_BYTES_OFFSET					\
 	(SNAPSHOT_BLOCK_OFFSET << SNAPSHOT_BLOCK_SIZE_BITS)
@@ -206,7 +203,7 @@ extern int next3_snapshot_take(struct inode *inode);
 
 /* helper functions for next3_snapshot_create() */
 extern int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
-				     next3_snapblk_t block,
+				     next3_fsblk_t block,
 				     unsigned long maxblocks,
 				     next3_fsblk_t *mapped, int cmd);
 /* helper function for next3_snapshot_take() */

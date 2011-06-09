@@ -315,7 +315,7 @@ static int verify_chain(Indirect *from, Indirect *to)
 
 static int next3_block_to_path(struct inode *inode,
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-			__u32 i_block, int offsets[4], int *boundary)
+		next3_lblk_t i_block, int offsets[4], int *boundary)
 #else
 			long i_block, int offsets[4], int *boundary)
 #endif
@@ -327,11 +327,23 @@ static int next3_block_to_path(struct inode *inode,
 		double_blocks = (1 << (ptrs_bits * 2));
 	int n = 0;
 	int final = 0;
-#ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	int tind;
-#endif
 
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
+	/*
+	 * Snapshot file i_block 0 is at the first double indirect mapped block
+	 * and it can map up to 2^32-1 blocks using 3 extra triple indirect
+	 * branches, replacing the the first 3 direct blocks.
+	 */
+	if (next3_snapshot_file(inode)) {
+		i_block += SNAPSHOT_BLOCK_OFFSET;
+		if (i_block < SNAPSHOT_BLOCK_OFFSET) {
+			/* 32bit wrap around implies extra tind block */
+			i_block -= SNAPSHOT_BLOCK_OFFSET;
+			i_block -= double_blocks;
+			goto extra_tind_blocks;
+		}
+	}
+
 	if (i_block < direct_blocks) {
 #else
 	if (i_block < 0) {
@@ -356,10 +368,17 @@ static int next3_block_to_path(struct inode *inode,
 		offsets[n++] = i_block & (ptrs - 1);
 		final = ptrs;
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_FILE_HUGE
-	} else if (next3_snapshot_file(inode) &&
-			(tind = (i_block >> (ptrs_bits * 3))) <
-			NEXT3_SNAPSHOT_NTIND_BLOCKS) {
-		/* use up to 4 triple indirect blocks to map 2^32 blocks */
+	} else if (next3_snapshot_file(inode)) {
+		int tind;
+
+extra_tind_blocks:
+		tind = i_block >> (ptrs_bits * 3);
+		/*
+		 * When mapping blocks 2^32-SNAPSHOT_BLOCKS_OFFSET..2^32-1 and
+		 * block size is 8K, could get here by goto extra_tind_blocks
+		 * and tind will be 0 (not an extra tind).
+		 */
+		BUG_ON(tind < 0 || tind >= NEXT3_SNAPSHOT_NTIND_BLOCKS);
 		i_block -= (tind << (ptrs_bits * 3));
 		offsets[n++] = NEXT3_TIND_BLOCK + tind;
 		offsets[n++] = i_block >> (ptrs_bits * 2);
@@ -587,41 +606,36 @@ static void next3_free_data_cow(handle_t *handle, struct inode *inode,
  * under snapshot_mutex.
  * Returns the total number of data blocks to be skipped.
  */
-static int next3_blks_to_skip(struct inode *inode, long i_block,
+static int next3_blks_to_skip(struct inode *inode, next3_lblk_t i_block,
 		unsigned long maxblocks, Indirect chain[4], int depth,
 		int *offsets, int k)
 {
 	int ptrs = NEXT3_ADDR_PER_BLOCK(inode->i_sb);
 	int ptrs_bits = NEXT3_ADDR_PER_BLOCK_BITS(inode->i_sb);
-	const long direct_blocks = NEXT3_NDIR_BLOCKS,
-		indirect_blocks = ptrs,
-		double_blocks = (1 << (ptrs_bits * 2));
+	const long double_blocks = (1 << (ptrs_bits * 2));
 	/* number of data blocks mapped with a single splice to the chain */
 	int data_ptrs_bits = ptrs_bits * (depth - k - 1);
 	int max_ptrs = maxblocks >> data_ptrs_bits;
 	int final = 0;
 	unsigned long count = 0;
 
+	BUG_ON(!next3_snapshot_file(inode));
+
 	switch (depth) {
 	case 4: /* tripple indirect */
 		i_block -= double_blocks;
 		/* fall through */
 	case 3: /* double indirect */
-		i_block -= indirect_blocks;
-		/* fall through */
-	case 2: /* indirect */
-		i_block -= direct_blocks;
 		final = (k == 0 ? 1 : ptrs);
+		/* Snapshot block 0 is first double indirect mapped block */
 		break;
+	case 2: /* indirect */
 	case 1: /* direct */
-		final = direct_blocks;
-		break;
+		/* Snapshot file has no direct and indirect mapped block */
+		BUG();
 	}
 	/* offset of block from start of splice point */
 	i_block &= ((1 << data_ptrs_bits) - 1);
-	/* up to 4 triple indirect blocks are used to map 2^32 blocks */
-	if (next3_snapshot_file(inode) && depth == 4 && k == 0)
-		final = NEXT3_SNAPSHOT_NTIND_BLOCKS;
 
 	count++;
 	while (count <= max_ptrs &&
@@ -668,7 +682,7 @@ int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 	int err, blocks_to_boundary, depth, count;
 	struct buffer_head *sbh = NULL;
 	struct next3_group_desc *desc = NULL;
-	next3_snapblk_t block_bitmap, block = SNAPSHOT_BLOCK(iblock);
+	next3_fsblk_t block_bitmap, block = SNAPSHOT_BLOCK(iblock);
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	int mapped_blocks = 0, freed_blocks = 0;
 	const char *cow_bitmap;
@@ -696,7 +710,7 @@ int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		 * skip */
 		count = next3_blks_to_skip(inode, iblock, maxblocks, chain,
 					   depth, offsets, (partial - chain));
-		snapshot_debug(3, "skipping snapshot (%u) blocks: block=0x%llx"
+		snapshot_debug(3, "skipping snapshot (%u) blocks: block=0x%lx"
 			       ", count=0x%x\n", inode->i_generation,
 			       block, count);
 		goto shrink_indirect_blocks;
@@ -717,7 +731,7 @@ int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 			map_bh(cow_bh, inode->i_sb, blk);
 			set_buffer_new(cow_bh);
 			snapshot_debug(3, "COW bitmap #%lu: snapshot "
-				"(%u), bitmap_blk=(+%lld)\n",
+				"(%u), bitmap_blk=(+%lu)\n",
 				block_group, inode->i_generation,
 				SNAPSHOT_BLOCK_GROUP_OFFSET(block_bitmap));
 		}
@@ -776,7 +790,7 @@ shrink_indirect_blocks:
 
 done_shrinking:
 	snapshot_debug(3, "shrinking snapshot (%u) blocks: shrink=%d, "
-			"block=0x%llx, count=0x%x, mapped=0x%x, freed=0x%x\n",
+			"block=0x%lx, count=0x%x, mapped=0x%x, freed=0x%x\n",
 			inode->i_generation, shrink, block, count,
 			mapped_blocks, freed_blocks);
 
@@ -889,7 +903,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 		count = next3_blks_to_skip(src, iblock, maxblocks,
 					S, depth, offsets, ks);
 		snapshot_debug(3, "skipping src snapshot (%u) holes: "
-			       "block=0x%llx, count=0x%x\n", src->i_generation,
+			       "block=0x%lx, count=0x%x\n", src->i_generation,
 			       SNAPSHOT_BLOCK(iblock), count);
 		err = count;
 		goto out;
@@ -922,7 +936,7 @@ int next3_snapshot_merge_blocks(handle_t *handle,
 	count = err;
 	if (moved) {
 		snapshot_debug(3, "moved snapshot (%u) -> snapshot (%d) "
-			       "branches: block=0x%llx, count=0x%x, k=%d/%d, "
+			       "branches: block=0x%lx, count=0x%x, k=%d/%d, "
 			       "moved_blocks=%d\n", src->i_generation,
 			       dst->i_generation, SNAPSHOT_BLOCK(iblock),
 			       count, kd, depth, moved);

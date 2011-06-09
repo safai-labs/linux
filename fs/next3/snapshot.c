@@ -33,7 +33,7 @@
  * < 0 - error
  */
 int next3_snapshot_map_blocks(handle_t *handle, struct inode *inode,
-			      next3_snapblk_t block, unsigned long maxblocks,
+			      next3_fsblk_t block, unsigned long maxblocks,
 			      next3_fsblk_t *mapped, int cmd)
 {
 	struct buffer_head dummy;

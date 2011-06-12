@@ -77,17 +77,53 @@ due to flex_bg shrink bug.
 
 ============================================================================================================
 Reported-by: Amir Goldstein <amir73il@users.sf.net>
-Date:   Mon Jun 2 18:12:04 2011 +0300
-HEAD: d5fa928b
+Date:   Sun Jun 12 19:43:14 2011 +0300
+HEAD: b31dfe15
 
-next3_block_to_path() i_block arg overflow
+bad group desc checksum after move to snapshot
 
-snapshot file max i_size is 2^32-1 blocks, but blocks
-are mapped in +1036 offset (block 0 is first dind mapped block).
-when trying to map the last 1036 blocks of the maximum size snapshot,
-i_block overflows and maps the blocks to direct/indirect blocks.
-since first 3 direct blocks are used as extra tind blocks, this is
-no good.
+ext4_snapshot_test_and_exclude() clears the UNINIT_EXCLUDE flag
+but doesn't update the group desc checksum, so when moving blocks
+of an UNINIT_EXCLUDE group, the checksum is wrong.
 
+ext4_snapshot_test_and_exclude() should call an mballoc helper
+to set exclude bitmap bits using multi bit funcs under group_lock
+the helper should clear the UNINIT_EXCLUDE flag and update checksum
+while group_lock is held.
+
+see debug prints from 'snapshot.ext4dev tests':
+
+[538536.473533] snapshot: snapshot (1) created
+[538536.707057] snapshot: snapshot (1) activated
+[538536.707069] snapshot: snapshot (1) has been taken
+[538536.766974] snapshot: snapshot (1) enabled
+[538536.782027] EXT4DEV-fs (loop1): mounted filesystem without journal. Opts: noload
+[538536.924640] snapshot: snapshot (1) disabled
+[538538.334665] snapshot: snapshot (2) created
+[538538.500553] snapshot: snapshot (1) deactivated
+[538538.500557] snapshot: snapshot (2) activated
+[538538.500577] snapshot: snapshot (2) has been taken
+[538538.581238] snapshot: snapshot (2) enabled
+[538538.590444] EXT4DEV-fs (loop1): ext4dev_check_descriptors: Checksum for group 1 failed (9549!=4aa8)
+[538538.596877] EXT4DEV-fs (loop1): mounted filesystem without journal. Opts: noload
+[538538.755563] snapshot: snapshot (2) disabled
+[538540.277910] snapshot: snapshot (3) created
+[538540.401897] snapshot: snapshot (2) deactivated
+[538540.401901] snapshot: snapshot (3) activated
+[538540.401921] snapshot: snapshot (3) has been taken
+[538540.489602] snapshot: snapshot (3) enabled
+[538540.498678] EXT4DEV-fs (loop1): ext4dev_check_descriptors: Checksum for group 129 failed (f9f3!=2612)
+[538540.506792] EXT4DEV-fs (loop1): mounted filesystem without journal. Opts: noload
+[538540.666232] snapshot: snapshot (3) disabled
+[538542.547034] snapshot: snapshot (4) created
+[538542.696176] snapshot: snapshot (3) deactivated
+[538542.696180] snapshot: snapshot (4) activated
+[538542.696200] snapshot: snapshot (4) has been taken
+[538542.745499] snapshot: snapshot (1) enabled
+[538542.760575] EXT4DEV-fs (loop1): mounted filesystem without journal. Opts: noload
+[538542.854863] snapshot: snapshot (1) disabled
+[538542.947922] snapshot: snapshot (4) enabled
+[538542.957328] EXT4DEV-fs (loop1): ext4dev_check_descriptors: Checksum for group 129 failed (f9f3!=2612)
+[538542.957385] EXT4DEV-fs (loop1): ext4dev_check_descriptors: Checksum for group 289 failed (565c!=89bd)
 
 ============================================================================================================

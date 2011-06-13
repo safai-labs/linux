@@ -78,6 +78,12 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
 					block_group))
 			used_blocks--;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+		if (!ext4_block_in_group(sb, ext4_exclude_bitmap(sb, gdp),
+					block_group))
+			used_blocks--;
+#endif
+
 		if (!ext4_block_in_group(sb, ext4_inode_bitmap(sb, gdp),
 					block_group))
 			used_blocks--;

@@ -60,25 +60,32 @@ static int ext4_group_used_meta_blocks(struct super_block *sb,
 {
 	ext4_fsblk_t tmp;
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+	int used_blocks, exclude_bitmap = 0;
+
+	if (EXT4_HAS_COMPAT_FEATURE(sb,
+				    EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP))
+		exclude_bitmap = 1;
+
+	/* block bitmap, exclude bitmap, inode bitmap, and inode table blocks */
+	used_blocks = sbi->s_itb_per_group + 2 + exclude_bitmap;
+#else
 	/* block bitmap, inode bitmap, and inode table blocks */
 	int used_blocks = sbi->s_itb_per_group + 2;
-
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
-	if (EXT4_HAS_COMPAT_FEATURE(sb,
-				    EXT4_FEATURE_COMPAT_EXCLUDE_BITMAP) &&
-		(!EXT4_HAS_INCOMPAT_FEATURE(sb,
-					    EXT4_FEATURE_INCOMPAT_FLEX_BG) ||
-		 ext4_block_in_group(sb, ext4_exclude_bitmap(sb, gdp),
-			 	     block_group)))
-		/* exclude bitmap */
-		used_blocks += 1;
-
 #endif
+
 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_FLEX_BG)) {
 		if (!ext4_block_in_group(sb, ext4_block_bitmap(sb, gdp),
 					block_group))
 			used_blocks--;
 
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_EXCLUDE_BITMAP
+		if (exclude_bitmap && !ext4_block_in_group(sb,
+					ext4_exclude_bitmap(sb, gdp),
+					block_group))
+			used_blocks--;
+
+#endif
 		if (!ext4_block_in_group(sb, ext4_inode_bitmap(sb, gdp),
 					block_group))
 			used_blocks--;

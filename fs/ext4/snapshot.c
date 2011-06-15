@@ -510,22 +510,23 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 	if (!gdp)
 		goto out;
 
+	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
+	if (!exclude_bitmap_bh)
+		return 0;
+
+	if (exclude) {
+		err = ext4_journal_get_write_access_exclude(handle,
+							    exclude_bitmap_bh);
+		if (err)
+			goto out;
+	}
+
 	exclude_uninit = gdp->bg_flags & cpu_to_le16(EXT4_BG_EXCLUDE_UNINIT);
 	if (exclude && exclude_uninit) {
 		err = ext4_journal_get_write_access(handle, gdp_bh);
 		if (err)
 			goto out;
 	}
-
-	exclude_bitmap_bh = ext4_read_exclude_bitmap(sb, block_group);
-	if (!exclude_bitmap_bh)
-		return 0;
-
-	if (exclude)
-		err = ext4_journal_get_write_access_exclude(handle,
-							    exclude_bitmap_bh);
-	if (err)
-		goto out;
 
 	while (count > 0 && bit < SNAPSHOT_BLOCKS_PER_GROUP) {
 		if (!ext4_set_bit_atomic(sb_bgl_lock(EXT4_SB(sb),
@@ -568,6 +569,8 @@ int ext4_snapshot_test_and_exclude(const char *where, handle_t *handle,
 
 		if (exclude_uninit) {
 			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_EXCLUDE_UNINIT);
+			gdp->bg_checksum = ext4_group_desc_csum(EXT4_SB(sb),
+							        block_group, gdp);
 			err = ext4_handle_dirty_metadata(handle, NULL, gdp_bh);
 		}
 

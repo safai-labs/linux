@@ -60,6 +60,7 @@ static int ext4_snapshot_blks_to_skip(struct inode *inode, ext4_lblk_t i_block,
 		unsigned long maxblocks, Indirect chain[4], int depth,
 		int *offsets, int k)
 {
+	int ptrs = EXT4_ADDR_PER_BLOCK(inode->i_sb);
 	int ptrs_bits = EXT4_ADDR_PER_BLOCK_BITS(inode->i_sb);
 	const long double_blocks = (1 << (ptrs_bits * 2));
 	/* number of data blocks mapped with a single splice to the chain */
@@ -73,6 +74,7 @@ static int ext4_snapshot_blks_to_skip(struct inode *inode, ext4_lblk_t i_block,
 		i_block -= double_blocks;
 		/* fall through */
 	case 3: /* double indirect */
+		final = (k == 0 ? 1 : ptrs);
 		/* Snapshot block 0 is first double indirect mapped block */
 		break;
 	case 2: /* indirect */

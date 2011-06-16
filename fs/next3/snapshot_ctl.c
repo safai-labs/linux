@@ -1405,9 +1405,9 @@ static int next3_snapshot_shrink_range(handle_t *handle,
 	struct list_head *l;
 	struct inode *inode = start;
 	/* start with @maxblocks range and narrow it down */
-	int err, count = maxblocks;
+	unsigned long count = maxblocks;
 	/* @start snapshot blocks should not be freed only counted */
-	int mapped, shrink = 0;
+	int err, mapped, shrink = 0;
 
 	/* iterate on (@start <= snapshot < @end) */
 	list_for_each_prev(l, &NEXT3_I(start)->i_snaplist) {
@@ -1623,7 +1623,7 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 		struct inode *inode = &ei->vfs_inode;
 		next3_fsblk_t block = 1; /* skip super block */
 		/* blocks beyond the size of @start are not in-use by @start */
-		int count = SNAPSHOT_BLOCKS(start) - block;
+		unsigned long count = SNAPSHOT_BLOCKS(start) - block;
 
 		if (n == &sbi->s_snapshot_list || inode == end ||
 			!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
@@ -1645,7 +1645,7 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 						 SNAPSHOT_IBLOCK(block), count);
 
 			snapshot_debug(3, "snapshot (%u) -> snapshot (%u) "
-				       "merge: block = 0x%lx, count = 0x%x, "
+				       "merge: block = 0x%lx, count = 0x%lx, "
 				       "err = 0x%x\n", inode->i_generation,
 				       start->i_generation, block, count, err);
 

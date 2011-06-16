@@ -121,16 +121,11 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 	struct list_head *prev = ei->i_snaplist.prev;
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_BLOCK
-#ifdef CONFIG_NEXT3_FS_DEBUG
-	next3_fsblk_t block = SNAPSHOT_BLOCK(iblock);
-	unsigned long block_group = (iblock < SNAPSHOT_BLOCK_OFFSET ? -1 :
-			SNAPSHOT_BLOCK_GROUP(block));
-	next3_grpblk_t blk = (iblock < SNAPSHOT_BLOCK_OFFSET ? iblock :
-			SNAPSHOT_BLOCK_GROUP_OFFSET(block));
-	snapshot_debug_hl(4, "snapshot (%u) get_blocks [%d/%lu] count=%d "
-			  "cmd=%d\n", inode->i_generation, blk, block_group,
+
+	snapshot_debug_hl(4, "snapshot (%u) get_blocks [%lu/%lu] count=%d "
+			  "cmd=%d\n", inode->i_generation,
+			  SNAPSHOT_BLOCK_TUPLE(iblock),
 			  count, cmd);
-#endif
 
 	if (SNAPMAP_ISSPECIAL(cmd)) {
 		/*
@@ -138,7 +133,6 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 		 */
 		BUG_ON(!handle || !IS_COWING(handle));
 		BUG_ON(!(flags & NEXT3_SNAPFILE_ACTIVE_FL));
-		BUG_ON(iblock < SNAPSHOT_BLOCK_OFFSET);
 		return 0;
 	} else if (cmd)
 		BUG_ON(handle && IS_COWING(handle));
@@ -162,17 +156,12 @@ int next3_snapshot_get_inode_access(handle_t *handle, struct inode *inode,
 				" - write access denied!\n",
 				inode->i_generation);
 		return -EPERM;
-	} else {
-		/* snapshot inode read access */
-		if (iblock < SNAPSHOT_BLOCK_OFFSET)
-			/* snapshot reserved blocks */
-			return 0;
+	} else if (handle) {
 		/*
 		 * non NULL handle indicates this is test_and_cow()
 		 * checking if snapshot block is mapped
 		 */
-		if (handle)
-			return 0;
+		return 0;
 	}
 
 	/*

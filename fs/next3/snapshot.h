@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-7 (15-Jun-2010)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-7 (15-Jun-2011)"
 
 /*
  * use signed 64bit for snapshot image addresses

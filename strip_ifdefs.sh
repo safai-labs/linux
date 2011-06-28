@@ -4,7 +4,6 @@
 ORIGIN=ext4-stable
 BASE=ext4-next
 PATCH=ext4_snapshots.patch
-BIGPATCH=ext4_snapshots+.patch
 
 # re-create the strip_ifdefs branch from current branch
 (git branch | grep strip_ifdefs) && (git branch -D strip_ifdefs || exit 1)
@@ -25,11 +24,9 @@ git commit -a -m "stripped fake SNAPSHOT ifdefs"
 
 # create one big snapshots patch and run it through checkpatch
 echo "creating $PATCH..."
-git diff --diff-filter=M -b $BASE fs/ext4 > $PATCH
-git diff -b $ORIGIN fs/ext4 > $BIGPATCH
+git diff -b $ORIGIN fs/ext4 > $PATCH
 echo "ext4 files changed by snapshots patch:"
-#git diff --stat --diff-filter=M -b $BASE fs/ext4
-diffstat $PATCH
+git diff --stat --diff-filter=M -b $BASE fs/ext4
 
 echo "checking $PATCH..."
 ./scripts/checkpatch.pl $PATCH | tee $PATCH.check | tail

@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-rc1 (15-Jun-2011)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-rc1 (30-Jun-2011)"
 
 /* data type for snapshot file logical block number */
 typedef __u32 next3_lblk_t;

@@ -352,8 +352,9 @@ static int ext4_snapshot_count_branches(struct inode *inode,
 	int err = 0;
 
 	if (depth--) {
-		struct buffer_head *bh;
+		struct buffer_head *bh = NULL;
 		int addr_per_block = EXT4_ADDR_PER_BLOCK(inode->i_sb);
+
 		p = last;
 		while (--p >= first) {
 			nr = le32_to_cpu(*p);
@@ -370,6 +371,7 @@ static int ext4_snapshot_count_branches(struct inode *inode,
 			}
 
 			/* Go read the buffer for the next level down */
+			brelse(bh);
 			bh = sb_bread(inode->i_sb, nr);
 
 			/*
@@ -395,6 +397,7 @@ static int ext4_snapshot_count_branches(struct inode *inode,
 			if (err)
 				break;
 		}
+		brelse(bh);
 	} else {
 		/* We have reached the bottom of the tree. */
 		BUFFER_TRACE(parent_bh, "count data blocks");

@@ -3549,6 +3549,7 @@ static void next3_free_branches(handle_t *handle, struct inode *inode,
 				if (is_handle_aborted(handle))
 					return;
 				*pblocks += 1;
+				brelse(bh);
 				continue;
 			}
 #else

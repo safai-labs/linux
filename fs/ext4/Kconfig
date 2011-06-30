@@ -453,6 +453,8 @@ config EXT4_FS_SNAPSHOT_CTL_RESERVE
 	  Ensure there is enough disk space for snapshot file future use.
 	  Reserve disk space on snapshot take based on file system overhead
 	  size, number of directories and number of blocks/inodes in use.
+	  When estimation is too low, we may reach out of space during COW,
+	  which will result in journal abort and filesystem error.
 
 config EXT4_FS_SNAPSHOT_CTL_DUMP
 	bool "snapshot control - dump snapshot file blocks map"

@@ -590,7 +590,7 @@ static const char *ext4_decode_error(struct super_block *sb, int errno,
 				     char nbuf[16])
 {
 	char *errstr = NULL;
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_ERROR
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
 	handle_t *handle = journal_current_handle();
 #endif
 
@@ -607,7 +607,7 @@ static const char *ext4_decode_error(struct super_block *sb, int errno,
 			errstr = "Journal has aborted";
 		else
 			errstr = "Readonly filesystem";
-#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_ERROR
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
 		if (!handle || handle->h_err != -ENOSPC)
 			break;
 		/* fall through */

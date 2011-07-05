@@ -1110,6 +1110,9 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 	 * snapshot is still on the snapshot list and marked for deletion.
 	 * Free DIND branch last, to keep snapshot's super block around longer.
 	 */
+#ifdef CONFIG_NEXT3_FS_DEBUG
+again:
+#endif
 	for (i = NEXT3_SNAPSHOT_N_BLOCKS - 1; i >= NEXT3_DIND_BLOCK; i--) {
 		int depth = (i == NEXT3_DIND_BLOCK ? 2 : 3);
 		
@@ -1120,6 +1123,13 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 		if (cleanup)
 			ei->i_data[i] = 0;
 	}
+#ifdef CONFIG_NEXT3_FS_DEBUG
+        if (!cleanup && nblocks + blocks < max_blocks &&
+			nblocks + (int)blocks > 0) {
+		SNAPSHOT_SET_PROGRESS(inode, *pblocks);
+		goto again;
+	}
+#endif
 	return nblocks;
 }
 

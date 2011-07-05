@@ -684,6 +684,7 @@ int next3_snapshot_test_and_exclude(const char *where, handle_t *handle,
 		}
 		bit++;
 		count--;
+		cond_resched();
 	}
 
 	if (n && !exclude) {

@@ -4888,9 +4888,11 @@ static int ext4_clear_blocks(handle_t *handle, struct inode *inode,
 
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
 	for (p = first; p < last; p++) {
-		if (*p && bitmap && ext4_test_bit(bit + (p - first), bitmap))
+		if (*p && bitmap && ext4_test_bit(bit + (p - first), bitmap)) {
 			/* don't free block used by older snapshot */
+			cond_resched();
 			continue;
+		}
 		*p = 0;
 	}
 #else
@@ -4973,9 +4975,11 @@ static void ext4_free_data(handle_t *handle, struct inode *inode,
 	for (p = first; p < last; p++) {
 		nr = le32_to_cpu(*p);
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CLEANUP_SHRINK
-		if (nr && bitmap && ext4_test_bit(bit + (p - first), bitmap))
+		if (nr && bitmap && ext4_test_bit(bit + (p - first), bitmap)) {
 			/* don't free block used by older snapshot */
 			nr = 0;
+			cond_resched();
+		}
 		if (nr && pfreed_blocks)
 			++(*pfreed_blocks);
 #endif

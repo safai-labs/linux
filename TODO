@@ -9,4 +9,9 @@
      Shrink snapshots correctly in non-first flex group
 
 -exclude bitmap
-     Use efficient multi bit clear/set bmalloc function helpers
+     1. Use efficient multi bit clear/set bmalloc function helpers
+     2. Support new online resize
+
+-snapshot take
+     Copy initial blocks (sb, gdt, ...) a-synchronicly with submit_bh
+     and wait for them to complete with wait_on_buffer

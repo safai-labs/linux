@@ -13,5 +13,6 @@
      2. Support new online resize
 
 -snapshot take
-     Copy initial blocks (sb, gdt, ...) a-synchronicly with submit_bh
-     and wait for them to complete with wait_on_buffer
+     1. Copy initial blocks (sb, gdt, ...) a-synchronicly with submit_bh
+        and wait for them to complete with wait_on_buffer
+     2. fix copy of journal super block (so that snapshot journal apears empty)

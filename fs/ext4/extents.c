@@ -55,7 +55,11 @@ static int ext4_ext_truncate_extend_restart(handle_t *handle,
 
 	if (!ext4_handle_valid(handle))
 		return 0;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_JOURNAL_CREDITS
+	if(ext4_handle_has_enough_credits(handle, needed))
+#else
 	if (handle->h_buffer_credits > needed)
+#endif
 		return 0;
 	err = ext4_journal_extend(handle, needed);
 	if (err <= 0)

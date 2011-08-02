@@ -150,7 +150,13 @@ static struct buffer_head *next3_snapshot_read_array(int n, int l,
 	snapshot_debug_l(n, l, "%s[%d] = [%u/%u]\n", name, idx,
 			SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
 			SNAPSHOT_BLOCK_GROUP(nr));
+
 	di->nind++;
+	cond_resched();
+
+	// no need to read info if we are not going to print nor count blocks
+	if (n+1 > snapshot_enable_debug)
+		return NULL;
 
 	bh = sb_bread(di->di_inode->i_sb, nr);
 	if (!bh)
@@ -191,6 +197,7 @@ static void next3_snapshot_dump_ind(int n, int l,
 	if (!bh)
 		return;
 
+	n++;
 	snapshot_debug_l(n, l, "{\n");
 	/* iterate on data blocks array */
 	for (i = 0; i <= SNAPSHOT_ADDR_PER_BLOCK; i++, blk++) {
@@ -286,6 +293,7 @@ static void next3_snapshot_dump_dind(int n, int l,
 	if (!bh)
 		return;
 
+	n++;
 	snapshot_debug_l(n, l, "{\n");
 	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++) {
 		key = le32_to_cpu(((__le32 *)bh->b_data)[i]);
@@ -331,6 +339,7 @@ static void next3_snapshot_dump_tind(int n, int l,
 	if (!bh)
 		return;
 
+	n++;
 	snapshot_debug_l(n, l, "{\n");
 	for (i = 0; i < SNAPSHOT_ADDR_PER_BLOCK; i++) {
 		key = le32_to_cpu(((__le32 *)bh->b_data)[i]);
@@ -396,12 +405,12 @@ void next3_snapshot_dump(int n, struct inode *inode)
 	memset(&di, 0, sizeof(di));
 	di.di_inode = inode;
 
-	snapshot_debug(n, "snapshot (%u) block map:\n", inode->i_generation);
+	snapshot_debug(1, "snapshot (%u) block map:\n", inode->i_generation);
 	/* print direct blocks (snapshot meta blocks) */
 	for (i = 0; i < NEXT3_NDIR_BLOCKS; i++) {
 		if (ei->i_data[i]) {
 			nr = le32_to_cpu(ei->i_data[i]);
-			snapshot_debug_l(n, 0, "meta[%d] = [%u/%u] !!!\n", i,
+			snapshot_debug_l(1, 0, "meta[%d] = [%u/%u] !!!\n", i,
 					SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
 					SNAPSHOT_BLOCK_GROUP(nr));
 			di.nmeta++;
@@ -410,29 +419,29 @@ void next3_snapshot_dump(int n, struct inode *inode)
 	/* print indirect branch (snapshot reserved blocks) */
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)
-		snapshot_debug_l(n, 0, "ind[-1] = [%u/%u] !!!\n",
+		snapshot_debug_l(1, 0, "ind[-1] = [%u/%u] !!!\n",
 				SNAPSHOT_BLOCK_GROUP_OFFSET(nr),
 				SNAPSHOT_BLOCK_GROUP(nr));
 	/* print double indirect branch (start of snapshot image) */
 	nr = le32_to_cpu(ei->i_data[i++]);
 	if (nr)
-		next3_snapshot_dump_dind(n, 0, &di, nr, 0);
+		next3_snapshot_dump_dind(2, 0, &di, nr, 0);
 	/* print triple indirect branches (rest of snapshot image) */
 	do {
 		nr = le32_to_cpu(ei->i_data[i]);
 		if (nr)
-			next3_snapshot_dump_tind(n, 0, &di, nr,
+			next3_snapshot_dump_tind(2, 0, &di, nr,
 					i - NEXT3_TIND_BLOCK);
 	} while (++i < NEXT3_SNAPSHOT_N_BLOCKS);
 
 	nblocks = di.nmeta + di.nind + di.ncopied + di.nmoved;
-	snapshot_debug(n, "snapshot (%u) contains: %d (meta) + %d (indirect) "
+	snapshot_debug(1, "snapshot (%u) contains: %d (meta) + %d (indirect) "
 		       "+ %d (data) = %d blocks = %dK = %dM\n",
 		       inode->i_generation,
 		       di.nmeta, di.nind, di.ncopied + di.nmoved,
 		       nblocks, nblocks << (SNAPSHOT_BLOCK_SIZE_BITS - 10),
 		       nblocks >> (20 - SNAPSHOT_BLOCK_SIZE_BITS));
-	snapshot_debug(n, "snapshot (%u) maps: %d (copied) + %d (moved) = "
+	snapshot_debug(1, "snapshot (%u) maps: %d (copied) + %d (moved) = "
 		       "%d blocks\n", inode->i_generation,
 		       di.ncopied, di.nmoved, di.ncopied + di.nmoved);
 }

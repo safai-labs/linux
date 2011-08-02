@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-7 (4-Jul-2011)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.13-8 (1-Aug-2011)"
 
 /*
  * use signed 64bit for snapshot image addresses
@@ -389,8 +389,8 @@ extern int next3_snapshot_test_and_exclude(const char *where, handle_t *handle,
  *
  * On error handle is aborted.
  */
-#define next3_snapshot_test_excluded(handle, inode, block, count) \
-	next3_snapshot_test_and_exclude(__func__, (handle), (inode)->i_sb, \
+#define next3_snapshot_test_excluded(inode, block, count) \
+	next3_snapshot_test_and_exclude(__func__, NULL, (inode)->i_sb, \
 			(block), (count), 0)
 
 #endif
@@ -471,8 +471,7 @@ extern int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 		int shrink, int *pmapped);
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_MERGE
-extern int next3_snapshot_merge_blocks(handle_t *handle,
-		struct inode *src, struct inode *dst,
+extern int next3_snapshot_merge_blocks(struct inode *src, struct inode *dst,
 		sector_t iblock, unsigned long maxblocks);
 #endif
 #endif

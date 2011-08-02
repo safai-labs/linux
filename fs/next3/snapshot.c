@@ -686,7 +686,7 @@ next3_snapshot_test_cow_bitmap(handle_t *handle, struct inode *snapshot,
 /*
  * next3_snapshot_test_and_exclude() marks blocks in exclude bitmap
  * @where:	name of caller function
- * @handle:	JBD handle
+ * @handle:	JBD handle (NULL if !@exclude)
  * @sb:		super block handle
  * @block:	address of first block to exclude
  * @maxblocks:	max. blocks to exclude

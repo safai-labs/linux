@@ -1480,7 +1480,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 				 int need_shrink)
 {
 	struct list_head *l;
-	handle_t *handle;
+	handle_t *handle = NULL;
 	struct buffer_head cow_bitmap, *cow_bh = NULL;
 	next3_fsblk_t block = 1; /* skip super block */
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
@@ -1496,13 +1496,15 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			start->i_generation, end->i_generation,
 			count, need_shrink);
 
-	/* start large truncate transaction that will be extended/restarted */
-	handle = next3_journal_start(start, NEXT3_MAX_TRANS_DATA);
-	if (IS_ERR(handle))
-		return PTR_ERR(handle);
-
 	while (count > 0) {
 		while (block >= bg_boundary) {
+			/* stop large truncate transaction on block group boundary */
+			if (handle) {
+				err = next3_journal_stop(handle);
+				handle = NULL;
+				if (err)
+					goto out_err;
+			}
 			/* reset COW bitmap cache */
 			cow_bitmap.b_state = 0;
 			cow_bitmap.b_blocknr = 0;
@@ -1520,8 +1522,18 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			cond_resched();
 		}
 
-		err = extend_or_restart_transaction(handle,
-						    NEXT3_MAX_TRANS_DATA);
+		if (!handle) {
+			/* start large truncate transaction */
+			handle = next3_journal_start(start, NEXT3_MAX_TRANS_DATA);
+			if (IS_ERR(handle)) {
+				err = PTR_ERR(handle);
+				handle = NULL;
+			}
+		} else {
+			/* extend/restart large truncate transaction */
+			err = extend_or_restart_transaction(handle,
+					NEXT3_MAX_TRANS_DATA);
+		}
 		if (err)
 			goto out_err;
 
@@ -1567,7 +1579,8 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			break;
 		/* reset i_size that was used as progress indicator */
 		SNAPSHOT_SET_DISABLED(&ei->vfs_inode);
-		if (ei->i_flags & NEXT3_SNAPFILE_DELETED_FL &&
+		if (need_shrink > 0 &&
+			ei->i_flags & NEXT3_SNAPFILE_DELETED_FL &&
 			!(ei->i_flags &
 			(NEXT3_SNAPFILE_SHRUNK_FL|NEXT3_SNAPFILE_ACTIVE_FL))) {
 			/* mark snapshot shrunk */
@@ -1577,16 +1590,17 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 			if (!err)
 				next3_mark_iloc_dirty(handle, &ei->vfs_inode,
 						      &iloc);
-			if (--need_shrink <= 0)
-				break;
+			need_shrink--;
 		}
 	}
 
 	err = 0;
 out_err:
-	ret = next3_journal_stop(handle);
-	if (!err)
-		err = ret;
+	if (handle) {
+		ret = next3_journal_stop(handle);
+		if (!err)
+			err = ret;
+	}
 	if (need_shrink)
 		snapshot_debug(1, "snapshot (%u-%u) shrink: "
 			       "need_shrink=%d(>0!), err=%d\n",
@@ -1615,9 +1629,8 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 				int need_merge)
 {
 	struct list_head *l, *n;
-	handle_t *handle = NULL;
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
-	int err, ret;
+	int err;
 
 	snapshot_debug(3, "snapshot (%u-%u) merge: need_merge=%d\n",
 			start->i_generation, end->i_generation, need_merge);
@@ -1636,19 +1649,8 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 			!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
 			break;
 
-		/* start large transaction that will be extended/restarted */
-		handle = next3_journal_start(inode, NEXT3_MAX_TRANS_DATA);
-		if (IS_ERR(handle))
-			return PTR_ERR(handle);
-
 		while (count > 0) {
-			/* we modify one indirect block and the inode itself
-			 * for both the source and destination inodes */
-			err = extend_or_restart_transaction(handle, 4);
-			if (err)
-				goto out_err;
-
-			err = next3_snapshot_merge_blocks(handle, inode, start,
+			err = next3_snapshot_merge_blocks(inode, start,
 						 SNAPSHOT_IBLOCK(block), count);
 
 			snapshot_debug(3, "snapshot (%u) -> snapshot (%u) "
@@ -1669,11 +1671,6 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 		/* reset i_size that was used as progress indicator */
 		SNAPSHOT_SET_DISABLED(inode);
 
-		err = next3_journal_stop(handle);
-		handle = NULL;
-		if (err)
-			goto out_err;
-
 		/* we finished moving all blocks of interest from 'inode'
 		 * into 'start' so it is now safe to remove 'inode' from the
 		 * snapshots list forever */
@@ -1687,11 +1684,6 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 
 	err = 0;
 out_err:
-	if (handle) {
-		ret = next3_journal_stop(handle);
-		if (!err)
-			err = ret;
-	}
 	if (need_merge)
 		snapshot_debug(1, "snapshot (%u-%u) merge: need_merge=%d(>0!), "
 			       "err=%d\n", start->i_generation,

@@ -1489,7 +1489,7 @@ static int next3_snapshot_shrink(struct inode *start, struct inode *end,
 	unsigned long count = le32_to_cpu(sbi->s_es->s_blocks_count) - block;
 	long block_group = -1;
 	next3_fsblk_t bg_boundary = 0;
-	int err, ret;
+	int err = 0, ret;
 
 	snapshot_debug(3, "snapshot (%u-%u) shrink: "
 			"count = 0x%lx, need_shrink = %d\n",

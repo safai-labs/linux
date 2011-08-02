@@ -21,7 +21,7 @@
 #define SNAPSHOT_INDENT_MAX 4
 #define SNAPSHOT_INDENT_STR "\t\t\t\t"
 #define KERN_LEVEL_STR "<%d>"
-#define SNAP_KERN_LEVEL(n) ((n)+2) /* 1 = KERN_ERR, ..., 5 = KERN_DEBUG */
+#define SNAP_KERN_LEVEL(n) ((n) == 1 ? 6 : 7) /* 1: KERN_INFO, default: KERN_DEBUG */
 
 #define SNAPTEST_TAKE	0
 #define SNAPTEST_DELETE	1

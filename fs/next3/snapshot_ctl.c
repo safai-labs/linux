@@ -1084,9 +1084,16 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 	next3_fsblk_t max_blocks = SNAPSHOT_BLOCKS(inode);
 	next3_fsblk_t blocks = inode->i_blocks >>
 		(inode->i_sb->s_blocksize_bits - 9);
-	int i, nblocks = 0;
-	int scale = (blocks > 2) ? -(max_blocks/blocks) : -1;
-	int *pblocks = cleanup ? &scale : &nblocks;
+	int i;
+	struct next3_blocks_counter counter = {
+		.start = 0,
+		.blocks = 0,
+		.scale = (blocks > 2) ? (max_blocks/blocks) : 1,
+	};
+
+	if (cleanup)
+		/* count progress backwards towards 0 i_blocks */
+		counter.scale = -counter.scale;
 
 	if (!next3_snapshot_list(inode)) {
 		snapshot_debug(1, "next3_snapshot_clean() called with "
@@ -1110,27 +1117,17 @@ static int next3_snapshot_clean(handle_t *handle, struct inode *inode,
 	 * snapshot is still on the snapshot list and marked for deletion.
 	 * Free DIND branch last, to keep snapshot's super block around longer.
 	 */
-#ifdef CONFIG_NEXT3_FS_DEBUG
-again:
-#endif
 	for (i = NEXT3_SNAPSHOT_N_BLOCKS - 1; i >= NEXT3_DIND_BLOCK; i--) {
 		int depth = (i == NEXT3_DIND_BLOCK ? 2 : 3);
 		
 		if (!ei->i_data[i])
 			continue;
 		next3_free_branches_cow(handle, inode, NULL,
-				ei->i_data+i, ei->i_data+i+1, depth, pblocks);
+				ei->i_data+i, ei->i_data+i+1, depth, &counter);
 		if (cleanup)
 			ei->i_data[i] = 0;
 	}
-#ifdef CONFIG_NEXT3_FS_DEBUG
-        if (!cleanup && nblocks + blocks < max_blocks &&
-			nblocks + (int)blocks > 0) {
-		SNAPSHOT_SET_PROGRESS(inode, *pblocks);
-		goto again;
-	}
-#endif
-	return nblocks;
+	return counter.blocks;
 }
 
 /*
@@ -1626,7 +1623,14 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 		struct inode *inode = &ei->vfs_inode;
 		next3_fsblk_t block = 1; /* skip super block */
 		/* blocks beyond the size of @start are not in-use by @start */
-		unsigned long count = SNAPSHOT_BLOCKS(start) - block;
+		unsigned long count = SNAPSHOT_BLOCKS(start) - 1;
+		next3_fsblk_t blocks = inode->i_blocks >>
+			(inode->i_sb->s_blocksize_bits - 9);
+		struct next3_blocks_counter counter = {
+			.start = 0,
+			.blocks = 1,
+			.scale = (blocks > 2) ? (count/blocks) : 1,
+		};
 
 		if (n == &sbi->s_snapshot_list || inode == end ||
 			!(ei->i_flags & NEXT3_SNAPFILE_SHRUNK_FL))
@@ -1634,7 +1638,8 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 
 		while (count > 0) {
 			err = next3_snapshot_merge_blocks(inode, start,
-						 SNAPSHOT_IBLOCK(block), count);
+						 SNAPSHOT_IBLOCK(block), count,
+						 &counter);
 
 			snapshot_debug(3, "snapshot (%u) -> snapshot (%u) "
 				       "merge: block = 0x%lx, count = 0x%lx, "
@@ -1647,7 +1652,8 @@ static int next3_snapshot_merge(struct inode *start, struct inode *end,
 			block += err;
 			count -= err;
 			/* indicate merge progress via i_size */
-			SNAPSHOT_SET_PROGRESS(inode, block);
+			SNAPSHOT_SET_PROGRESS(inode, counter.scale *
+						     counter.blocks);
 			cond_resched();
 		}
 

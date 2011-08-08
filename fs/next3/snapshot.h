@@ -21,7 +21,7 @@
 #include "snapshot_debug.h"
 
 
-#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-rc2 (2-Aug-2011)"
+#define NEXT3_SNAPSHOT_VERSION "next3 snapshot v1.0.14-rc2 (8-Aug-2011)"
 
 /* data type for snapshot file logical block number */
 typedef __u32 next3_lblk_t;
@@ -453,10 +453,16 @@ extern next3_fsblk_t next3_get_inode_block(struct super_block *sb,
 					   unsigned long ino,
 					   struct next3_iloc *iloc);
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP
+struct next3_blocks_counter {
+	next3_lblk_t	start;
+	next3_lblk_t	blocks;
+	int		scale;
+};
+
 extern void next3_free_branches_cow(handle_t *handle, struct inode *inode,
 				    struct buffer_head *parent_bh,
-				    __le32 *first, __le32 *last,
-				    int depth, int *pblocks);
+				    __le32 *first, __le32 *last, int depth,
+				    struct next3_blocks_counter *pcounter);
 
 #define next3_free_branches(handle, inode, bh, first, last, depth)	\
 	next3_free_branches_cow((handle), (inode), (bh),		\
@@ -469,7 +475,8 @@ extern int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 #endif
 #ifdef CONFIG_NEXT3_FS_SNAPSHOT_CLEANUP_MERGE
 extern int next3_snapshot_merge_blocks(struct inode *src, struct inode *dst,
-		sector_t iblock, unsigned long maxblocks);
+		sector_t iblock, unsigned long maxblocks,
+		struct next3_blocks_counter *pcounter);
 #endif
 #endif
 

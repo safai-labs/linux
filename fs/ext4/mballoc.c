@@ -1086,7 +1086,7 @@ int ext4_mb_init_group(struct super_block *sb, ext4_group_t group)
 		 */
 		goto err;
 	}
-	
+
 	page = e4b.bd_bitmap_page;
 	ret = ext4_mb_init_cache(page, NULL);
 	if (ret)
@@ -2768,7 +2768,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	sbi = EXT4_SB(sb);
 
 	err = -EIO;
-
 	bitmap_bh = ext4_read_block_bitmap(sb, ac->ac_b_ex.fe_group);
 	if (!bitmap_bh)
 		goto out_err;
@@ -2825,7 +2824,6 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	}
 #endif
 	mb_set_bits(bitmap_bh->b_data, ac->ac_b_ex.fe_start,ac->ac_b_ex.fe_len);
-
 	if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
 		gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
 		ext4_free_blks_set(sb, gdp,
@@ -4896,127 +4894,6 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
 #else
 	err = ext4_journal_get_write_access(handle, bitmap_bh);
 #endif
-	if (err)
-		goto error_return;
-
-	/*
-	 * We are about to modify some metadata.  Call the journal APIs
-	 * to unshare ->b_data if a currently-committing transaction is
-	 * using it
-	 */
-	BUFFER_TRACE(gd_bh, "get_write_access");
-	err = ext4_journal_get_write_access(handle, gd_bh);
-	if (err)
-		goto error_return;
-
-	for (i = 0, blocks_freed = 0; i < count; i++) {
-		BUFFER_TRACE(bitmap_bh, "clear bit");
-		if (!mb_test_bit(bit + i, bitmap_bh->b_data)) {
-			ext4_error(sb, "bit already cleared for block %llu",
-				   (ext4_fsblk_t)(block + i));
-			BUFFER_TRACE(bitmap_bh, "bit already cleared");
-		} else {
-			blocks_freed++;
-		}
-	}
-	
-	err = ext4_mb_load_buddy(sb, block_group, &e4b);
-	if (err)
-		goto error_return;
-
-	/*
-	 * need to update group_info->bb_free and bitmap
-	 * with group lock held. generate_buddy look at
-	 * them with group lock_held
-	 */
-	ext4_lock_group(sb, block_group);
-	mb_clear_bits(bitmap_bh->b_data, bit, count);
-	mb_free_blocks(NULL, &e4b, bit, count);
-	blk_free_count = blocks_freed + ext4_free_blks_count(sb, desc);
-	ext4_free_blks_set(sb, desc, blk_free_count);
-	desc->bg_checksum = ext4_group_desc_csum(sbi, block_group, desc);
-	ext4_unlock_group(sb, block_group);
-	percpu_counter_add(&sbi->s_freeblocks_counter, blocks_freed);
-
-	if (sbi->s_log_groups_per_flex) {
-		ext4_group_t flex_group = ext4_flex_group(sbi, block_group);
-		atomic_add(blocks_freed,
-			   &sbi->s_flex_groups[flex_group].free_blocks);
-	}
-	
-	ext4_mb_unload_buddy(&e4b);
-
-	/* We dirtied the bitmap block */
-	BUFFER_TRACE(bitmap_bh, "dirtied bitmap block");
-	err = ext4_handle_dirty_metadata(handle, NULL, bitmap_bh);
-
-	/* And the group descriptor block */
-	BUFFER_TRACE(gd_bh, "dirtied group descriptor block");
-	ret = ext4_handle_dirty_metadata(handle, NULL, gd_bh);
-	if (!err)
-		err = ret;
-
-error_return:
-	brelse(bitmap_bh);
-	ext4_std_error(sb, err);
-	return;
-}
-
-/**
- * ext4_add_groupblocks() -- Add given blocks to an existing group
- * @handle:			handle to this transaction
- * @sb:				super block
- * @block:			start physcial block to add to the block group
- * @count:			number of blocks to free
- *
- * This marks the blocks as free in the bitmap and buddy.
- */
-void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
-			 ext4_fsblk_t block, unsigned long count)
-{
-	struct buffer_head *bitmap_bh = NULL;
-	struct buffer_head *gd_bh;
-	ext4_group_t block_group;
-	ext4_grpblk_t bit;
-	unsigned int i;
-	struct ext4_group_desc *desc;
-	struct ext4_sb_info *sbi = EXT4_SB(sb);
-	struct ext4_buddy e4b;
-	int err = 0, ret, blk_free_count;
-	ext4_grpblk_t blocks_freed;
-	struct ext4_group_info *grp;
-
-	ext4_debug("Adding block(s) %llu-%llu\n", block, block + count - 1);
-
-	ext4_get_group_no_and_offset(sb, block, &block_group, &bit);
-	grp = ext4_get_group_info(sb, block_group);
-	/*
-	 * Check to see if we are freeing blocks across a group
-	 * boundary.
-	 */
-	if (bit + count > EXT4_BLOCKS_PER_GROUP(sb))
-		goto error_return;
-
-	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
-	if (!bitmap_bh)
-		goto error_return;
-	desc = ext4_get_group_desc(sb, block_group, &gd_bh);
-	if (!desc)
-		goto error_return;
-
-	if (in_range(ext4_block_bitmap(sb, desc), block, count) ||
-	    in_range(ext4_inode_bitmap(sb, desc), block, count) ||
-	    in_range(block, ext4_inode_table(sb, desc), sbi->s_itb_per_group) ||
-	    in_range(block + count - 1, ext4_inode_table(sb, desc),
-		     sbi->s_itb_per_group)) {
-		ext4_error(sb, "Adding blocks in system zones - "
-			   "Block = %llu, count = %lu",
-			   block, count);
-		goto error_return;
-	}
-
-	BUFFER_TRACE(bitmap_bh, "getting write access");
-	err = ext4_journal_get_write_access(handle, bitmap_bh);
 	if (err)
 		goto error_return;
 

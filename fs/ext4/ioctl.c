@@ -186,7 +186,7 @@ flags_out:
 		if (!EXT4_SNAPSHOTS(inode->i_sb))
 			return -EOPNOTSUPP;
 
-		if (!is_owner_or_cap(inode))
+		if (!inode_owner_or_capable(inode))
 			return -EACCES;
 
 		if (get_user(flags, (int __user *) arg))

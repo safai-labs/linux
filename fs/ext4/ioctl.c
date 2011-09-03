@@ -332,8 +332,9 @@ setversion_out:
 		struct super_block *sb = inode->i_sb;
 		int err, err2=0;
 
-		if (!capable(CAP_SYS_RESOURCE))
-			return -EPERM;
+		err = ext4_resize_begin(sb);
+		if (err)
+			return err;
 
 		if (get_user(n_blocks_count, (__u32 __user *)arg))
 			return -EFAULT;
@@ -358,6 +359,7 @@ setversion_out:
 		mutex_unlock(&EXT4_SB(sb)->s_snapshot_mutex);
 #endif
 		mnt_drop_write(filp->f_path.mnt);
+		ext4_resize_end(sb);
 
 		return err;
 	}
@@ -408,8 +410,9 @@ mext_out:
 		struct super_block *sb = inode->i_sb;
 		int err, err2=0;
 
-		if (!capable(CAP_SYS_RESOURCE))
-			return -EPERM;
+		err = ext4_resize_begin(sb);
+		if (err)
+			return err;
 
 		if (copy_from_user(&input, (struct ext4_new_group_input __user *)arg,
 				sizeof(input)))
@@ -435,6 +438,7 @@ mext_out:
 		mutex_unlock(&EXT4_SB(sb)->s_snapshot_mutex);
 #endif
 		mnt_drop_write(filp->f_path.mnt);
+		ext4_resize_end(sb);
 
 		return err;
 	}

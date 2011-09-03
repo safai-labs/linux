@@ -22,6 +22,8 @@
 #include "mballoc.h"
 #include "snapshot.h"
 
+#include <trace/events/ext4.h>
+
 /*
  * balloc.c contains the blocks allocation and deallocation routines
  */
@@ -370,6 +372,7 @@ ext4_read_block_bitmap(struct super_block *sb, ext4_group_t block_group)
 	 * We do it here so the bitmap uptodate bit
 	 * get set with buffer lock held.
 	 */
+	trace_ext4_read_block_bitmap_load(sb, block_group);
 	set_bitmap_uptodate(bh);
 	if (bh_submit_read(bh) < 0) {
 		put_bh(bh);
@@ -490,7 +493,8 @@ ext4_read_exclude_bitmap(struct super_block *sb, ext4_group_t block_group)
  * Check if filesystem has nblocks free & available for allocation.
  * On success return 1, return 0 on failure.
  */
-static int ext4_has_free_blocks(struct ext4_sb_info *sbi, s64 nblocks)
+static int ext4_has_free_blocks(struct ext4_sb_info *sbi,
+				s64 nblocks, unsigned int flags)
 {
 	s64 free_blocks, dirty_blocks, root_blocks;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_CTL_RESERVE
@@ -533,11 +537,6 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi, s64 nblocks)
 						EXT4_FREEBLOCKS_WATERMARK) {
 		free_blocks  = percpu_counter_sum_positive(fbc);
 		dirty_blocks = percpu_counter_sum_positive(dbc);
-		if (dirty_blocks < 0) {
-			printk(KERN_CRIT "Dirty block accounting "
-					"went wrong %lld\n",
-					(long long)dirty_blocks);
-		}
 	}
 	/* Check whether we have space after
 	 * accounting for current dirty blocks & root reserved blocks.
@@ -548,7 +547,9 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi, s64 nblocks)
 	/* Hm, nope.  Are (enough) root reserved blocks available? */
 	if (sbi->s_resuid == current_fsuid() ||
 	    ((sbi->s_resgid != 0) && in_group_p(sbi->s_resgid)) ||
-	    capable(CAP_SYS_RESOURCE)) {
+	    capable(CAP_SYS_RESOURCE) ||
+		(flags & EXT4_MB_USE_ROOT_BLOCKS)) {
+
 		if (free_blocks >= (nblocks + dirty_blocks))
 			return 1;
 	}
@@ -557,9 +558,9 @@ static int ext4_has_free_blocks(struct ext4_sb_info *sbi, s64 nblocks)
 }
 
 int ext4_claim_free_blocks(struct ext4_sb_info *sbi,
-						s64 nblocks)
+			   s64 nblocks, unsigned int flags)
 {
-	if (ext4_has_free_blocks(sbi, nblocks)) {
+	if (ext4_has_free_blocks(sbi, nblocks, flags)) {
 		percpu_counter_add(&sbi->s_dirtyblocks_counter, nblocks);
 		return 0;
 	} else
@@ -573,14 +574,14 @@ int ext4_claim_free_blocks(struct ext4_sb_info *sbi,
  *
  * ext4_should_retry_alloc() is called when ENOSPC is returned, and if
  * it is profitable to retry the operation, this function will wait
- * for the current or commiting transaction to complete, and then
+ * for the current or committing transaction to complete, and then
  * return TRUE.
  *
  * if the total number of retries exceed three times, return FALSE.
  */
 int ext4_should_retry_alloc(struct super_block *sb, int *retries)
 {
-	if (!ext4_has_free_blocks(EXT4_SB(sb), 1) ||
+	if (!ext4_has_free_blocks(EXT4_SB(sb), 1, 0) ||
 	    (*retries)++ > 3 ||
 	    !EXT4_SB(sb)->s_journal)
 		return 0;
@@ -603,7 +604,8 @@ int ext4_should_retry_alloc(struct super_block *sb, int *retries)
  * error stores in errp pointer
  */
 ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
-		ext4_fsblk_t goal, unsigned long *count, int *errp)
+				  ext4_fsblk_t goal, unsigned int flags,
+				  unsigned long *count, int *errp)
 {
 	struct ext4_allocation_request ar;
 	ext4_fsblk_t ret;
@@ -613,6 +615,7 @@ ext4_fsblk_t ext4_new_meta_blocks(handle_t *handle, struct inode *inode,
 	ar.inode = inode;
 	ar.goal = goal;
 	ar.len = count ? *count : 1;
+	ar.flags = flags;
 
 	ret = ext4_mb_new_blocks(handle, &ar, errp);
 	if (count)

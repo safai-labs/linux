@@ -1065,6 +1065,7 @@ int ext4_mb_init_group(struct super_block *sb, ext4_group_t group)
 		 */
 		goto err;
 	}
+
 	page = e4b.bd_bitmap_page;
 	ret = ext4_mb_init_cache(page, NULL);
 	if (ret)
@@ -4721,6 +4722,7 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
 			blocks_freed++;
 		}
 	}
+
 	err = ext4_mb_load_buddy(sb, block_group, &e4b);
 	if (err)
 		goto error_return;
@@ -4744,6 +4746,7 @@ void ext4_add_groupblocks(handle_t *handle, struct super_block *sb,
 		atomic_add(blocks_freed,
 			   &sbi->s_flex_groups[flex_group].free_blocks);
 	}
+
 	ext4_mb_unload_buddy(&e4b);
 
 	/* We dirtied the bitmap block */

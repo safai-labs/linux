@@ -147,8 +147,8 @@
 
 #ifdef CONFIG_QUOTA
 /* Amount of blocks needed for quota update - we know that the structure was
- * allocated so we need to update only inode+data */
-#define EXT4_QUOTA_TRANS_BLOCKS(sb) (test_opt(sb, QUOTA) ? 2 : 0)
+ * allocated so we need to update only data block */
+#define EXT4_QUOTA_TRANS_BLOCKS(sb) (test_opt(sb, QUOTA) ? 1 : 0)
 /* Amount of blocks needed for quota insert/delete - we do some block writes
  * but inode, sb and group updates are done only once */
 #define EXT4_QUOTA_INIT_BLOCKS(sb) (test_opt(sb, QUOTA) ? (DQUOT_INIT_ALLOC*\
@@ -550,8 +550,6 @@ static inline int ext4_should_order_data(struct inode *inode)
 
 static inline int ext4_should_writeback_data(struct inode *inode)
 {
-	if (!S_ISREG(inode->i_mode))
-		return 0;
 	if (EXT4_JOURNAL(inode) == NULL)
 		return 1;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT
@@ -559,6 +557,8 @@ static inline int ext4_should_writeback_data(struct inode *inode)
 		/* snapshots enforce ordered data */
 		return 0;
 #endif
+	if (!S_ISREG(inode->i_mode))
+		return 0;
 	if (ext4_test_inode_flag(inode, EXT4_INODE_JOURNAL_DATA))
 		return 0;
 	if (test_opt(inode->i_sb, DATA_FLAGS) == EXT4_MOUNT_WRITEBACK_DATA)

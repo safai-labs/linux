@@ -238,8 +238,8 @@ static int enable_monitor_mode(void)
 	ARM_DBG_READ(c1, 0, dscr);
 
 	/* Ensure that halting mode is disabled. */
-	if (WARN_ONCE(dscr & ARM_DSCR_HDBGEN, "halting debug mode enabled."
-				"Unable to access hardware resources.")) {
+	if (WARN_ONCE(dscr & ARM_DSCR_HDBGEN,
+			"halting debug mode enabled. Unable to access hardware resources.\n")) {
 		ret = -EPERM;
 		goto out;
 	}
@@ -377,7 +377,7 @@ int arch_install_hw_breakpoint(struct perf_event *bp)
 		}
 	}
 
-	if (WARN_ONCE(i == max_slots, "Can't find any breakpoint slot")) {
+	if (WARN_ONCE(i == max_slots, "Can't find any breakpoint slot\n")) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -423,7 +423,7 @@ void arch_uninstall_hw_breakpoint(struct perf_event *bp)
 		}
 	}
 
-	if (WARN_ONCE(i == max_slots, "Can't find any breakpoint slot"))
+	if (WARN_ONCE(i == max_slots, "Can't find any breakpoint slot\n"))
 		return;
 
 	/* Reset the control register. */
@@ -635,7 +635,7 @@ int arch_validate_hwbkpt_settings(struct perf_event *bp)
 	if (WARN_ONCE(!bp->overflow_handler &&
 		(arch_check_bp_in_kernelspace(bp) || !core_has_mismatch_brps()
 		 || !bp->hw.bp_target),
-			"overflow handler required but none found")) {
+			"overflow handler required but none found\n")) {
 		ret = -EINVAL;
 	}
 out:
@@ -796,7 +796,7 @@ unlock:
 
 /*
  * Called from either the Data Abort Handler [watchpoint] or the
- * Prefetch Abort Handler [breakpoint] with preemption disabled.
+ * Prefetch Abort Handler [breakpoint] with interrupts disabled.
  */
 static int hw_breakpoint_pending(unsigned long addr, unsigned int fsr,
 				 struct pt_regs *regs)
@@ -804,8 +804,10 @@ static int hw_breakpoint_pending(unsigned long addr, unsigned int fsr,
 	int ret = 0;
 	u32 dscr;
 
-	/* We must be called with preemption disabled. */
-	WARN_ON(preemptible());
+	preempt_disable();
+
+	if (interrupts_enabled(regs))
+		local_irq_enable();
 
 	/* We only handle watchpoints and hardware breakpoints. */
 	ARM_DBG_READ(c1, 0, dscr);
@@ -824,10 +826,6 @@ static int hw_breakpoint_pending(unsigned long addr, unsigned int fsr,
 		ret = 1; /* Unhandled fault. */
 	}
 
-	/*
-	 * Re-enable preemption after it was disabled in the
-	 * low-level exception handling code.
-	 */
 	preempt_enable();
 
 	return ret;
@@ -867,6 +865,13 @@ static void reset_ctrl_regs(void *info)
 		 * other than 0xC5ACCE55 to the access register.
 		 */
 		asm volatile("mcr p14, 0, %0, c1, c0, 4" : : "r" (0));
+		isb();
+
+		/*
+		 * Clear any configured vector-catch events before
+		 * enabling monitor mode.
+		 */
+		asm volatile("mcr p14, 0, %0, c0, c7, 0" : : "r" (0));
 		isb();
 	}
 
@@ -936,8 +941,8 @@ static int __init arch_hw_breakpoint_init(void)
 	ARM_DBG_READ(c1, 0, dscr);
 	if (dscr & ARM_DSCR_HDBGEN) {
 		max_watchpoint_len = 4;
-		pr_warning("halting debug mode enabled. Assuming maximum "
-			   "watchpoint size of %u bytes.", max_watchpoint_len);
+		pr_warning("halting debug mode enabled. Assuming maximum watchpoint size of %u bytes.\n",
+			   max_watchpoint_len);
 	} else {
 		/* Work out the maximum supported watchpoint length. */
 		max_watchpoint_len = get_max_wp_len();

@@ -8,6 +8,8 @@
 #include <linux/blkdev.h>
 #include <linux/tracepoint.h>
 
+#define RWBS_LEN	8
+
 DECLARE_EVENT_CLASS(block_rq_with_error,
 
 	TP_PROTO(struct request_queue *q, struct request *rq),
@@ -19,7 +21,7 @@ DECLARE_EVENT_CLASS(block_rq_with_error,
 		__field(  sector_t,	sector			)
 		__field(  unsigned int,	nr_sector		)
 		__field(  int,		errors			)
-		__array(  char,		rwbs,	6		)
+		__array(  char,		rwbs,	RWBS_LEN	)
 		__dynamic_array( char,	cmd,	blk_cmd_buf_len(rq)	)
 	),
 
@@ -104,7 +106,7 @@ DECLARE_EVENT_CLASS(block_rq,
 		__field(  sector_t,	sector			)
 		__field(  unsigned int,	nr_sector		)
 		__field(  unsigned int,	bytes			)
-		__array(  char,		rwbs,	6		)
+		__array(  char,		rwbs,	RWBS_LEN	)
 		__array(  char,         comm,   TASK_COMM_LEN   )
 		__dynamic_array( char,	cmd,	blk_cmd_buf_len(rq)	)
 	),
@@ -183,7 +185,7 @@ TRACE_EVENT(block_bio_bounce,
 		__field( dev_t,		dev			)
 		__field( sector_t,	sector			)
 		__field( unsigned int,	nr_sector		)
-		__array( char,		rwbs,	6		)
+		__array( char,		rwbs,	RWBS_LEN	)
 		__array( char,		comm,	TASK_COMM_LEN	)
 	),
 
@@ -222,7 +224,7 @@ TRACE_EVENT(block_bio_complete,
 		__field( sector_t,	sector		)
 		__field( unsigned,	nr_sector	)
 		__field( int,		error		)
-		__array( char,		rwbs,	6	)
+		__array( char,		rwbs,	RWBS_LEN)
 	),
 
 	TP_fast_assign(
@@ -249,7 +251,7 @@ DECLARE_EVENT_CLASS(block_bio,
 		__field( dev_t,		dev			)
 		__field( sector_t,	sector			)
 		__field( unsigned int,	nr_sector		)
-		__array( char,		rwbs,	6		)
+		__array( char,		rwbs,	RWBS_LEN	)
 		__array( char,		comm,	TASK_COMM_LEN	)
 	),
 
@@ -321,7 +323,7 @@ DECLARE_EVENT_CLASS(block_get_rq,
 		__field( dev_t,		dev			)
 		__field( sector_t,	sector			)
 		__field( unsigned int,	nr_sector		)
-		__array( char,		rwbs,	6		)
+		__array( char,		rwbs,	RWBS_LEN	)
 		__array( char,		comm,	TASK_COMM_LEN	)
         ),
 
@@ -401,9 +403,9 @@ TRACE_EVENT(block_plug,
 
 DECLARE_EVENT_CLASS(block_unplug,
 
-	TP_PROTO(struct request_queue *q),
+	TP_PROTO(struct request_queue *q, unsigned int depth, bool explicit),
 
-	TP_ARGS(q),
+	TP_ARGS(q, depth, explicit),
 
 	TP_STRUCT__entry(
 		__field( int,		nr_rq			)
@@ -411,7 +413,7 @@ DECLARE_EVENT_CLASS(block_unplug,
 	),
 
 	TP_fast_assign(
-		__entry->nr_rq	= q->rq.count[READ] + q->rq.count[WRITE];
+		__entry->nr_rq = depth;
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
 	),
 
@@ -419,31 +421,19 @@ DECLARE_EVENT_CLASS(block_unplug,
 );
 
 /**
- * block_unplug_timer - timed release of operations requests in queue to device driver
+ * block_unplug - release of operations requests in request queue
  * @q: request queue to unplug
- *
- * Unplug the request queue @q because a timer expired and allow block
- * operation requests to be sent to the device driver.
- */
-DEFINE_EVENT(block_unplug, block_unplug_timer,
-
-	TP_PROTO(struct request_queue *q),
-
-	TP_ARGS(q)
-);
-
-/**
- * block_unplug_io - release of operations requests in request queue
- * @q: request queue to unplug
+ * @depth: number of requests just added to the queue
+ * @explicit: whether this was an explicit unplug, or one from schedule()
  *
  * Unplug request queue @q because device driver is scheduled to work
  * on elements in the request queue.
  */
-DEFINE_EVENT(block_unplug, block_unplug_io,
+DEFINE_EVENT(block_unplug, block_unplug,
 
-	TP_PROTO(struct request_queue *q),
+	TP_PROTO(struct request_queue *q, unsigned int depth, bool explicit),
 
-	TP_ARGS(q)
+	TP_ARGS(q, depth, explicit)
 );
 
 /**
@@ -468,7 +458,7 @@ TRACE_EVENT(block_split,
 		__field( dev_t,		dev				)
 		__field( sector_t,	sector				)
 		__field( sector_t,	new_sector			)
-		__array( char,		rwbs,		6		)
+		__array( char,		rwbs,		RWBS_LEN	)
 		__array( char,		comm,		TASK_COMM_LEN	)
 	),
 
@@ -510,7 +500,7 @@ TRACE_EVENT(block_bio_remap,
 		__field( unsigned int,	nr_sector	)
 		__field( dev_t,		old_dev		)
 		__field( sector_t,	old_sector	)
-		__array( char,		rwbs,	6	)
+		__array( char,		rwbs,	RWBS_LEN)
 	),
 
 	TP_fast_assign(
@@ -554,7 +544,7 @@ TRACE_EVENT(block_rq_remap,
 		__field( unsigned int,	nr_sector	)
 		__field( dev_t,		old_dev		)
 		__field( sector_t,	old_sector	)
-		__array( char,		rwbs,	6	)
+		__array( char,		rwbs,	RWBS_LEN)
 	),
 
 	TP_fast_assign(

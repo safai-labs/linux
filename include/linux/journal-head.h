@@ -41,7 +41,7 @@ struct journal_head {
 	unsigned b_modified;
 
 	/*
-	 * This field tracks the last transaction id in which this buffer
+	 * This feild tracks the last transaction id in which this buffer
 	 * has been cowed
 	 * [jbd_lock_bh_state()]
 	 */

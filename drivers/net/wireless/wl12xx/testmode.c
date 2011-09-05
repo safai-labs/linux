@@ -27,6 +27,7 @@
 
 #include "wl12xx.h"
 #include "acx.h"
+#include "reg.h"
 
 #define WL1271_TM_MAX_DATA_LENGTH 1024
 
@@ -138,12 +139,15 @@ static int wl1271_tm_cmd_interrogate(struct wl1271 *wl, struct nlattr *tb[])
 
 	if (ret < 0) {
 		wl1271_warning("testmode cmd interrogate failed: %d", ret);
+		kfree(cmd);
 		return ret;
 	}
 
 	skb = cfg80211_testmode_alloc_reply_skb(wl->hw->wiphy, sizeof(*cmd));
-	if (!skb)
+	if (!skb) {
+		kfree(cmd);
 		return -ENOMEM;
+	}
 
 	NLA_PUT(skb, WL1271_TM_ATTR_DATA, sizeof(*cmd), cmd);
 
@@ -204,7 +208,13 @@ static int wl1271_tm_cmd_nvs_push(struct wl1271 *wl, struct nlattr *tb[])
 
 	kfree(wl->nvs);
 
-	wl->nvs = kzalloc(sizeof(struct wl1271_nvs_file), GFP_KERNEL);
+	if ((wl->chip.id == CHIP_ID_1283_PG20) &&
+	    (len != sizeof(struct wl128x_nvs_file)))
+		return -EINVAL;
+	else if (len != sizeof(struct wl1271_nvs_file))
+		return -EINVAL;
+
+	wl->nvs = kzalloc(len, GFP_KERNEL);
 	if (!wl->nvs) {
 		wl1271_error("could not allocate memory for the nvs file");
 		ret = -ENOMEM;
@@ -253,7 +263,7 @@ static int wl1271_tm_cmd_recover(struct wl1271 *wl, struct nlattr *tb[])
 {
 	wl1271_debug(DEBUG_TESTMODE, "testmode cmd recover");
 
-	ieee80211_queue_work(wl->hw, &wl->recovery_work);
+	wl12xx_queue_recovery_work(wl);
 
 	return 0;
 }

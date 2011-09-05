@@ -94,6 +94,7 @@ static noinline __init void create_kernel_nss(void)
 	unsigned int sinitrd_pfn, einitrd_pfn;
 #endif
 	int response;
+	int hlen;
 	size_t len;
 	char *savesys_ptr;
 	char defsys_cmd[DEFSYS_CMD_SIZE];
@@ -124,24 +125,27 @@ static noinline __init void create_kernel_nss(void)
 	end_pfn = PFN_UP(__pa(&_end));
 	min_size = end_pfn << 2;
 
-	sprintf(defsys_cmd, "DEFSYS %s 00000-%.5X EW %.5X-%.5X SR %.5X-%.5X",
-		kernel_nss_name, stext_pfn - 1, stext_pfn, eshared_pfn - 1,
-		eshared_pfn, end_pfn);
+	hlen = snprintf(defsys_cmd, DEFSYS_CMD_SIZE,
+			"DEFSYS %s 00000-%.5X EW %.5X-%.5X SR %.5X-%.5X",
+			kernel_nss_name, stext_pfn - 1, stext_pfn,
+			eshared_pfn - 1, eshared_pfn, end_pfn);
 
 #ifdef CONFIG_BLK_DEV_INITRD
 	if (INITRD_START && INITRD_SIZE) {
 		sinitrd_pfn = PFN_DOWN(__pa(INITRD_START));
 		einitrd_pfn = PFN_UP(__pa(INITRD_START + INITRD_SIZE));
 		min_size = einitrd_pfn << 2;
-		sprintf(defsys_cmd, "%s EW %.5X-%.5X", defsys_cmd,
-		sinitrd_pfn, einitrd_pfn);
+		hlen += snprintf(defsys_cmd + hlen, DEFSYS_CMD_SIZE - hlen,
+				 " EW %.5X-%.5X", sinitrd_pfn, einitrd_pfn);
 	}
 #endif
 
-	sprintf(defsys_cmd, "%s EW MINSIZE=%.7iK PARMREGS=0-13",
-		defsys_cmd, min_size);
-	sprintf(savesys_cmd, "SAVESYS %s \n IPL %s",
-		kernel_nss_name, kernel_nss_name);
+	snprintf(defsys_cmd + hlen, DEFSYS_CMD_SIZE - hlen,
+		 " EW MINSIZE=%.7iK PARMREGS=0-13", min_size);
+	defsys_cmd[DEFSYS_CMD_SIZE - 1] = '\0';
+	snprintf(savesys_cmd, SAVESYS_CMD_SIZE, "SAVESYS %s \n IPL %s",
+		 kernel_nss_name, kernel_nss_name);
+	savesys_cmd[SAVESYS_CMD_SIZE - 1] = '\0';
 
 	__cpcmd(defsys_cmd, NULL, 0, &response);
 
@@ -392,17 +396,19 @@ static __init void detect_machine_facilities(void)
 static __init void rescue_initrd(void)
 {
 #ifdef CONFIG_BLK_DEV_INITRD
+	unsigned long min_initrd_addr = (unsigned long) _end + (4UL << 20);
 	/*
-	 * Move the initrd right behind the bss section in case it starts
-	 * within the bss section. So we don't overwrite it when the bss
-	 * section gets cleared.
+	 * Just like in case of IPL from VM reader we make sure there is a
+	 * gap of 4MB between end of kernel and start of initrd.
+	 * That way we can also be sure that saving an NSS will succeed,
+	 * which however only requires different segments.
 	 */
 	if (!INITRD_START || !INITRD_SIZE)
 		return;
-	if (INITRD_START >= (unsigned long) __bss_stop)
+	if (INITRD_START >= min_initrd_addr)
 		return;
-	memmove(__bss_stop, (void *) INITRD_START, INITRD_SIZE);
-	INITRD_START = (unsigned long) __bss_stop;
+	memmove((void *) min_initrd_addr, (void *) INITRD_START, INITRD_SIZE);
+	INITRD_START = min_initrd_addr;
 #endif
 }
 

@@ -3850,6 +3850,17 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	percpu_counter_set(&sbi->s_dirtyblocks_counter, 0);
 
 no_journal:
+#ifdef CONFIG_EXT4_FS_SNAPSHOT
+	/* Enforce journal ordered mode with snapshots */
+	if (EXT4_SNAPSHOTS(sb) && !(sb->s_flags & MS_RDONLY) &&
+		(!EXT4_SB(sb)->s_journal ||
+		 test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA)) {
+		ext4_msg(sb, KERN_ERR,
+				"snapshots require journal ordered mode");
+		goto failed_mount_wq;
+	}
+
+#endif
 	/*
 	 * The maximum number of concurrent works can be high and
 	 * concurrency isn't really necessary.  Limit it to 1.
@@ -3861,17 +3872,6 @@ no_journal:
 		goto failed_mount_wq;
 	}
 
-#ifdef CONFIG_EXT4_FS_SNAPSHOT
-	/* Enforce journal ordered mode with snapshots */
-	if (EXT4_SNAPSHOTS(sb) && !(sb->s_flags & MS_RDONLY) &&
-		(!EXT4_SB(sb)->s_journal ||
-		 test_opt(sb, DATA_FLAGS) != EXT4_MOUNT_ORDERED_DATA)) {
-		ext4_msg(sb, KERN_ERR,
-				"snapshots require journal ordered mode");
-		goto failed_mount4;
-	}
-
-#endif
 	/*
 	 * The jbd2_journal_load will have done any necessary log recovery,
 	 * so we can safely mount the rest of the filesystem now.

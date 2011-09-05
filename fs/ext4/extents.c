@@ -4085,7 +4085,6 @@ static int ext4_ext_fiemap_cb(struct inode *inode, ext4_lblk_t next,
 	__u64	logical;
 	__u64	physical;
 	__u64	length;
-	loff_t	size;
 	__u32	flags = 0;
 	int		ret = 0;
 	struct fiemap_extent_info *fieinfo = data;

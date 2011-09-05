@@ -534,6 +534,12 @@ static int _request_firmware(const struct firmware **firmware_p,
 		return 0;
 	}
 
+	if (WARN_ON(usermodehelper_is_disabled())) {
+		dev_err(device, "firmware: %s will not be loaded\n", name);
+		retval = -EBUSY;
+		goto out;
+	}
+
 	if (uevent)
 		dev_dbg(device, "firmware: requesting %s\n", name);
 
@@ -593,8 +599,7 @@ int
 request_firmware(const struct firmware **firmware_p, const char *name,
                  struct device *device)
 {
-        int uevent = 1;
-        return _request_firmware(firmware_p, name, device, uevent, false);
+        return _request_firmware(firmware_p, name, device, true, false);
 }
 
 /**
@@ -618,7 +623,7 @@ struct firmware_work {
 	struct device *device;
 	void *context;
 	void (*cont)(const struct firmware *fw, void *context);
-	int uevent;
+	bool uevent;
 };
 
 static int request_firmware_work_func(void *arg)
@@ -661,7 +666,7 @@ static int request_firmware_work_func(void *arg)
  **/
 int
 request_firmware_nowait(
-	struct module *module, int uevent,
+	struct module *module, bool uevent,
 	const char *name, struct device *device, gfp_t gfp, void *context,
 	void (*cont)(const struct firmware *fw, void *context))
 {

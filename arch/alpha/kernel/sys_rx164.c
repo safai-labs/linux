@@ -99,7 +99,7 @@ rx164_init_irq(void)
 
 	rx164_update_irq_hw(0);
 	for (i = 16; i < 40; ++i) {
-		set_irq_chip_and_handler(i, &rx164_irq_type, handle_level_irq);
+		irq_set_chip_and_handler(i, &rx164_irq_type, handle_level_irq);
 		irq_set_status_flags(i, IRQ_LEVEL);
 	}
 
@@ -144,7 +144,7 @@ rx164_init_irq(void)
  */
 
 static int __init
-rx164_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
+rx164_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 #if 0
 	static char irq_tab_pass1[6][5] __initdata = {

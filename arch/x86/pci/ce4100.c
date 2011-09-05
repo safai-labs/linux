@@ -255,8 +255,9 @@ int bridge_read(unsigned int devfn, int reg, int len, u32 *value)
 static int ce4100_conf_read(unsigned int seg, unsigned int bus,
 			    unsigned int devfn, int reg, int len, u32 *value)
 {
-	int i, retval = 1;
+	int i;
 
+	WARN_ON(seg);
 	if (bus == 1) {
 		for (i = 0; i < ARRAY_SIZE(bus1_fixups); i++) {
 			if (bus1_fixups[i].dev_func == devfn &&
@@ -282,6 +283,7 @@ static int ce4100_conf_write(unsigned int seg, unsigned int bus,
 {
 	int i;
 
+	WARN_ON(seg);
 	if (bus == 1) {
 		for (i = 0; i < ARRAY_SIZE(bus1_fixups); i++) {
 			if (bus1_fixups[i].dev_func == devfn &&

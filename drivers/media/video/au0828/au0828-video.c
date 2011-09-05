@@ -33,7 +33,6 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/suspend.h>
-#include <linux/version.h>
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-chip-ident.h>
@@ -42,8 +41,6 @@
 #include "au0828-reg.h"
 
 static DEFINE_MUTEX(au0828_sysfs_lock);
-
-#define AU0828_VERSION_CODE KERNEL_VERSION(0, 0, 1)
 
 /* ------------------------------------------------------------------
 	Videobuf operations
@@ -502,7 +499,7 @@ static inline void vbi_get_next_buf(struct au0828_dmaqueue *dma_q,
 
 	/* Get the next buffer */
 	*buf = list_entry(dma_q->active.next, struct au0828_buffer, vb.queue);
-	/* Cleans up buffer - Usefull for testing for frame/URB loss */
+	/* Cleans up buffer - Useful for testing for frame/URB loss */
 	outp = videobuf_to_vmalloc(&(*buf)->vb);
 	memset(outp, 0x00, (*buf)->vb.size);
 
@@ -1177,10 +1174,6 @@ static int au0828_set_format(struct au0828_dev *dev, unsigned int cmd,
 	int ret;
 	int width = format->fmt.pix.width;
 	int height = format->fmt.pix.height;
-	unsigned int maxwidth, maxheight;
-
-	maxwidth = 720;
-	maxheight = 480;
 
 	if (format->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
@@ -1257,8 +1250,6 @@ static int vidioc_querycap(struct file *file, void  *priv,
 	strlcpy(cap->driver, "au0828", sizeof(cap->driver));
 	strlcpy(cap->card, dev->board.name, sizeof(cap->card));
 	strlcpy(cap->bus_info, dev->v4l2_dev.name, sizeof(cap->bus_info));
-
-	cap->version = AU0828_VERSION_CODE;
 
 	/*set the device capabilities */
 	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE |

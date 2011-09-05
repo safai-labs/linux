@@ -138,7 +138,8 @@ takara_init_irq(void)
 		takara_update_irq_hw(i, -1);
 
 	for (i = 16; i < 128; ++i) {
-		set_irq_chip_and_handler(i, &takara_irq_type, handle_level_irq);
+		irq_set_chip_and_handler(i, &takara_irq_type,
+					 handle_level_irq);
 		irq_set_status_flags(i, IRQ_LEVEL);
 	}
 
@@ -156,7 +157,7 @@ takara_init_irq(void)
  */
 
 static int __init
-takara_map_irq_srm(struct pci_dev *dev, u8 slot, u8 pin)
+takara_map_irq_srm(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	static char irq_tab[15][5] __initdata = {
 		{ 16+3, 16+3, 16+3, 16+3, 16+3},   /* slot  6 == device 3 */
@@ -187,7 +188,7 @@ takara_map_irq_srm(struct pci_dev *dev, u8 slot, u8 pin)
 }
 
 static int __init
-takara_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
+takara_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	static char irq_tab[15][5] __initdata = {
 		{ 16+3, 16+3, 16+3, 16+3, 16+3},   /* slot  6 == device 3 */

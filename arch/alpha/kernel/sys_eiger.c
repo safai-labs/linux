@@ -138,13 +138,13 @@ eiger_init_irq(void)
 	init_i8259a_irqs();
 
 	for (i = 16; i < 128; ++i) {
-		set_irq_chip_and_handler(i, &eiger_irq_type, handle_level_irq);
+		irq_set_chip_and_handler(i, &eiger_irq_type, handle_level_irq);
 		irq_set_status_flags(i, IRQ_LEVEL);
 	}
 }
 
 static int __init
-eiger_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
+eiger_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	u8 irq_orig;
 

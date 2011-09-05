@@ -7,7 +7,7 @@
 #include <linux/nfs_xdr.h>
 #include <linux/sunrpc/xprt.h>
 
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 
 struct nfs4_session;
 struct nfs_iostats;
@@ -16,6 +16,7 @@ struct nfs4_sequence_args;
 struct nfs4_sequence_res;
 struct nfs_server;
 struct nfs4_minor_version_ops;
+struct server_scope;
 
 /*
  * The nfs_client identifies our client state to the server.
@@ -30,6 +31,8 @@ struct nfs_client {
 #define NFS_CS_CALLBACK		1		/* - callback started */
 #define NFS_CS_IDMAP		2		/* - idmap started */
 #define NFS_CS_RENEWD		3		/* - renewd started */
+#define NFS_CS_STOP_RENEW	4		/* no more state to renew */
+#define NFS_CS_CHECK_LEASE_TIME	5		/* need to check lease time */
 	struct sockaddr_storage	cl_addr;	/* server identifier */
 	size_t			cl_addrlen;
 	char *			cl_hostname;	/* hostname of server */
@@ -45,6 +48,7 @@ struct nfs_client {
 
 #ifdef CONFIG_NFS_V4
 	u64			cl_clientid;	/* constant */
+	nfs4_verifier		cl_confirm;	/* Clientid verifier */
 	unsigned long		cl_state;
 
 	spinlock_t		cl_lock;
@@ -74,13 +78,13 @@ struct nfs_client {
 	/* The flags used for obtaining the clientid during EXCHANGE_ID */
 	u32			cl_exchange_flags;
 	struct nfs4_session	*cl_session; 	/* sharred session */
-	struct list_head	cl_layouts;
-	struct pnfs_deviceid_cache *cl_devid_cache; /* pNFS deviceid cache */
 #endif /* CONFIG_NFS_V4 */
 
 #ifdef CONFIG_NFS_FSCACHE
 	struct fscache_cookie	*fscache;	/* client index cache cookie */
 #endif
+
+	struct server_scope	*server_scope;	/* from exchange_id */
 };
 
 /*
@@ -127,8 +131,9 @@ struct nfs_server {
 	struct fscache_cookie	*fscache;	/* superblock cookie */
 #endif
 
+	u32			pnfs_blksize;	/* layout_blksize attr */
 #ifdef CONFIG_NFS_V4
-	u32			attr_bitmask[2];/* V4 bitmask representing the set
+	u32			attr_bitmask[3];/* V4 bitmask representing the set
 						   of attributes supported on this
 						   filesystem */
 	u32			cache_consistency_bitmask[2];
@@ -141,12 +146,14 @@ struct nfs_server {
 						   filesystem */
 	struct pnfs_layoutdriver_type  *pnfs_curr_ld; /* Active layout driver */
 	struct rpc_wait_queue	roc_rpcwaitq;
+	void			*pnfs_ld_data;	/* per mount point data */
 
 	/* the following fields are protected by nfs_client->cl_lock */
 	struct rb_root		state_owners;
 	struct rb_root		openowner_id;
 	struct rb_root		lockowner_id;
 #endif
+	struct list_head	layouts;
 	struct list_head	delegations;
 	void (*destroy)(struct nfs_server *);
 
@@ -176,6 +183,7 @@ struct nfs_server {
 #define NFS_CAP_CTIME		(1U << 12)
 #define NFS_CAP_MTIME		(1U << 13)
 #define NFS_CAP_POSIX_LOCK	(1U << 14)
+#define NFS_CAP_UIDGID_NOMAP	(1U << 15)
 
 
 /* maximum number of slots to use */

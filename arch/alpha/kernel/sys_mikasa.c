@@ -98,7 +98,8 @@ mikasa_init_irq(void)
 	mikasa_update_irq_hw(0);
 
 	for (i = 16; i < 32; ++i) {
-		set_irq_chip_and_handler(i, &mikasa_irq_type, handle_level_irq);
+		irq_set_chip_and_handler(i, &mikasa_irq_type,
+					 handle_level_irq);
 		irq_set_status_flags(i, IRQ_LEVEL);
 	}
 
@@ -145,7 +146,7 @@ mikasa_init_irq(void)
  */
 
 static int __init
-mikasa_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
+mikasa_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	static char irq_tab[8][5] __initdata = {
 		/*INT    INTA   INTB   INTC   INTD */

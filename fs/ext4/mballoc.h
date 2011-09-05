@@ -169,7 +169,7 @@ struct ext4_allocation_context {
 	/* original request */
 	struct ext4_free_extent ac_o_ex;
 
-	/* goal request (after normalization) */
+	/* goal request (normalized ac_o_ex) */
 	struct ext4_free_extent ac_g_ex;
 
 	/* the best found extent */
@@ -187,7 +187,6 @@ struct ext4_allocation_context {
 	__u16 ac_flags;		/* allocation hints */
 	__u8 ac_status;
 	__u8 ac_criteria;
-	__u8 ac_repeats;
 	__u8 ac_2order;		/* if request is to allocate 2^N blocks and
 				 * N > 0, the field stores N, otherwise 0 */
 	__u8 ac_op;		/* operation, for history only */

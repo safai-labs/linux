@@ -4804,7 +4804,11 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct file *file = vma->vm_file;
 	struct inode *inode = file->f_path.dentry->d_inode;
 	struct address_space *mapping = inode->i_mapping;
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	handle_t *handle = NULL;
+#else
 	handle_t *handle;
+#endif
 	get_block_t *get_block;
 	int retries = 0;
 
@@ -4817,11 +4821,24 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (test_opt(inode->i_sb, DELALLOC) &&
 	    !ext4_should_journal_data(inode) &&
 	    !ext4_nonda_switch(inode->i_sb)) {
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		if (ext4_snapshot_should_move_data(inode)) {
+			handle = ext4_journal_start(inode, 1);
+			if (IS_ERR(handle)) {
+				ret = VM_FAULT_SIGBUS;
+				goto out;
+			}
+		}
+#endif
 		do {
 			ret = __block_page_mkwrite(vma, vmf,
 						   ext4_da_get_block_prep);
 		} while (ret == -ENOSPC &&
 		       ext4_should_retry_alloc(inode->i_sb, &retries));
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		if (handle)
+			ext4_journal_stop(handle);
+#endif
 		goto out_ret;
 	}
 

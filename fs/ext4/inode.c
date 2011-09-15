@@ -4816,6 +4816,9 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	 * __block_page_mkwrite() to do a reliable check.
 	 */
 	vfs_check_frozen(inode->i_sb, SB_FREEZE_WRITE);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+	ext4_snapshot_write_begin(inode, page, PAGE_CACHE_SIZE, 0);
+#endif
 	/* Delalloc case is easy... */
 	if (test_opt(inode->i_sb, DELALLOC) &&
 	    !ext4_should_journal_data(inode) &&
@@ -4872,7 +4875,11 @@ int ext4_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (ext4_should_dioread_nolock(inode))
 		get_block = ext4_get_block_write;
 	else
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
+		get_block = ext4_get_block_mow;
+#else
 		get_block = ext4_get_block;
+#endif
 retry_alloc:
 	handle = ext4_journal_start(inode, ext4_writepage_trans_blocks(inode));
 	if (IS_ERR(handle)) {

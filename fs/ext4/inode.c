@@ -947,7 +947,8 @@ static void ext4_snapshot_write_begin(struct inode *inode,
 	 * guarantee this we have to know that the transaction is not restarted.
 	 * Can we count on that?
 	 */
-	if (!ext4_snapshot_should_move_data(inode))
+	if (!EXT4_SNAPSHOTS(inode->i_sb) ||
+	    !ext4_snapshot_should_move_data(inode))
 		return;
 
 	if (!page_has_buffers(page))
@@ -1014,8 +1015,7 @@ retry:
 	}
 	*pagep = page;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (EXT4_SNAPSHOTS(inode->i_sb))
-		ext4_snapshot_write_begin(inode, page, len, 0);
+	ext4_snapshot_write_begin(inode, page, len, 0);
 #endif
 
 	if (ext4_should_dioread_nolock(inode))
@@ -2596,8 +2596,7 @@ retry:
 	}
 	*pagep = page;
 #ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_DATA
-	if (EXT4_SNAPSHOTS(inode->i_sb))
-		ext4_snapshot_write_begin(inode, page, len, 1);
+	ext4_snapshot_write_begin(inode, page, len, 1);
 #endif
 
 	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);

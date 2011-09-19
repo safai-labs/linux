@@ -3496,7 +3496,11 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 				if (!ext4_ext_is_uninitialized(ex)) {
 					ext4_ext_put_in_cache(inode, ee_block,
 						ee_len, ee_start);
+#ifdef CONFIG_EXT4_FS_SNAPSHOT_HOOKS_EXTENT
+					goto found;
+#else
 					goto out;
+#endif
 				}
 				ret = ext4_ext_handle_uninitialized_extents(
 					handle, inode, map, path, flags,

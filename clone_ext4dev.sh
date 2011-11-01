@@ -18,8 +18,17 @@ mv ext4_jbd2.h ext4dev_jbd2.h
 mv ext4_jbd2.c ext4dev_jbd2.c
 mv ext4.h ext4dev.h
 sed -f ../../ext4dev.sed -i *
+
+# create standalone module tar for next3.sf.net
 cd ..
 tar cfz ../ext4dev_module.tar.gz ext4dev/
+
+# create standalone module tar for OBS
+cp -a ext4dev ext4dev-1.0.13
+tar cfj ../ext4dev-1.0.13.tar.bz2 ext4dev-1.0.13
+rm -rf ext4dev-1.0.13
+
+# create kernel patch
 cd ..
 cp -a fs/ext4dev/ext4dev_events.h include/trace/events/ext4dev.h
 

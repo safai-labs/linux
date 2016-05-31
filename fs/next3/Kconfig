@@ -1,6 +1,6 @@
 config NEXT3_FS
 	tristate "Next3 journalling file system support"
-	select JBD
+	depends on JBD
 	help
 	  This is the journalling version of the Second extended file system
 	  (often called next3), the de facto standard Linux file system
@@ -66,7 +66,8 @@ config NEXT3_FS_XATTR
 config NEXT3_FS_POSIX_ACL
 	bool "Next3 POSIX Access Control Lists"
 	depends on NEXT3_FS_XATTR
-	select FS_POSIX_ACL
+	depends on FS_POSIX_ACL
+	default y
 	help
 	  Posix Access Control Lists (ACLs) support permissions for users and
 	  groups beyond the owner/group/world scheme.
@@ -79,6 +80,7 @@ config NEXT3_FS_POSIX_ACL
 config NEXT3_FS_SECURITY
 	bool "Next3 Security Labels"
 	depends on NEXT3_FS_XATTR
+	default y
 	help
 	  Security labels support alternative access control models
 	  implemented by security modules like SELinux.  This option
@@ -87,3 +89,463 @@ config NEXT3_FS_SECURITY
 
 	  If you are not using a security module that requires using
 	  extended attributes for file security labels, say N.
+
+config NEXT3_FS_DEBUG
+	bool "snapshot debugging support"
+	depends on NEXT3_FS && DEBUG_FS
+	default y
+	help
+	  Control snapshot debug level via debugfs entry /next3/snapshot-debug.
+	  Control snapshot unit tests via debugfs entries /next3/test-XXX.
+
+config NEXT3_FS_SNAPSHOT
+	bool "snapshot support"
+	depends on NEXT3_FS
+	default y
+	help
+	  If you say N here, then Next3 will be identical to Ext3.
+
+config NEXT3_FS_SNAPSHOT_HOOKS
+	bool "snapshot hooks"
+	depends on NEXT3_FS_SNAPSHOT
+	default y
+	help
+	  Insert generic snapshot API calls inside Next3 file system.
+
+config NEXT3_FS_SNAPSHOT_HOOKS_JBD
+	bool "snapshot hooks - inside JBD hooks"
+	depends on NEXT3_FS_SNAPSHOT_HOOKS
+	default y
+	help
+	  Before every meta data buffer write, the journal API is called,
+	  namely, one of the next3_journal_get_XXX_access() functions.
+	  We use these journal hooks to call the snapshot API,
+	  before every meta data buffer write.
+
+config NEXT3_FS_SNAPSHOT_HOOKS_DELETE
+	bool "snapshot hooks - delete blocks"
+	depends on NEXT3_FS_SNAPSHOT_HOOKS
+	default y
+	help
+	  Before deleting file blocks in next3_free_blocks(),
+	  we call the snapshot API snapshot_get_delete_access(),
+	  to optionally move the block to the snapshot file.
+
+config NEXT3_FS_SNAPSHOT_HOOKS_DATA
+	bool "snapshot hooks - move data blocks"
+	depends on NEXT3_FS_SNAPSHOT_HOOKS
+	default y
+	help
+	  Before every regular file data buffer write,
+	  the function next3_get_block() is called to map the buffer to disk.
+	  We use this hook to call the snapshot API snapshot_get_move_access(),
+	  to optionally move the block to the snapshot file.
+
+config NEXT3_FS_SNAPSHOT_FILE
+	bool "snapshot file"
+	depends on NEXT3_FS_SNAPSHOT
+	default y
+	help
+	  Next3 snapshot implementation as a file inside the file system.
+	  Snapshot files are marked with the snapfile flag and have special
+	  read-only address space ops.
+
+config NEXT3_FS_SNAPSHOT_FILE_READ
+	bool "snapshot file - read through to block device"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  On active snapshot file page read, the function next3_get_block()
+	  is called to map the page to a disk block.  If the page is not mapped
+	  in the snapshot file a direct mapping to the block device is returned.
+
+config NEXT3_FS_SNAPSHOT_FILE_PERM
+	bool "snapshot file - permissions"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Enforce snapshot file permissions.
+	  Write, truncate and unlink of snapshot inodes is not allowed.
+
+config NEXT3_FS_SNAPSHOT_FILE_STORE
+	bool "snapshot file - store on disk"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Snapshot inode is stored differently in memory and on disk.
+	  During store and load of snapshot inode, some of the inode flags
+	  and fields are converted.
+
+config NEXT3_FS_SNAPSHOT_FILE_HUGE
+	bool "snapshot file - increase maximum file size limit to 16TB"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Files larger than 2TB use Ext4 huge_file flag to store i_blocks
+	  in file system blocks units, so the upper limit on snapshot actual
+	  size is increased from 512*2^32 = 2TB to 4K*2^32 = 16TB,
+	  which is also the upper limit on file system size.
+	  To map 2^32 logical blocks, 4 triple indirect blocks are used instead
+	  of just one.  The extra 3 triple indirect blocks are stored in-place
+	  of direct blocks, which are not in use by snapshot files.
+
+config NEXT3_FS_SNAPSHOT_FILE_OLD
+	bool "snapshot file - migrate old on-disk format"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Snapshot flags and super block field positions have changed.
+	  When old has_snapshot flag is set, copy fields to new position,
+	  clear old flags and fields and set new flags on mount time.
+
+config NEXT3_FS_SNAPSHOT_FILE_GOAL
+	bool "snapshot file - allocation goal"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default n
+	help
+	  Allocate snapshot file COWed blocks close to their source block.
+	  This may be good for snapshot read performance, but might cause
+	  higher defragmentation levels in data files.
+
+config NEXT3_FS_SNAPSHOT_BLOCK
+	bool "snapshot block operations"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Core implementation of special snapshot file block operations.
+	  The argument @create to the function next3_get_blocks_handle()
+	  is re-interpreted as a snapshot block command argument.  The old
+	  argument values 0(=read) and 1(=create) preserve the original
+	  behavior of the function.  The bit field h_cowing in the current
+	  transaction handle is used to prevent COW recursions.
+
+config NEXT3_FS_SNAPSHOT_BLOCK_COW
+	bool "snapshot block operation - copy blocks to snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Implementation of copying blocks into a snapshot file.
+	  This mechanism is used to copy-on-write metadata blocks to snapshot.
+
+config NEXT3_FS_SNAPSHOT_BLOCK_MOVE
+	bool "snapshot block operation - move blocks to snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Implementation of moving blocks into a snapshot file.
+	  The move block command maps an allocated blocks to the snapshot file,
+	  allocating only the indirect blocks when needed.
+	  This mechanism is used to move-on-write data blocks to snapshot.
+
+config NEXT3_FS_SNAPSHOT_BLOCK_BITMAP
+	bool "snapshot block operation - copy block bitmap to snapshot"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  The snapshot copy of the file system block bitmap is called the COW
+	  bitmap and it is used to check if a block was allocated at the time
+	  that the snapshot was taken.
+
+config NEXT3_FS_SNAPSHOT_CTL
+	bool "snapshot control"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Snapshot control with chattr -X.
+	  Take/delete snapshot with chattr -X +/-S.
+	  Enable/disable snapshot with chattr -X +/-n.
+
+config NEXT3_FS_SNAPSHOT_CTL_INIT
+	bool "snapshot control - init new snapshot"
+	depends on NEXT3_FS_SNAPSHOT_CTL
+	default y
+	help
+	  On snapshot create, a few special blocks (i.e., the super block and
+	  group descriptors) are pre-allocated and on snapshot take, they are
+	  copied under journal_lock_updates().  This is done to avoid the
+	  recursion that would be caused by COWing these blocks after the
+	  snapshot becomes active.
+
+config NEXT3_FS_SNAPSHOT_CTL_FIX
+	bool "snapshot control - fix new snapshot"
+	depends on NEXT3_FS_SNAPSHOT_CTL_INIT
+	default y
+	help
+	  On snapshot take, after copying the pre-allocated blocks, some are
+	  fixed to make the snapshot image appear as a valid Ext2 file system.
+	  The has_journal and has_snapshot flags are cleared from the super
+	  block as well as the journal inode and last snapshot inode fields.
+	  All snapshot inodes are cleared (to appear as empty inodes).
+
+config NEXT3_FS_SNAPSHOT_CTL_RESERVE
+	bool "snapshot control - reserve disk space for snapshot"
+	depends on NEXT3_FS_SNAPSHOT_CTL
+	default y
+	help
+	  Ensure there is enough disk space for snapshot file future use.
+	  Reserve disk space on snapshot take based on file system overhead
+	  size, number of directories and number of blocks/inodes in use.
+
+config NEXT3_FS_SNAPSHOT_CTL_DUMP
+	bool "snapshot control - dump snapshot file blocks map"
+	depends on NEXT3_FS_SNAPSHOT_CTL
+	depends on NEXT3_FS_DEBUG
+	default y
+	help
+	  Use chattr -d to print the blocks map of a snapshot file.
+	  Snapshot debugging should be enabled.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL
+	bool "snapshot journaled"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Next3 snapshot operations are journaled inside the same transaction
+	  with the file system operation that triggered them.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_ERROR
+	bool "snapshot journaled - record errors in journal"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	default y
+	help
+	  Next3 error state is recorded in the journal super block and error
+	  messages are recorder in free space after the journal super block.
+	  Next3 should be mounted with errors=remount-ro.
+	  After a snapshot error, the file system will be in read-only mode.
+	  The administrator must un-mount the file system and run fsck
+	  to prevent data corruption.
+	  Some places in Ext3 original code don't check for return value of
+	  JBD functions.  Check for snapshot/journal errors in those places.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_CREDITS
+	bool "snapshot journaled - increase transaction credits"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	default y
+	help
+	  Snapshot operations are journaled as part of the running transaction.
+	  The amount of requested credits is multiplied with a factor, to ensure
+	  that enough buffer credits are reserved in the running transaction.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_RELEASE
+	bool "snapshot journaled - implement journal_release_buffer()"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	default y
+	help
+	  The API journal_release_buffer() is called to cancel a previous call
+	  to journal_get_write_access() and to recall the used buffer credit.
+	  Current implementation of journal_release_buffer() in JBD is empty,
+	  since no buffer credits are used until the buffer is marked dirty.
+	  However, since the resulting snapshot COW operation cannot be undone,
+	  we try to extend the current transaction to compensate for the used
+	  credits of the extra COW operation, so we don't run out of buffer
+	  credits too soon.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_BYPASS
+	bool "snapshot journaled - bypass to save credits"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	default y
+	help
+	  Don't journal COW bitmap indirect blocks to save journal credits.
+	  On very few COW operations (i.e., first block group access after
+	  snapshot take), there may be up to 3 extra blocks allocated for the
+	  active snapshot (i.e., COW bitmap block and up to 2 indirect blocks).
+	  Taking these 3 extra allocations into account on every COW operation
+	  would further increase the transaction's COW credits factor.
+	  Instead, we choose to pay a small performance penalty on these few
+	  COW bitmap operations and wait until they are synced to disk.
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_CACHE
+	bool "snapshot journaled - cache last COW tid in journal_head"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	default y
+	help
+	  Cache last COW transaction id in buffer's journal_head.
+	  The cache suppresses COW tests until the transaction in committed.
+	  By default, the running transaction is committed every 5 seconds,
+	  which implies an average COW cache expiry of 2.5 seconds.
+	  Before taking a new snapshot, the journal is flushed to disk
+	  and the current transaction in committed, so the COW cache is
+	  invalidated (as it should be).
+
+config NEXT3_FS_SNAPSHOT_JOURNAL_TRACE
+	bool "snapshot journaled - trace COW/buffer credits"
+	depends on NEXT3_FS_SNAPSHOT_JOURNAL
+	depends on NEXT3_FS_DEBUG
+	default y
+	help
+	  Extra debug prints to trace snapshot usage of buffer credits.
+
+config NEXT3_FS_SNAPSHOT_LIST
+	bool "snapshot list support"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default y
+	help
+	  Implementation of multiple incremental snapshots.
+	  Snapshot inodes are chained on a list starting at the super block,
+	  both on-disk and in-memory, similar to the orphan inodes.  We reuse
+	  the orphan inode list functions to manipulate the snapshot list.
+	  Unlink and truncate of snapshot inodes on the list is not allowed,
+	  so an inode can never be chained on both orphan and snapshot lists.
+	  We make use of this fact to overload the in-memory inode field
+	  next3_inode_info.i_orphan for the chaining of snapshots.
+
+config NEXT3_FS_SNAPSHOT_LIST_READ
+	bool "snapshot list - read through to previous snapshot"
+	depends on NEXT3_FS_SNAPSHOT_LIST
+	default y
+	help
+	  On snapshot page read, the function next3_get_block() is called
+	  to map the page to a disk block.  If the page is not mapped in the
+	  snapshot file, the newer snapshots on the list are checked and the
+	  oldest found mapping is returned.  If the page is not mapped in any of
+	  the newer snapshots, a direct mapping to the block device is returned.
+
+config NEXT3_FS_SNAPSHOT_RACE
+	bool "snapshot race conditions"
+	depends on NEXT3_FS_SNAPSHOT_BLOCK
+	default y
+	help
+	  Resolve snapshot race conditions
+
+config NEXT3_FS_SNAPSHOT_RACE_BITMAP
+	bool "snapshot race conditions - concurrent COW bitmap operations"
+	depends on NEXT3_FS_SNAPSHOT_RACE
+	default y
+	help
+	  Wait for pending COW bitmap creations to complete.
+	  When concurrent tasks try to COW buffers from the same block group
+	  for the first time, the first task to reset the COW bitmap cache
+	  is elected to create the new COW bitmap block.  The rest of the tasks
+	  wait (in msleep(1) loop), until the COW bitmap cache is uptodate.
+	  The COWing task copies the bitmap block into the new COW bitmap block
+	  and updates the COW bitmap cache with the new block number.
+
+config NEXT3_FS_SNAPSHOT_RACE_COW
+	bool "snapshot race conditions - concurrent COW operations"
+	depends on NEXT3_FS_SNAPSHOT_RACE
+	default y
+	help
+	  Wait for pending COW operations to complete.
+	  When concurrent tasks try to COW the same buffer, the task that takes
+	  the active snapshot truncate_mutex is elected as the the COWing task.
+	  The COWing task allocates a new snapshot block and creates a buffer
+	  cache entry with ref_count=1 for that new block.  It then locks the
+	  new buffer and marks it with the buffer_new flag.  The rest of the
+	  tasks wait (in msleep(1) loop), until the buffer_new flag is cleared.
+	  The COWing task copies the source buffer into the 'new' buffer,
+	  unlocks it, marks it as journal dirty data, clears the new_buffer flag
+	  and drops its reference count.
+	  On active snapshot readpage, the buffer cache is checked.
+	  If a 'new' buffer entry is found, the reader task waits until the
+	  buffer_new flag is cleared and then copies the 'new' buffer directly
+	  into the snapshot file page.
+
+config NEXT3_FS_SNAPSHOT_RACE_READ
+	bool "snapshot race conditions - tracked reads"
+	depends on NEXT3_FS_SNAPSHOT_RACE
+	default y
+	help
+	  Wait for pending read I/O requests to complete.
+	  When a snapshot file readpage reads through to the block device,
+	  the reading task increments the block tracked readers count.
+	  Upon completion of the async read I/O request of the snapshot page,
+	  the tracked readers count is decremented.
+	  When a task is COWing a block with non-zero tracked readers count,
+	  that task has to wait (in msleep(1) loop), until the block's tracked
+	  readers count drops to zero, before the COW operation is completed.
+	  After a pending COW operation has started, reader tasks have to wait
+	  (again, in msleep(1) loop), until the pending COW operation is
+	  completed, so the COWing task cannot be starved by reader tasks.
+
+config NEXT3_FS_SNAPSHOT_EXCLUDE
+	bool "snapshot exclude"
+	depends on NEXT3_FS_SNAPSHOT
+	default y
+	help
+	  Mark all snapshot blocks excluded from COW bitmap (i.e., mark that
+	  they do not need to be COWed).  The excluded blocks appear as not
+	  allocated inside the snapshot image (no snapshots of snapshot files).
+	  Excluding snapshot file blocks is essential for efficient cleanup
+	  of deleted snapshot files.
+
+config NEXT3_FS_SNAPSHOT_EXCLUDE_INODE
+	bool "snapshot exclude - the exclude inode"
+	depends on NEXT3_FS_SNAPSHOT_EXCLUDE
+	default y
+	help
+	  The exclude inode owns all the exclude bitmap blocks.
+	  The exclude inode is pre-allocated by 'tune2fs -O exclude_inode'.
+	  The location of exclude bitmap blocks is read on mount time and cached
+	  in the group descriptors.  The exclude inode is extended upon online
+	  and offline resize operations when block groups are added.
+
+config NEXT3_FS_SNAPSHOT_EXCLUDE_INODE_OLD
+	bool "snapshot exclude - migrate old exclude inode"
+	depends on NEXT3_FS_SNAPSHOT_EXCLUDE
+	default y
+	help
+	  Exclude inode number has changed from 10 to 9.  The exclude_inode
+	  flag has also changed.  When old exclude_inode flag is set,
+	  copy inode 10 to 9, clear inode 10 and clear old exclude_inode flag.
+	  (new exclude_inode flag is set during migration of super block).
+
+config NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	bool "snapshot exclude - the exclude bitmap"
+	depends on NEXT3_FS_SNAPSHOT_EXCLUDE
+	default y
+	help
+	  Excluding blocks is done by setting their bit in the exclude bitmap.
+	  There is one exclude bitmap block per block group and its location
+	  is cached in the group descriptor.
+
+config NEXT3_FS_SNAPSHOT_EXCLUDE_FILES
+	bool "snapshot exclude - regular files (experimental)"
+	depends on NEXT3_FS_SNAPSHOT_EXCLUDE
+	default n
+	help
+	  Snapshot excluded files blocks are not COWed to snapshot.
+	  Use 'chattr [+|-]z <dir>' to mark an excluded directory.
+	  All regular files created inside an excluded directory will be
+	  excluded from snapshots. Existing files inside <dir> are not excluded.
+	  'chattr [+|-]z <file>' is not permitted.
+	  All snapshot files are implicitly excluded, even if you select N here.
+	  This is an experimental feature.
+
+config NEXT3_FS_SNAPSHOT_MOUNT
+	bool "snapshot mount with 'ro,noload' mount options (experimental)"
+	depends on NEXT3_FS_SNAPSHOT_FILE
+	default n
+	help
+	  Usually, Next3 snapshots are mounted as read-only Ext2.
+	  Mount a Next3 snapshot as read-only Next3 with no journal.
+	  This is an experimental feature.
+
+config NEXT3_FS_SNAPSHOT_CLEANUP
+	bool "snapshot cleanup"
+	depends on NEXT3_FS_SNAPSHOT_LIST
+	depends on NEXT3_FS_SNAPSHOT_EXCLUDE_BITMAP
+	default y
+	help
+	  Cleanup snapshots list and reclaim unused blocks of deleted snapshots.
+	  Oldest snapshot can be removed from list and its blocks can be freed.
+	  Non-oldest snapshots have to be shrunk and merged before they can be
+	  removed from the list.  All snapshot blocks must be excluded in order
+	  to properly shrink/merge deleted old snapshots.
+
+config NEXT3_FS_SNAPSHOT_CLEANUP_SHRINK
+	bool "snapshot cleanup - shrink deleted snapshots"
+	depends on NEXT3_FS_SNAPSHOT_CLEANUP
+	default y
+	help
+	  Free blocks of deleted snapshots, which are not in use by an older
+	  non-deleted snapshot.  Shrinking helps reclaiming disk space
+	  while older snapshots are currently in use (enabled).
+
+config NEXT3_FS_SNAPSHOT_CLEANUP_MERGE
+	bool "snapshot cleanup - merge shrunk snapshots"
+	depends on NEXT3_FS_SNAPSHOT_CLEANUP_SHRINK
+	default y
+	help
+	  Move blocks of deleted and shrunk snapshots to an older non-deleted
+	  and disabled snapshot.  Merging helps removing snapshots from list
+	  while older snapshots are not currently in use (disabled).

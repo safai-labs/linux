@@ -8,6 +8,7 @@ if BLOCK
 
 source "fs/ext2/Kconfig"
 source "fs/ext3/Kconfig"
+source "fs/next3/Kconfig"
 source "fs/ext4/Kconfig"
 
 config FS_XIP

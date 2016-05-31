@@ -1367,11 +1367,11 @@ out_err:
  * @start:	latest non-deleted snapshot before deleted snapshots group
  * @end:	first non-deleted snapshot after deleted snapshots group
  * @iblock:	inode offset to first data block to shrink
- * @maxblocks:	inode range of data blocks to shrink
+ * @range:	inode range of data blocks to shrink
  * @cow_bh:	buffer head to map the COW bitmap block of snapshot @start
  *		if NULL, don't look for COW bitmap block
  *
- * Shrinks @maxblocks blocks starting at inode offset @iblock in a group of
+ * Shrinks a @range of blocks starting at inode offset @iblock in a group of
  * subsequent deleted snapshots starting after @start and ending before @end.
  * Shrinking is done by finding a range of mapped blocks in @start snapshot
  * or in one of the deleted snapshots, where no other blocks are mapped in the
@@ -1385,14 +1385,14 @@ out_err:
  */
 static int next3_snapshot_shrink_range(handle_t *handle,
 		struct inode *start, struct inode *end,
-		sector_t iblock, unsigned long maxblocks,
+		sector_t iblock, unsigned long range,
 		struct buffer_head *cow_bh)
 {
 	struct next3_sb_info *sbi = NEXT3_SB(start->i_sb);
 	struct list_head *l;
 	struct inode *inode = start;
-	/* start with @maxblocks range and narrow it down */
-	unsigned long count = maxblocks;
+	/* start with @range and narrow it down */
+	unsigned long count = range;
 	/* @start snapshot blocks should not be freed only counted */
 	int err, mapped, shrink = 0;
 

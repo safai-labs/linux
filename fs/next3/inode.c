@@ -625,7 +625,7 @@ static void next3_free_data_cow(handle_t *handle, struct inode *inode,
  * Returns the total number of data blocks to be skipped.
  */
 static int next3_blks_to_skip(struct inode *inode, next3_lblk_t i_block,
-		unsigned long maxblocks, Indirect chain[4], int depth,
+		int maxblocks, Indirect chain[4], int depth,
 		int *offsets, int k)
 {
 	int ptrs = NEXT3_ADDR_PER_BLOCK(inode->i_sb);
@@ -635,7 +635,7 @@ static int next3_blks_to_skip(struct inode *inode, next3_lblk_t i_block,
 	int data_ptrs_bits = ptrs_bits * (depth - k - 1);
 	int max_ptrs = maxblocks >> data_ptrs_bits;
 	int final = 0;
-	unsigned long count = 0;
+	int count = 0;
 
 	BUG_ON(!next3_snapshot_file(inode));
 
@@ -672,13 +672,13 @@ static int next3_blks_to_skip(struct inode *inode, next3_lblk_t i_block,
  * @handle: JBD handle for this transaction
  * @inode:	inode we're shrinking
  * @iblock:	inode offset to first data block to shrink
- * @maxblocks:	inode range of data blocks to shrink
+ * @range:	inode range of data blocks to shrink
  * @cow_bh:	buffer head to map the COW bitmap block
  *		if NULL, don't look for COW bitmap block
  * @shrink:	shrink mode: 0 (don't free), >0 (free unused), <0 (free all)
  * @pmapped:	return no. of mapped blocks or 0 for skipped holes
  *
- * Frees @maxblocks blocks starting at offset @iblock in @inode, which are not
+ * Frees a @range of blocks starting at offset @iblock in @inode, which are not
  * 'in-use' by non-deleted snapshots (blocks 'in-use' are set in COW bitmap).
  * If @shrink is false, just count mapped blocks and look for COW bitmap block.
  * The first time that a COW bitmap block is found in @inode, whether @inode is
@@ -691,7 +691,7 @@ static int next3_blks_to_skip(struct inode *inode, next3_lblk_t i_block,
  *  < 0 - error
  */
 int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
-		sector_t iblock, unsigned long maxblocks,
+		sector_t iblock, unsigned long range,
 		struct buffer_head *cow_bh,
 		int shrink, int *pmapped)
 {
@@ -704,6 +704,21 @@ int next3_snapshot_shrink_blocks(handle_t *handle, struct inode *inode,
 	unsigned long block_group = SNAPSHOT_BLOCK_GROUP(block);
 	int mapped_blocks = 0, freed_blocks = 0;
 	const char *cow_bitmap;
+	int maxblocks = (int)range;
+
+	if (maxblocks < 0) {
+		/*
+		 * This function and helper functions were not designed to deal
+		 * with unsigned values of blocks count, but they are allowed to
+		 * return any number of blocks count > 0 and <= range, so never
+		 * cross the signed/unsigend value of maxblocks and count on
+		 * the caller to call again with (iblock+count, range-count).
+		 */
+		maxblocks = (int)(range & 0x7fffffffUL)
+
+		if(maxblocks == 0)
+			maxblocks = INT_MAX;
+	}
 
 	BUG_ON(shrink &&
 		(!(NEXT3_I(inode)->i_flags & NEXT3_SNAPFILE_DELETED_FL) ||
@@ -842,7 +857,7 @@ cleanup:
  * Returns the number of merged branches.
  */
 static int next3_move_branches(handle_t *handle, struct inode *src,
-		__le32 *ps, __le32 *pd, int depth, int count, 
+		__le32 *ps, __le32 *pd, int depth, int count,
 		struct next3_blocks_counter *pcounter)
 {
 	int i;
@@ -876,16 +891,16 @@ static int next3_move_branches(handle_t *handle, struct inode *src,
  * @src:	inode we're merging blocks from
  * @dst:	inode we're merging blocks to
  * @iblock:	inode offset to first data block to merge
- * @maxblocks:	inode range of data blocks to merge
- * @pcounter: 	pointer to counter of branch blocks
+ * @range:	inode range of data blocks to merge
+ * @pcounter:	pointer to counter of branch blocks
  *
- * Merges @maxblocks data blocks starting at @iblock and all the indirect
+ * Merges a @range of data blocks starting at @iblock and all the indirect
  * blocks that map them.
  * Called from next3_snapshot_merge() under snapshot_mutex.
  * Returns the merged blocks range and <0 on error.
  */
 int next3_snapshot_merge_blocks(struct inode *src, struct inode *dst,
-		sector_t iblock, unsigned long maxblocks,
+		sector_t iblock, unsigned long range,
 		struct next3_blocks_counter *pcounter)
 {
 	Indirect S[4], D[4], *pS, *pD;
@@ -897,6 +912,21 @@ int next3_snapshot_merge_blocks(struct inode *src, struct inode *dst,
 	int err, ret;
 	handle_t *handle = NULL;
 	next3_lblk_t blocks = pcounter->blocks;
+	int maxblocks = (int)range;
+
+	if (maxblocks < 0) {
+		/*
+		 * This function and helper functions were not designed to deal
+		 * with unsigned values of blocks count, but they are allowed to
+		 * return any number of blocks count > 0 and <= range, so never
+		 * cross the signed/unsigend value of maxblocks and count on
+		 * the caller to call again with (iblock+count, range-count).
+		 */
+		maxblocks = (int)(range & 0x7fffffffUL)
+
+		if(maxblocks == 0)
+			maxblocks = INT_MAX;
+	}
 
 	depth = next3_block_to_path(src, iblock, offsets, NULL);
 	if (depth < 3)

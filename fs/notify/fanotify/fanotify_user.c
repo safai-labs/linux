@@ -88,12 +88,17 @@ static int create_fd(struct fsnotify_group *group,
 	 */
 	/* it's possible this event was an overflow event.  in that case dentry and mnt
 	 * are NULL;  That's fine, just don't call dentry open */
-	if (event->path.dentry && event->path.mnt)
+	if (event->path.dentry && event->path.mnt) {
+		pr_debug("%s: mnt=%p, dentry=%p parent=%p d_flags=%x\n",
+				__func__, event->path.mnt, event->path.dentry,
+				event->path.dentry->d_parent,
+				event->path.dentry->d_flags);
 		new_file = dentry_open(&event->path,
 				       group->fanotify_data.f_flags | FMODE_NONOTIFY,
 				       current_cred());
-	else
+	} else {
 		new_file = ERR_PTR(-EOVERFLOW);
+	}
 	if (IS_ERR(new_file)) {
 		/*
 		 * we still send an event even if we can't open the file.  this

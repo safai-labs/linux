@@ -222,10 +222,8 @@ struct fsnotify_mark {
 	spinlock_t lock;		/* protect group and inode */
 	struct hlist_node obj_list;	/* list of marks for inode / vfsmount */
 	struct list_head free_list;	/* tmp list used when freeing this mark */
-	union {
-		struct inode *inode;	/* inode this mark is associated with */
-		struct vfsmount *mnt;	/* vfsmount this mark is associated with */
-	};
+	struct inode *inode;		/* inode this mark is associated with */
+	struct vfsmount *mnt;		/* vfsmount this mark is associated with */
 	__u32 ignored_mask;		/* events types to ignore */
 #define FSNOTIFY_MARK_FLAG_INODE		0x01
 #define FSNOTIFY_MARK_FLAG_VFSMOUNT		0x02
@@ -235,6 +233,17 @@ struct fsnotify_mark {
 	unsigned int flags;		/* vfsmount or inode mark? */
 	void (*free_mark)(struct fsnotify_mark *mark); /* called on final put+free */
 };
+
+/*
+ * A mark may have a reference to both an inode and a vfsmount,
+ * indicating that this is an inode mark with a reference to
+ * the mount point from which that inode mark was added
+ */
+#define FSNOTIFY_MARK_HAS_INODE(m)    ((m)->flags & FSNOTIFY_MARK_FLAG_INODE)
+#define FSNOTIFY_MARK_HAS_VFSMOUNT(m) ((m)->flags & FSNOTIFY_MARK_FLAG_VFSMOUNT)
+#define FSNOTIFY_IS_INODE_MARK(m)     (FSNOTIFY_MARK_HAS_INODE(m))
+#define FSNOTIFY_IS_VFSMOUNT_MARK(m)  (!FSNOTIFY_MARK_HAS_INODE(m) && \
+					FSNOTIFY_MARK_HAS_VFSMOUNT(m))
 
 #ifdef CONFIG_FSNOTIFY
 

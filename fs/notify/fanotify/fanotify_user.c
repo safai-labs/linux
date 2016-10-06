@@ -886,9 +886,9 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 	}
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (mask & ~(FAN_ALL_EVENTS | FAN_ALL_PERM_EVENTS | FAN_EVENT_ON_CHILD))
+	if (mask & ~(FAN_ALL_EVENTS | FAN_ALL_PERM_EVENTS | FAN_EVENT_ON_DESCENDANT))
 #else
-	if (mask & ~(FAN_ALL_EVENTS | FAN_EVENT_ON_CHILD))
+	if (mask & ~(FAN_ALL_EVENTS | FAN_EVENT_ON_DESCENDANT))
 #endif
 		return -EINVAL;
 
@@ -911,6 +911,12 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 	    group->priority == FS_PRIO_0)
 		goto fput_and_out;
 
+	/* Super block root watch is not a mount watch */
+	ret = -EINVAL;
+	if ((mask & FAN_EVENT_ON_SB) &&
+	    (flags & FAN_MARK_MOUNT))
+		goto fput_and_out;
+
 	if (flags & FAN_MARK_FLUSH) {
 		ret = 0;
 		if (flags & FAN_MARK_MOUNT)
@@ -920,9 +926,18 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 		goto fput_and_out;
 	}
 
+	/* Obviously, root inode must be a directory */
+	if (flags & FAN_MARK_MOUNT)
+		flags |= FAN_MARK_ONLYDIR;
+
 	ret = fanotify_find_path(dfd, pathname, &path, flags);
 	if (ret)
 		goto fput_and_out;
+
+	/* Super block root watch must be on a root dentry */
+	ret = -EINVAL;
+	if ((mask & FAN_EVENT_ON_SB) && !IS_ROOT(path.dentry))
+		goto path_put_out;
 
 	/* inode held in place by reference to path; group by fget on fd */
 	if (!(flags & FAN_MARK_MOUNT))
@@ -975,6 +990,7 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 		ret = -EINVAL;
 	}
 
+path_put_out:
 	path_put(&path);
 fput_and_out:
 	fdput(f);

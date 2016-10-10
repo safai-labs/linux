@@ -196,6 +196,18 @@ struct fanotify_event_info *fanotify_alloc_event(struct inode *inode, u32 mask,
 		ffe->name_len = len;
 		if (len)
 			strcpy(ffe->name, file_name);
+
+		ffe->fh.handle_type = FILEID_INVALID;
+		ffe->fh.handle_bytes = 0;
+		if (mask & FAN_EVENT_ON_SB) {
+			int handle_dwords = sizeof(struct fid) >> 2;
+			int type = exportfs_encode_fh(path->dentry, &ffe->fid,
+						      &handle_dwords, 0);
+			if (type > 0 && type < FILEID_INVALID) {
+				ffe->fh.handle_type = type;
+				ffe->fh.handle_bytes = handle_dwords << 2;
+			}
+		}
 		goto init;
 	}
 

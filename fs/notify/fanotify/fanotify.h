@@ -1,6 +1,7 @@
 #include <linux/fsnotify_backend.h>
 #include <linux/path.h>
 #include <linux/slab.h>
+#include <linux/exportfs.h>
 
 extern struct kmem_cache *fanotify_event_cachep;
 extern struct kmem_cache *fanotify_perm_event_cachep;
@@ -28,11 +29,16 @@ struct fanotify_event_info {
 struct fanotify_file_event_info {
 	struct fanotify_event_info fae;
 	/*
+	 * For events reported to sb root record the file handle
+	 */
+	struct file_handle fh;
+	struct fid fid;	/* make this allocated? */
+	/*
 	 * For filename events (create,delete,rename), path points to the
 	 * directory and name holds the entry name
 	 */
 	int name_len;
-	char name[];
+	char name[];	/* make this allocated? */
 };
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS

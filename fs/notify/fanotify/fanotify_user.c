@@ -36,7 +36,7 @@
 #define	FANOTIFY_INIT_ALL_EVENT_F_BITS				( \
 		O_ACCMODE	| O_APPEND	| O_NONBLOCK	| \
 		__O_SYNC	| O_DSYNC	| O_CLOEXEC     | \
-		O_LARGEFILE	| O_NOATIME	)
+		O_LARGEFILE	| O_NOATIME)
 
 extern const struct fsnotify_ops fanotify_fsnotify_ops;
 
@@ -706,6 +706,14 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	if (event_f_flags & ~FANOTIFY_INIT_ALL_EVENT_F_BITS)
 		return -EINVAL;
 
+	/*
+	 * New event format info bits can only be set for the default
+	 * notification class
+	 */
+	if ((flags & FAN_ALL_EVENT_INFO_BITS) &&
+	    (flags & FAN_ALL_CLASS_BITS) != FAN_CLASS_NOTIF)
+		return -EINVAL;
+
 	switch (event_f_flags & O_ACCMODE) {
 	case O_RDONLY:
 	case O_RDWR:
@@ -790,6 +798,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	if (fd < 0)
 		goto out_destroy_group;
 
+	group->fanotify_data.flags = flags;
 	return fd;
 
 out_destroy_group:

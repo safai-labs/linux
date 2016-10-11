@@ -228,7 +228,7 @@ static ssize_t copy_event_to_user(struct fsnotify_group *group,
 	if (ret < 0)
 		return ret;
 
-	if ((event->mask & FAN_FILENAME_EVENTS) &&
+	if ((event->mask & FAN_FILEINFO_EVENTS) &&
 	    (group->fanotify_data.flags & FAN_EVENT_INFO_NAME)) {
 		ffe = FANOTIFY_FE(event);
 		pad_name_len = round_event_name_len(ffe);

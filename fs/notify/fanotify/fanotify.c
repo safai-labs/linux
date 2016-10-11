@@ -180,7 +180,7 @@ struct fanotify_event_info *fanotify_alloc_event(struct inode *inode, u32 mask,
 	 * directory and name holds the entry name, so allocate a variable
 	 * length fanotify_file_event_info struct.
 	 */
-	if (mask & FAN_FILENAME_EVENTS) {
+	if (mask & FAN_FILEINFO_EVENTS) {
 		struct fanotify_file_event_info *ffe;
 		int alloc_len = sizeof(*ffe);
 		int len = 0;
@@ -314,7 +314,7 @@ static void fanotify_free_event(struct fsnotify_event *fsn_event)
 		return;
 	}
 #endif
-	if (fsn_event->mask & FAN_FILENAME_EVENTS) {
+	if (fsn_event->mask & FAN_FILEINFO_EVENTS) {
 		kfree(FANOTIFY_FE(fsn_event));
 		return;
 	}

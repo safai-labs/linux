@@ -57,7 +57,7 @@ static int fanotify_merge(struct list_head *list, struct fsnotify_event *event)
 	 * the event structure we have created in fanotify_handle_event() is the
 	 * one we should check for permission response.
 	 */
-	if (event->mask & FAN_ALL_PERM_EVENTS)
+	if (FANOTIFY_IS_PE(event))
 		return 0;
 #endif
 
@@ -179,11 +179,18 @@ struct fanotify_event_info *fanotify_alloc_event(struct inode *inode, u32 mask,
 #endif
 
 	/*
-	 * For filename events (create,delete,rename), path points to the
+	 * For filename events (create,delete,move), path points to the
 	 * directory and name holds the entry name, so allocate a variable
 	 * length fanotify_file_event_info struct.
+	 *
+	 * When non permission events are reported on super block root watch,
+	 * they may need to carry extra file information. So alway allocate
+	 * fanotify_file_event_info struct for those events, even if data len
+	 * end up being 0.
+	 * This makes it easier to know when an event struct should be cast
+	 * to FANOTIFY_FE(), e.g. in fanotify_free_event().
 	 */
-	if (mask & FAN_FILENAME_EVENTS) {
+	if (mask & (FAN_FILENAME_EVENTS | FAN_EVENT_ON_SB)) {
 		struct fanotify_file_event_info *ffe;
 		int alloc_len = sizeof(*ffe);
 		int len = 0;
@@ -290,7 +297,7 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 	}
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (mask & FAN_ALL_PERM_EVENTS) {
+	if (FANOTIFY_IS_PE(fsn_event)) {
 		ret = fanotify_get_response(group, FANOTIFY_PE(fsn_event));
 		fsnotify_destroy_event(group, fsn_event);
 	}
@@ -315,13 +322,13 @@ static void fanotify_free_event(struct fsnotify_event *fsn_event)
 	path_put(&event->path);
 	put_pid(event->tgid);
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (fsn_event->mask & FAN_ALL_PERM_EVENTS) {
+	if (FANOTIFY_IS_PE(fsn_event)) {
 		kmem_cache_free(fanotify_perm_event_cachep,
 				FANOTIFY_PE(fsn_event));
 		return;
 	}
 #endif
-	if (fsn_event->mask & FAN_FILENAME_EVENTS) {
+	if (FANOTIFY_IS_FE(fsn_event)) {
 		kfree(FANOTIFY_FE(fsn_event));
 		return;
 	}

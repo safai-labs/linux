@@ -107,6 +107,9 @@
 #define FAN_FILENAME_EVENTS (FAN_MOVED_FROM | FAN_MOVED_TO |\
 			     FAN_CREATE | FAN_DELETE)
 
+/* Events on requiring to pass variable length file info in event data */
+#define FAN_FILEINFO_EVENTS (FAN_FILENAME_EVENTS | FAN_EVENT_ON_SB)
+
 #define FAN_ALL_OUTGOING_EVENTS	(FAN_ALL_EVENTS |\
 				 FAN_ALL_PERM_EVENTS |\
 				 FAN_Q_OVERFLOW)

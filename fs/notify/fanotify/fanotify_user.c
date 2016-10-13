@@ -965,21 +965,14 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 		goto fput_and_out;
 	}
 
-	/* Obviously, root inode must be a directory */
-	if (flags & FAN_MARK_MOUNT)
-		flags |= FAN_MARK_ONLYDIR;
-
 	ret = fanotify_find_path(dfd, pathname, &path, flags);
 	if (ret)
 		goto fput_and_out;
 
-	/* Super block root watch must be on a root dentry */
-	ret = -EINVAL;
-	if ((mask & FAN_EVENT_ON_SB) && !IS_ROOT(path.dentry))
-		goto path_put_out;
-
 	/* inode held in place by reference to path; group by fget on fd */
-	if (!(flags & FAN_MARK_MOUNT))
+	if (mask & FAN_EVENT_ON_SB)
+		inode = path.dentry->d_sb->s_root->d_inode;
+	else if (!(flags & FAN_MARK_MOUNT))
 		inode = path.dentry->d_inode;
 
 	/*
@@ -988,6 +981,7 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 	 * even if the events happened on another mount point.
 	 */
 	if ((flags & FAN_MARK_MOUNT) ||
+	    (mask & FAN_EVENT_ON_SB) ||
 	    group->fanotify_data.flags & FAN_EVENT_INFO_PARENT)
 		mnt = path.mnt;
 
@@ -1029,7 +1023,6 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 		ret = -EINVAL;
 	}
 
-path_put_out:
 	path_put(&path);
 fput_and_out:
 	fdput(f);

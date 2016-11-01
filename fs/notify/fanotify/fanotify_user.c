@@ -44,6 +44,20 @@ static struct kmem_cache *fanotify_mark_cache __read_mostly;
 struct kmem_cache *fanotify_event_cachep __read_mostly;
 struct kmem_cache *fanotify_perm_event_cachep __read_mostly;
 
+static int round_event_data_len(struct fanotify_file_event_info *event)
+{
+	int data_len = 0;
+
+	if (!event->name_len && !event->fh.handle_bytes)
+		return 0;
+
+	if (event->name_len)
+		data_len += event->name_len + 1;
+	if (event->fh.handle_bytes)
+		data_len +=  sizeof(event->fh) + event->fh.handle_bytes;
+	return roundup(data_len, FAN_EVENT_METADATA_LEN);
+}
+
 /*
  * Get an fsnotify notification event if one exists and is small
  * enough to fit in "count". Return an error pointer if the count
@@ -54,14 +68,21 @@ struct kmem_cache *fanotify_perm_event_cachep __read_mostly;
 static struct fsnotify_event *get_one_event(struct fsnotify_group *group,
 					    size_t count)
 {
-	BUG_ON(!mutex_is_locked(&group->notification_mutex));
+	size_t event_size = FAN_EVENT_METADATA_LEN;
+	struct fsnotify_event *event;
 
-	pr_debug("%s: group=%p count=%zd\n", __func__, group, count);
+	BUG_ON(!mutex_is_locked(&group->notification_mutex));
 
 	if (fsnotify_notify_queue_is_empty(group))
 		return NULL;
 
-	if (FAN_EVENT_METADATA_LEN > count)
+	event = fsnotify_peek_first_event(group);
+
+	pr_debug("%s: group=%p event=%p count=%zd\n", __func__,
+		 group, event, count);
+
+	event_size += round_event_data_len(FANOTIFY_FE(event));
+	if (event_size > count)
 		return ERR_PTR(-EINVAL);
 
 	/* held the notification_mutex the whole time, so this is the
@@ -204,20 +225,6 @@ static int process_access_response(struct fsnotify_group *group,
 	return 0;
 }
 #endif
-
-static int round_event_data_len(struct fanotify_file_event_info *event)
-{
-	int data_len = 0;
-
-	if (!event->name_len && !event->fh.handle_bytes)
-		return 0;
-
-	if (event->name_len)
-		data_len += event->name_len + 1;
-	if (event->fh.handle_bytes)
-		data_len +=  sizeof(event->fh) + event->fh.handle_bytes;
-	return roundup(data_len, FAN_EVENT_METADATA_LEN);
-}
 
 static ssize_t copy_event_to_user(struct fsnotify_group *group,
 				  struct fsnotify_event *event,

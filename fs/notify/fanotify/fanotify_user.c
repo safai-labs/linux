@@ -81,7 +81,9 @@ static struct fsnotify_event *get_one_event(struct fsnotify_group *group,
 	pr_debug("%s: group=%p event=%p count=%zd\n", __func__,
 		 group, event, count);
 
-	event_size += round_event_data_len(FANOTIFY_FE(event));
+	if (event->mask & FAN_FILEINFO_EVENTS)
+		event_size += round_event_data_len(FANOTIFY_FE(event));
+
 	if (event_size > count)
 		return ERR_PTR(-EINVAL);
 
@@ -244,10 +246,6 @@ static ssize_t copy_event_to_user(struct fsnotify_group *group,
 
 	if (event->mask & FAN_FILEINFO_EVENTS) {
 		ffe = FANOTIFY_FE(event);
-		if (!(group->fanotify_data.flags & FAN_EVENT_INFO_NAME))
-			ffe->name_len = 0;
-		if (!(group->fanotify_data.flags & FAN_EVENT_INFO_FH))
-			ffe->fh.handle_bytes = 0;
 		pad_data_len = round_event_data_len(ffe);
 		fanotify_event_metadata.event_len += pad_data_len;
 	}
@@ -815,7 +813,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	group->fanotify_data.user = user;
 	atomic_inc(&user->fanotify_listeners);
 
-	oevent = fanotify_alloc_event(NULL, FS_Q_OVERFLOW, NULL, NULL);
+	oevent = fanotify_alloc_event(group, NULL, FS_Q_OVERFLOW, NULL, NULL);
 	if (unlikely(!oevent)) {
 		fd = -ENOMEM;
 		goto out_destroy_group;

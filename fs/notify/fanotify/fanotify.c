@@ -191,8 +191,8 @@ struct fanotify_event_info *fanotify_alloc_event(struct fsnotify_group *group,
 #endif
 
 	/*
-	 * For filename events (create,delete,rename), path points to the
-	 * directory and name holds the entry name, so allocate a variable
+	 * For filename events (create,delete,rename) and when reporting
+	 * file ids to root sb inode, we need to allocate a variable
 	 * length fanotify_file_event_info struct.
 	 */
 	if (mask & FAN_FILEINFO_EVENTS) {
@@ -200,10 +200,20 @@ struct fanotify_event_info *fanotify_alloc_event(struct fsnotify_group *group,
 		int alloc_len = sizeof(*ffe);
 		int name_len = 0;
 
-		if ((mask & FAN_FILENAME_EVENTS) && file_name) {
+		/*
+		 * We need to report the file name either for filename events
+		 * (create,delete,rename) or for events that happen on non
+		 * directory inodes when reporting file ids to root sb inode
+		 * and only if user has requested to get filename info.
+		 */
+		if (file_name &&
+		    ((mask & FAN_FILENAME_EVENTS) ||
+		     !d_is_dir(path->dentry)) &&
+		    (group->fanotify_data.flags & FAN_EVENT_INFO_NAME)) {
 			name_len = strlen(file_name);
 			alloc_len += name_len + 1;
 		}
+
 		ffe = kmalloc(alloc_len, GFP_KERNEL);
 		if (!ffe)
 			return NULL;
@@ -217,8 +227,9 @@ struct fanotify_event_info *fanotify_alloc_event(struct fsnotify_group *group,
 		if ((mask & FAN_EVENT_ON_SB) &&
 		    (group->fanotify_data.flags & FAN_EVENT_INFO_FH)) {
 			/*
-			 * Encode only parent (dentry) for filename events
-			 * and both parent and child for other events.
+			 * Encode only parent inode for filename events
+			 * and events on directories. Encode both parent
+			 * and child inodes for other events.
 			 * ffe->fid is big enough to encode xfs type 0x82:
 			 * 64bit parent+child inodes and 32bit generations
 			 */

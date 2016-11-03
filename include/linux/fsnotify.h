@@ -35,27 +35,25 @@ static inline int fsnotify_parent(struct path *path, struct dentry *dentry, __u3
 }
 
 /*
- * Notify this dentry's parent about a filename event (create,delete,rename).
+ * Notify this parent about a filename event (create,delete,rename).
  * Unlike fsnotify_parent(), the event will be reported regardless of the
  * FS_EVENT_ON_CHILD mask on the parent inode
  */
-static inline int fsnotify_filename(struct dentry *dentry, __u32 mask,
+static inline int fsnotify_filename(struct dentry *parent, __u32 mask,
 				    const unsigned char *file_name, u32 cookie)
 {
-	struct dentry *parent = dget_parent(dentry);
-	struct inode *p_inode = parent->d_inode;
-	int ret;
-
-	ret = fsnotify(p_inode, mask, parent, FSNOTIFY_EVENT_DENTRY,
-		       file_name, cookie);
-
-	dput(parent);
-	return ret;
+	return fsnotify(d_inode(parent), mask, parent, FSNOTIFY_EVENT_DENTRY,
+		        file_name, cookie);
 }
 
+/*
+ * Call fsnotify_filename() with parent and d_name of this dentry.
+ * Safe to call with negative dentry, e.g. from fsnotify_nameremove()
+ */
 static inline int fsnotify_d_name(struct dentry *dentry, __u32 mask)
 {
-	return fsnotify_filename(dentry, mask, dentry->d_name.name, 0);
+	return fsnotify_filename(dentry->d_parent, mask,
+				 dentry->d_name.name, 0);
 }
 
 /* simple call site for access decisions */
@@ -127,7 +125,7 @@ static inline void fsnotify_move(struct inode *old_dir, struct inode *new_dir,
 
 	fsnotify(old_dir, old_dir_mask, source, FSNOTIFY_EVENT_INODE, old_name,
 		 fs_cookie);
-	fsnotify_filename(moved, new_dir_mask, new_name, fs_cookie);
+	fsnotify_filename(moved->d_parent, new_dir_mask, new_name, fs_cookie);
 
 	if (target)
 		fsnotify_link_count(target);

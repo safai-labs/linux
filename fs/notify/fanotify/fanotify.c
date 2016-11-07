@@ -172,7 +172,12 @@ static bool fanotify_should_send_event(struct fsnotify_mark *inode_mark,
 	      ~marks_ignored_mask))
 		return false;
 
-	if (d_ancestor(mnt->mnt_root, dentry) == NULL)
+	/*
+	 * Only interesetd in dentry events visible from the mount
+	 * from which the root watch was added
+	 */
+	if (mnt->mnt_root != dentry &&
+	    d_ancestor(mnt->mnt_root, dentry) == NULL)
 		return false;
 
 	path->dentry = dentry;

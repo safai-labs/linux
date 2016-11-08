@@ -138,10 +138,8 @@ static bool fanotify_should_send_event(struct fsnotify_mark *inode_mark,
 	if (WARN_ON(d_is_negative(dentry) || d_really_is_negative(dentry)))
 		return false;
 
-	/* sorry, fanotify only gives a damn about files and dirs
-	 * FIXME: can this be removed? */
-	if (data_type == FSNOTIFY_EVENT_PATH &&
-	    !d_is_reg(dentry) && !d_can_lookup(dentry))
+	/* sorry, fanotify only gives a damn about files and dirs */
+	if (!d_is_reg(dentry) && !d_can_lookup(dentry))
 		return false;
 
 	if (inode_mark && vfsmnt_mark) {

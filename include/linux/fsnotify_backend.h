@@ -162,6 +162,8 @@ struct fsnotify_group {
 	struct fsnotify_event *overflow_event;	/* Event we queue when the
 						 * notification list is too
 						 * full */
+	atomic_t user_waits;		/* Number of tasks waiting for user
+					 * response */
 
 	/* groups can define private fields here or use the void *private */
 	union {
@@ -367,6 +369,12 @@ extern void fsnotify_clear_marks_by_group_flags(struct fsnotify_group *group, un
 extern void fsnotify_get_mark(struct fsnotify_mark *mark);
 extern void fsnotify_put_mark(struct fsnotify_mark *mark);
 extern void fsnotify_unmount_inodes(struct super_block *sb);
+extern void fsnotify_finish_user_wait(struct fsnotify_mark *inode_mark,
+				      struct fsnotify_mark *vfsmount_mark,
+				      int *srcu_idx);
+extern bool fsnotify_prepare_user_wait(struct fsnotify_mark *inode_mark,
+				       struct fsnotify_mark *vfsmount_mark,
+				       int *srcu_idx);
 
 /* put here because inotify does some weird stuff when destroying watches */
 extern void fsnotify_init_event(struct fsnotify_event *event,

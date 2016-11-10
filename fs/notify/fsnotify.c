@@ -127,7 +127,8 @@ static int send_to_group(struct inode *to_tell,
 			 struct fsnotify_mark *vfsmount_mark,
 			 __u32 mask, const void *data,
 			 int data_is, u32 cookie,
-			 const unsigned char *file_name)
+			 const unsigned char *file_name,
+			 int *srcu_idx)
 {
 	struct fsnotify_group *group = NULL;
 	__u32 inode_test_mask = 0;
@@ -178,7 +179,7 @@ static int send_to_group(struct inode *to_tell,
 
 	return group->ops->handle_event(group, to_tell, inode_mark,
 					vfsmount_mark, mask, data, data_is,
-					file_name, cookie);
+					file_name, cookie, srcu_idx);
 }
 
 /*
@@ -285,7 +286,7 @@ int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
 			}
 		}
 		ret = send_to_group(to_tell, inode_mark, vfsmount_mark, mask,
-				    data, data_is, cookie, file_name);
+				    data, data_is, cookie, file_name, &idx);
 
 		if (ret && (mask & ALL_FSNOTIFY_PERM_EVENTS))
 			goto out;

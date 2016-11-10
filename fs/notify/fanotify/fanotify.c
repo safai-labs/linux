@@ -61,7 +61,10 @@ static int fanotify_merge(struct list_head *list, struct fsnotify_event *event)
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
 static int fanotify_get_response(struct fsnotify_group *group,
-				 struct fanotify_perm_event_info *event)
+				 struct fsnotify_mark *inode_mark,
+				 struct fsnotify_mark *vfsmount_mark,
+				 struct fanotify_perm_event_info *event,
+				 int *srcu_idx)
 {
 	int ret;
 
@@ -69,6 +72,19 @@ static int fanotify_get_response(struct fsnotify_group *group,
 
 	wait_event(group->fanotify_data.access_waitq, event->response);
 
+	/*
+	 * fsnotify_prepare_user_wait() fails if we race with mark deletion.
+	 * Just let the operation pass in that case.
+	 */
+	if (!fsnotify_prepare_user_wait(inode_mark, vfsmount_mark, srcu_idx)) {
+		event->response = FAN_ALLOW;
+		goto out;
+	}
+
+	wait_event(group->fanotify_data.access_waitq, event->response);
+
+	fsnotify_finish_user_wait(inode_mark, vfsmount_mark, srcu_idx);
+out:
 	/* userspace responded, convert to something usable */
 	switch (event->response) {
 	case FAN_ALLOW:
@@ -220,7 +236,8 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
 	if (mask & FAN_ALL_PERM_EVENTS) {
-		ret = fanotify_get_response(group, FANOTIFY_PE(fsn_event));
+		ret = fanotify_get_response(group, inode_mark, fanotify_mark,
+					    FANOTIFY_PE(fsn_event), srcu_idx);
 		fsnotify_destroy_event(group, fsn_event);
 	}
 #endif

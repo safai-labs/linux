@@ -599,9 +599,17 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 	int err;
 	struct inode *inode;
 
-	err = ovl_want_write(old);
+	/*
+	 * Keep before ovl_want_write() because cow to snapshot
+	 * aquires and releases sb_writers of upper/lower
+	 */
+	err = ovl_snapshot_want_write(new);
 	if (err)
 		goto out;
+
+	err = ovl_want_write(old);
+	if (err)
+		goto out_snapshot_drop_write;
 
 	err = ovl_copy_up(old);
 	if (err)
@@ -616,6 +624,8 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 
 out_drop_write:
 	ovl_drop_write(old);
+out_snapshot_drop_write:
+	ovl_snapshot_drop_write(new);
 out:
 	return err;
 }
@@ -934,9 +944,17 @@ static int ovl_rename(struct inode *olddir, struct dentry *old,
 	if (!overwrite && !ovl_can_move(new))
 		goto out;
 
-	err = ovl_want_write(old);
+	/*
+	 * Keep before ovl_want_write() because cow to snapshot
+	 * aquires and releases sb_writers of upper/lower
+	 */
+	err = ovl_snapshot_want_write(new);
 	if (err)
 		goto out;
+
+	err = ovl_want_write(old);
+	if (err)
+		goto out_snapshot_drop_write;
 
 	err = ovl_copy_up(old);
 	if (err)
@@ -1063,6 +1081,8 @@ out_revert_creds:
 	revert_creds(old_cred);
 out_drop_write:
 	ovl_drop_write(old);
+out_snapshot_drop_write:
+	ovl_snapshot_drop_write(new);
 out:
 	dput(opaquedir);
 	return err;

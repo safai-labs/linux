@@ -34,7 +34,7 @@ static int ovl_snapshot_copy_down(struct dentry *dentry)
 
 	return 0;
 bug:
-	WARN(1, "ovl_snapshot_want_write(%pd4, %s:%lu): CoW failed (err=%ld)\n",
+	WARN(1, "ovl_snapshot_want_write(%pd4, %s:%lu): cow failed (err=%ld)\n",
 	     dentry, inode ? inode->i_sb->s_id : "NULL",
 	     inode ? inode->i_ino : 0, PTR_ERR(snap));
 
@@ -91,8 +91,24 @@ int ovl_snapshot_want_write(struct dentry *dentry)
 
 void ovl_snapshot_drop_write(struct dentry *dentry)
 {
+	struct dentry *snap = ovl_dentry_snapshot(dentry);
+	struct inode *inode = dentry->d_inode;
+
 	/*
-	 * TODO: whiteout after created entry if ofs->snapshot_mnt
-	 * is unmodified overlayfs that does not support explicit whiteout
+	 * We may have just dropped this dentry, because it was deleted or
+	 * renamed over - then snapshot still thinks it has a lower dentry.
+	 * Unhash the snapshot dentry as well in this case.
+	 *
+	 * Similarly, explicit whiteout in snapshot may have droped the
+	 * overlayfs dentry, so if we hold a reference to an unhashed dentry,
+	 * drop our dentry.
 	 */
+	if (snap && (d_unhashed(dentry) || d_unhashed(snap))) {
+		pr_debug("ovl_snapshot_d_drop(%pd4, %lu): is_dir=%d, negative=%d, unhashed=%d, snap unhashed=%d\n",
+			dentry, inode ? inode->i_ino : 0,
+			d_is_dir(snap), d_is_negative(dentry),
+			d_unhashed(dentry), d_unhashed(snap));
+		d_drop(dentry);
+		d_drop(snap);
+	}
 }

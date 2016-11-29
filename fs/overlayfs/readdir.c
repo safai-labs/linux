@@ -268,7 +268,7 @@ static void ovl_dir_reset(struct file *file)
 		od->cache = NULL;
 		od->cursor = NULL;
 	}
-	WARN_ON(!od->is_real && !OVL_TYPE_MERGE(type));
+	//WARN_ON(!od->is_real && !OVL_TYPE_MERGE(type));
 	if (od->is_real && OVL_TYPE_MERGE(type))
 		od->is_real = false;
 }
@@ -502,7 +502,8 @@ static int ovl_dir_open(struct inode *inode, struct file *file)
 		return PTR_ERR(realfile);
 	}
 	od->realfile = realfile;
-	od->is_real = !OVL_TYPE_MERGE(type);
+	/* Snapshot mount is always real - overlay mount never */
+	od->is_real = ovl_is_snapshot_fs_type(inode->i_sb);
 	od->is_upper = OVL_TYPE_UPPER(type);
 	file->private_data = od;
 

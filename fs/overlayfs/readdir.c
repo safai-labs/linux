@@ -264,13 +264,25 @@ static inline int ovl_dir_read(struct path *realpath,
 	return err;
 }
 
+static inline bool ovl_dir_has_origin(struct dentry *dentry)
+{
+	return vfs_getxattr(dentry, OVL_XATTR_ORIGIN, NULL, 0) > 0;
+}
+
 /* Can we iterate real dir directly? */
 static bool ovl_dir_is_real(struct dentry *dir)
 {
-	enum ovl_path_type type = ovl_path_type(dir);
+	struct path realpath;
+	enum ovl_path_type type = ovl_path_real(dir, &realpath);
 
-	if (OVL_TYPE_MERGE(type))
+	/*
+	 * Non-merge dir may contain whiteouts from a time it was a merge
+	 * upper, before lower dir was removed under it and possibly before
+	 * it was rotated from upper to lower layer.
+	 */
+	if (OVL_TYPE_MERGE(type) || ovl_dir_has_origin(realpath.dentry))
 		return false;
+
 	/* Upper dir may contain copied up entries that were moved into it */
 	return !OVL_TYPE_UPPER(type) || !ovl_dentry_is_impure(dir);
 }

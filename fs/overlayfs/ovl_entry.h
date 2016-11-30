@@ -14,6 +14,7 @@ struct ovl_config {
 	char *workdir;
 	bool default_permissions;
 	bool redirect_dir;
+	bool redirect_fh;
 };
 
 /* private information held for overlayfs's superblock */
@@ -28,6 +29,7 @@ struct ovl_fs {
 	/* creds of process who forced instantiation of super block */
 	const struct cred *creator_cred;
 	bool tmpfile;
+	bool samefs;
 	wait_queue_head_t copyup_wq;
 };
 

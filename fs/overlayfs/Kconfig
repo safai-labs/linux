@@ -38,3 +38,11 @@ config OVERLAY_FS_REDIRECT_FH
 	  underlying file system that supports NFS export ops.  Redirect by
 	  file handle breaks if layers are taken offline and copied to another
 	  location.  In that case, lookup falls back to redirect by path.
+
+config OVERLAY_FS_SNAPSHOT
+	bool "Overlayfs snapshot support (Experimental)"
+	depends on OVERLAY_FS
+
+	help
+	  This enables experimental support for overlayfs snapshot.
+	  If unsure, say N

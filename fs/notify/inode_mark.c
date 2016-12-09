@@ -30,38 +30,9 @@
 
 #include "../internal.h"
 
-/*
- * Recalculate the inode->i_fsnotify_mask, or the mask of all FS_* event types
- * any notifier is interested in hearing for this inode.
- */
 void fsnotify_recalc_inode_mask(struct inode *inode)
 {
-	spin_lock(&inode->i_lock);
-	inode->i_fsnotify_mask = fsnotify_recalc_mask(&inode->i_fsnotify_marks);
-	spin_unlock(&inode->i_lock);
-
-	__fsnotify_update_child_dentry_flags(inode);
-}
-
-void fsnotify_destroy_inode_mark(struct fsnotify_mark *mark)
-{
-	struct inode *inode = mark->inode;
-
-	BUG_ON(!mutex_is_locked(&mark->group->mark_mutex));
-	assert_spin_locked(&mark->lock);
-
-	spin_lock(&inode->i_lock);
-
-	hlist_del_init_rcu(&mark->obj_list);
-	mark->inode = NULL;
-
-	/*
-	 * this mark is now off the inode->i_fsnotify_marks list and we
-	 * hold the inode->i_lock, so this is the perfect time to update the
-	 * inode->i_fsnotify_mask
-	 */
-	inode->i_fsnotify_mask = fsnotify_recalc_mask(&inode->i_fsnotify_marks);
-	spin_unlock(&inode->i_lock);
+	fsnotify_recalc_mask(inode->i_fsnotify_marks);
 }
 
 /*
@@ -69,7 +40,7 @@ void fsnotify_destroy_inode_mark(struct fsnotify_mark *mark)
  */
 void fsnotify_clear_inode_marks_by_group(struct fsnotify_group *group)
 {
-	fsnotify_clear_marks_by_group_flags(group, FSNOTIFY_MARK_FLAG_INODE);
+	fsnotify_clear_marks_by_group_flags(group, FSNOTIFY_OBJ_TYPE_INODE);
 }
 
 /*
@@ -79,66 +50,7 @@ void fsnotify_clear_inode_marks_by_group(struct fsnotify_group *group)
 struct fsnotify_mark *fsnotify_find_inode_mark(struct fsnotify_group *group,
 					       struct inode *inode)
 {
-	struct fsnotify_mark *mark;
-
-	spin_lock(&inode->i_lock);
-	mark = fsnotify_find_mark(&inode->i_fsnotify_marks, group);
-	spin_unlock(&inode->i_lock);
-
-	return mark;
-}
-
-/*
- * If we are setting a mark mask on an inode mark we should pin the inode
- * in memory.
- */
-void fsnotify_set_inode_mark_mask_locked(struct fsnotify_mark *mark,
-					 __u32 mask)
-{
-	struct inode *inode;
-
-	assert_spin_locked(&mark->lock);
-
-	if (mask &&
-	    mark->inode &&
-	    !(mark->flags & FSNOTIFY_MARK_FLAG_OBJECT_PINNED)) {
-		mark->flags |= FSNOTIFY_MARK_FLAG_OBJECT_PINNED;
-		inode = igrab(mark->inode);
-		/*
-		 * we shouldn't be able to get here if the inode wasn't
-		 * already safely held in memory.  But bug in case it
-		 * ever is wrong.
-		 */
-		BUG_ON(!inode);
-	}
-}
-
-/*
- * Attach an initialized mark to a given inode.
- * These marks may be used for the fsnotify backend to determine which
- * event types should be delivered to which group and for which inodes.  These
- * marks are ordered according to priority, highest number first, and then by
- * the group's location in memory.
- */
-int fsnotify_add_inode_mark(struct fsnotify_mark *mark,
-			    struct fsnotify_group *group, struct inode *inode,
-			    int allow_dups)
-{
-	int ret;
-
-	mark->flags |= FSNOTIFY_MARK_FLAG_INODE;
-
-	BUG_ON(!mutex_is_locked(&group->mark_mutex));
-	assert_spin_locked(&mark->lock);
-
-	spin_lock(&inode->i_lock);
-	mark->inode = inode;
-	ret = fsnotify_add_mark_list(&inode->i_fsnotify_marks, mark,
-				     allow_dups);
-	inode->i_fsnotify_mask = fsnotify_recalc_mask(&inode->i_fsnotify_marks);
-	spin_unlock(&inode->i_lock);
-
-	return ret;
+	return fsnotify_find_mark(&inode->i_fsnotify_marks, group);
 }
 
 /**

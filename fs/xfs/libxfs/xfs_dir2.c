@@ -41,15 +41,15 @@ struct xfs_name xfs_name_dotdot = { (unsigned char *)"..", 2, XFS_DIR3_FT_DIR };
  * for file type specification. This will be propagated into the directory
  * structure if appropriate for the given operation and filesystem config.
  */
-const unsigned char xfs_mode_to_ftype[S_IFMT >> S_SHIFT] = {
-	[0]			= XFS_DIR3_FT_UNKNOWN,
-	[S_IFREG >> S_SHIFT]    = XFS_DIR3_FT_REG_FILE,
-	[S_IFDIR >> S_SHIFT]    = XFS_DIR3_FT_DIR,
-	[S_IFCHR >> S_SHIFT]    = XFS_DIR3_FT_CHRDEV,
-	[S_IFBLK >> S_SHIFT]    = XFS_DIR3_FT_BLKDEV,
-	[S_IFIFO >> S_SHIFT]    = XFS_DIR3_FT_FIFO,
-	[S_IFSOCK >> S_SHIFT]   = XFS_DIR3_FT_SOCK,
-	[S_IFLNK >> S_SHIFT]    = XFS_DIR3_FT_SYMLINK,
+const unsigned char xfs_dtype_to_ftype[S_DT_MAX+1] = {
+	[0]                = XFS_DIR3_FT_UNKNOWN,
+	[S_DT(S_IFREG)]    = XFS_DIR3_FT_REG_FILE,
+	[S_DT(S_IFDIR)]    = XFS_DIR3_FT_DIR,
+	[S_DT(S_IFCHR)]    = XFS_DIR3_FT_CHRDEV,
+	[S_DT(S_IFBLK)]    = XFS_DIR3_FT_BLKDEV,
+	[S_DT(S_IFIFO)]    = XFS_DIR3_FT_FIFO,
+	[S_DT(S_IFSOCK)]   = XFS_DIR3_FT_SOCK,
+	[S_DT(S_IFLNK)]    = XFS_DIR3_FT_SYMLINK,
 };
 
 /*

@@ -29,11 +29,6 @@
 #include <linux/fsnotify_backend.h>
 #include "fsnotify.h"
 
-void fsnotify_recalc_vfsmount_mask(struct vfsmount *mnt)
-{
-	fsnotify_recalc_mask(real_mount(mnt)->mnt_fsnotify_marks);
-}
-
 void fsnotify_clear_vfsmount_marks_by_group(struct fsnotify_group *group)
 {
 	fsnotify_clear_marks_by_group_flags(group, FSNOTIFY_OBJ_TYPE_VFSMOUNT);

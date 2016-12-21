@@ -31,3 +31,5 @@ extern int inotify_handle_event(struct fsnotify_group *group,
 				int *srcu_idx);
 
 extern const struct fsnotify_ops inotify_fsnotify_ops;
+
+extern struct kmem_cache *inotify_inode_mark_cachep;

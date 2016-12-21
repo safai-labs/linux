@@ -628,7 +628,7 @@ void fsnotify_detach_group_marks(struct fsnotify_group *group)
 		fsnotify_get_mark(mark);
 		fsnotify_detach_mark(mark);
 		mutex_unlock(&group->mark_mutex);
-		__fsnotify_free_mark(mark);
+		fsnotify_free_mark(mark);
 		fsnotify_put_mark(mark);
 	}
 }
@@ -688,7 +688,7 @@ void fsnotify_init_mark(struct fsnotify_mark *mark,
  * Destroy all marks in destroy_list, waits for SRCU period to finish before
  * actually freeing marks.
  */
-void fsnotify_mark_destroy_list(void)
+static void fsnotify_mark_destroy_workfn(struct work_struct *work)
 {
 	struct fsnotify_mark *mark, *next;
 	struct list_head private_destroy_list;
@@ -706,7 +706,8 @@ void fsnotify_mark_destroy_list(void)
 	}
 }
 
-static void fsnotify_mark_destroy_workfn(struct work_struct *work)
+/* Wait for all marks queued for destruction to be actually destroyed */
+void fsnotify_wait_marks_destroyed(void)
 {
-	fsnotify_mark_destroy_list();
+	flush_delayed_work(&reaper_work);
 }

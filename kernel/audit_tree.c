@@ -172,25 +172,13 @@ static unsigned long inode_to_key(const struct inode *inode)
 /*
  * Function to return search key in our hash from chunk. Key 0 is special and
  * should never be present in the hash.
- *
- * Must be called with chunk->mark.lock held to protect from connector
- * becoming NULL.
  */
-static unsigned long __chunk_to_key(struct audit_chunk *chunk)
-{
-	if (!chunk->mark.connector)
-		return 0;
-	return (unsigned long)chunk->mark.connector->inode;
-}
-
 static unsigned long chunk_to_key(struct audit_chunk *chunk)
 {
-	unsigned long key;
-
-	spin_lock(&chunk->mark.lock);
-	key = __chunk_to_key(chunk);
-	spin_unlock(&chunk->mark.lock);
-	return key;
+	/* We have a reference to the mark so it should be attached. */
+	if (WARN_ON_ONCE(!chunk->mark.connector))
+		return 0;
+	return (unsigned long)chunk->mark.connector->inode;
 }
 
 static inline struct list_head *chunk_hash(unsigned long key)
@@ -202,7 +190,7 @@ static inline struct list_head *chunk_hash(unsigned long key)
 /* hash_lock & entry->lock is held by caller */
 static void insert_hash(struct audit_chunk *chunk)
 {
-	unsigned long key = __chunk_to_key(chunk);
+	unsigned long key = chunk_to_key(chunk);
 	struct list_head *list;
 
 	if (!key)

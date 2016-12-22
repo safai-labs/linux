@@ -113,6 +113,11 @@ static inline int ovl_do_rename(struct inode *olddir, struct dentry *olddentry,
 
 	err = vfs_rename(olddir, olddentry, newdir, newdentry, NULL, flags);
 
+	/* retry without RENAME_VFS_DTYPE if fs does not support it */
+	if (err == -EINVAL && (flags & RENAME_VFS_DTYPE))
+		err = vfs_rename(olddir, olddentry, newdir, newdentry, NULL,
+				 flags & RENAME_UAPI_MASK);
+
 	if (err) {
 		pr_debug("...rename(%pd2, %pd2, ...) = %i\n",
 			 olddentry, newdentry, err);

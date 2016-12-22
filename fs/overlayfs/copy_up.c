@@ -298,7 +298,13 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	if (err)
 		goto out_cleanup;
 
-	err = ovl_do_rename(wdir, newdentry, udir, upper, 0);
+	/*
+	 * Mark copy up objects in upper as DT_UNKNOWN, so it easy to
+	 * distinguish them from opaque objects in iterate_dir().
+	 * File system repair tools may re-classify the file type
+	 * and that will break optimization, but not functionality.
+	 */
+	err = ovl_do_rename(wdir, newdentry, udir, upper, RENAME_DT_UNKNOWN);
 	if (err)
 		goto out_cleanup;
 

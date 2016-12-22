@@ -1558,6 +1558,36 @@ extern int vfs_symlink(struct inode *, struct dentry *, const char *);
 extern int vfs_link(struct dentry *, struct inode *, struct dentry *, struct inode **);
 extern int vfs_rmdir(struct inode *, struct dentry *);
 extern int vfs_unlink(struct inode *, struct dentry *, struct inode **);
+
+/* vfs_rename() extra flags */
+#define RENAME_VFS_FLAG(i)	(1 << (RENAME_UAPI_BITS + (i)))
+#define RENAME_VFS_DTYPE	RENAME_VFS_FLAG(0)	/* Set dest dtype */
+
+#define RENAME_VFS_FLAG_BITS	1
+
+#define RENAME_FLAGS_BITS	(RENAME_UAPI_BITS + RENAME_VFS_FLAG_BITS)
+#define RENAME_FLAGS_MASK	((1 << RENAME_FLAGS_BITS) - 1)
+
+/*
+ * S_IFMT bits (12..15) carry the dtype value to set for RENAME_VFS_DTYPE.
+ *
+ * For example, code can call vfs_rename(..., RENAME_DT_WHT) to set the
+ * target dir entry type to DT_WHT, regardless of inode->i_mode.
+ * file systems that supports the new RENAME_VFS_DTYPE flag, would check
+ * for (flags & RENAME_VFS_DTYPE) and use RENAME_DT_MODE(flags) instead
+ * of inode->i_mode to determine the dtype to store in the directory entry.
+ */
+#define RENAME_DT_BITS		4
+#define RENAME_DT_SHIFT		12
+#define RENAME_DT_MASK		S_IFMT
+#define RENAME_DT(dt)		(((dt) << RENAME_DT_SHIFT) | RENAME_VFS_DTYPE)
+#define RENAME_DT_UNKNOWN	RENAME_DT(DT_UNKNOWN)
+#define RENAME_DT_WHT		RENAME_DT(DT_WHT)
+/* mode to use instead of i_mode when setting dtype */
+#define RENAME_DT_MODE(f)	((f) & RENAME_DT_MASK)
+
+#define RENAME_VFS_MASK		(RENAME_FLAGS_MASK | RENAME_DT_MASK)
+
 extern int vfs_rename(struct inode *, struct dentry *, struct inode *, struct dentry *, struct inode **, unsigned int);
 extern int vfs_whiteout(struct inode *, struct dentry *);
 

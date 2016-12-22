@@ -630,7 +630,13 @@ static int ovl_remove_and_whiteout(struct dentry *dentry, bool is_dir)
 	struct dentry *upper;
 	struct dentry *opaquedir = NULL;
 	int err;
-	int flags = 0;
+	/*
+	 * Mark whiteout objects as DT_WHT instead of DT_CHR, so it easy
+	 * to distinguish them real character devices in iterate_dir().
+	 * File system repair tools may re-classify the file type
+	 * and that will break optimization, but not functionality.
+	 */
+	int flags = RENAME_DT_WHT;
 
 	if (WARN_ON(!workdir))
 		return -EROFS;
@@ -665,12 +671,12 @@ static int ovl_remove_and_whiteout(struct dentry *dentry, bool is_dir)
 		goto out_dput_upper;
 
 	if (d_is_dir(upper))
-		flags = RENAME_EXCHANGE;
+		flags |= RENAME_EXCHANGE;
 
 	err = ovl_do_rename(wdir, whiteout, udir, upper, flags);
 	if (err)
 		goto kill_whiteout;
-	if (flags)
+	if (flags & RENAME_EXCHANGE)
 		ovl_cleanup(wdir, upper);
 
 	ovl_dentry_version_inc(dentry->d_parent);

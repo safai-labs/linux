@@ -98,7 +98,7 @@ static struct ovl_cache_entry *ovl_cache_entry_new(struct ovl_readdir_data *rdd,
 	p->len = len;
 	p->type = d_type;
 	p->ino = ino;
-	p->is_whiteout = false;
+	p->is_whiteout = (d_type == DT_WHT);
 
 	if (d_type == DT_CHR) {
 		p->next_maybe_whiteout = rdd->first_maybe_whiteout;

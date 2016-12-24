@@ -394,19 +394,24 @@ xfs_vn_rename(
 	unsigned int	flags)
 {
 	struct inode	*new_inode = d_inode(ndentry);
-	int		omode = 0;
+	int		omode = 0, nmode = 0;
 	struct xfs_name	oname;
 	struct xfs_name	nname;
 
-	if (flags & ~(RENAME_NOREPLACE | RENAME_EXCHANGE | RENAME_WHITEOUT))
+	if (flags & ~RENAME_VFS_MASK)
 		return -EINVAL;
 
 	/* if we are exchanging files, we need to set i_mode of both files */
 	if (flags & RENAME_EXCHANGE)
 		omode = d_inode(ndentry)->i_mode;
+	/* if requested, use provided dtype for target */
+	if (flags & RENAME_VFS_DTYPE)
+		nmode = RENAME_DT_MODE(flags);
+	else
+		nmode = d_inode(odentry)->i_mode;
 
 	xfs_dentry_to_name(&oname, odentry, omode);
-	xfs_dentry_to_name(&nname, ndentry, d_inode(odentry)->i_mode);
+	xfs_dentry_to_name(&nname, ndentry, nmode);
 
 	return xfs_rename(XFS_I(odir), &oname, XFS_I(d_inode(odentry)),
 			  XFS_I(ndir), &nname,

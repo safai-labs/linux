@@ -50,6 +50,7 @@ const unsigned char xfs_dtype_to_ftype[S_DT_MAX+1] = {
 	[S_DT(S_IFIFO)]    = XFS_DIR3_FT_FIFO,
 	[S_DT(S_IFSOCK)]   = XFS_DIR3_FT_SOCK,
 	[S_DT(S_IFLNK)]    = XFS_DIR3_FT_SYMLINK,
+	[DT_WHT]           = XFS_DIR3_FT_WHT,
 };
 
 /*

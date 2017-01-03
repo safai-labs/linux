@@ -671,17 +671,23 @@ out:
 }
 
 static int ovl_snapshot_dir(const char *name, struct path *path,
-			    struct ovl_fs *ofs, int *stack_depth)
+			    struct ovl_fs *ofs, struct super_block *sb)
 {
 	int err = -ENOMEM;
 	bool remote = false;
-	char *tmp = kstrdup(name, GFP_KERNEL);
+	char *tmp;
 
+	if (!ovl_is_snapshot_fs_type(sb)) {
+		pr_err("overlayfs: option 'snapshot' requires fs type 'snapshot'\n");
+		return -EINVAL;
+	}
+
+	tmp = kstrdup(name, GFP_KERNEL);
 	if (!tmp)
 		goto out;
 
 	ovl_unescape(tmp);
-	err = ovl_lower_dir(tmp, path, ofs, stack_depth, &remote);
+	err = ovl_lower_dir(tmp, path, ofs, &sb->s_stack_depth, &remote);
 	if (err)
 		goto out;
 
@@ -696,6 +702,28 @@ static int ovl_snapshot_dir(const char *name, struct path *path,
 out:
 	kfree(tmp);
 	return err;
+}
+
+static struct vfsmount *ovl_snapshot_mount(struct path *path,
+					   struct ovl_fs *ufs)
+{
+	struct ovl_fs *snapfs;
+	struct vfsmount *snapmnt = clone_private_mount(path);
+
+	if (IS_ERR(snapmnt)) {
+		pr_err("overlayfs: failed to clone snapshot path\n");
+		return snapmnt;
+	}
+
+	snapfs = snapmnt->mnt_sb->s_fs_info;
+	if (snapfs->numlower > 1 ||
+	    ufs->upper_mnt->mnt_root != snapfs->lower_mnt[0]->mnt_root) {
+		pr_err("overlayfs: upperdir and snapshot's lowerdir mismatch\n");
+		mntput(snapmnt);
+		return ERR_PTR(-EINVAL);
+	}
+
+	return snapmnt;
 }
 
 /* Workdir should not be subdir of upperdir and vice versa */
@@ -902,6 +930,21 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_config;
 	}
 
+	if (ovl_is_snapshot_fs_type(sb)) {
+		if (!ufs->config.upperdir) {
+			pr_err("overlayfs: fs type 'snapshot' requires 'upperdir'\n");
+			goto out_free_config;
+		}
+
+		if (ufs->config.lowerdir || ufs->config.workdir) {
+			pr_err("overlayfs: fs type 'snapshot' requires no 'lowerdir' nor 'workdir'\n");
+			goto out_free_config;
+		}
+
+		/* __snapmnt is overlayfs and does not support exportfs ops */
+		ufs->config.redirect_fh = false;
+	}
+
 	sb->s_stack_depth = 0;
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
 
@@ -930,20 +973,8 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	if (ufs->config.snapshot) {
-		if (!ovl_is_snapshot_fs_type(sb)) {
-			err = -EINVAL;
-			pr_err("overlayfs: option 'snapshot' requires fs type 'snapshot'\n");
-			goto out_put_upperpath;
-		}
-
-		if (ufs->config.lowerdir || !ufs->config.upperdir) {
-			err = -EINVAL;
-			pr_err("overlayfs: option 'snapshot' requires only 'upperdir'\n");
-			goto out_put_upperpath;
-		}
-
 		err = ovl_snapshot_dir(ufs->config.snapshot, &snappath,
-				       ufs, &sb->s_stack_depth);
+				       ufs, sb);
 		if (err)
 			goto out_put_upperpath;
 	}
@@ -1062,25 +1093,12 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	if (ufs->config.snapshot) {
-		struct ovl_fs *snapfs;
+		struct vfsmount *snapmnt = ovl_snapshot_mount(&snappath, ufs);
 
-		ufs->__snapmnt = clone_private_mount(&snappath);
-		err = PTR_ERR(ufs->__snapmnt);
-		if (IS_ERR(ufs->__snapmnt)) {
-			pr_err("overlayfs: failed to clone snapshot path\n");
+		if (IS_ERR(snapmnt))
 			goto out_put_workdir;
-		}
 
-		snapfs = ufs->__snapmnt->mnt_sb->s_fs_info;
-		err = -EINVAL;
-		if (snapfs->numlower > 1 ||
-		    ufs->upper_mnt->mnt_root != snapfs->lower_mnt[0]->mnt_root) {
-			pr_err("overlayfs: upperdir and snapshot's lowerdir mismatch\n");
-			goto out_put_workdir;
-		}
-
-		/* underlying overlayfs does not support exportfs ops */
-		ufs->config.redirect_fh = false;
+		ufs->__snapmnt = snapmnt;
 	}
 
 	if (numlower > 0) {

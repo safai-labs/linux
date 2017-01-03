@@ -8,6 +8,7 @@
 
 #include <linux/fs.h>
 #include <linux/mount.h>
+#include <linux/namei.h>
 #include <linux/xattr.h>
 #include "overlayfs.h"
 #include "ovl_entry.h"
@@ -194,4 +195,39 @@ void ovl_snapshot_drop_write(struct dentry *dentry)
 		d_drop(snap);
 	}
 	dput(snap);
+}
+
+/*
+ * Returns 1 if both snapdentry and snapmnt are NULL or
+ * if snapdentry and snapmnt point to the same super block.
+ *
+ * Returns 0 if snapdentry is NULL and snapmnt is not NULL or
+ * if snapdentry and snapmnt point to different super blocks.
+ * This will cause vfs lookup to invalidate this dentry and call ovl_lookup()
+ * again to re-lookup snapdentry from the current snapmnt.
+ */
+int ovl_snapshot_revalidate(struct dentry *dentry, unsigned int flags)
+{
+	struct path snappath = { NULL, NULL };
+	int err;
+
+	if (flags & LOOKUP_RCU) {
+		struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
+		struct ovl_entry *oe = dentry->d_fsdata;
+
+		err = ovl_snapshot_dentry_is_valid(
+				rcu_dereference(oe->__snapdentry),
+				rcu_dereference(ofs->__snapmnt));
+	} else {
+		err = ovl_snapshot_path(dentry, &snappath);
+		path_put(&snappath);
+	}
+
+	if (likely(!err))
+		return 1;
+
+	if (err == -ESTALE || err == -ENOENT)
+	       return 0;
+
+	return err;
 }

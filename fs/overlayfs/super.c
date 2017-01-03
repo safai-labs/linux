@@ -103,6 +103,10 @@ static struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
 {
 	return NULL;
 }
+int ovl_snapshot_revalidate(struct dentry *dentry, unsigned int flags)
+{
+	return 0;
+}
 #endif
 
 /*
@@ -235,6 +239,7 @@ static const struct dentry_operations ovl_dentry_operations = {
 static const struct dentry_operations ovl_snapshot_dentry_operations = {
 	.d_release = ovl_dentry_release,
 	.d_real = ovl_snapshot_d_real,
+	.d_revalidate = ovl_snapshot_revalidate,
 };
 
 static const struct dentry_operations ovl_reval_dentry_operations = {

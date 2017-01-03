@@ -276,6 +276,7 @@ int ovl_snapshot_path(struct dentry *dentry, struct path *path);
 struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
 				   const struct inode *inode,
 				   unsigned int open_flags);
+int ovl_snapshot_revalidate(struct dentry *dentry, unsigned int flags);
 #else
 static inline int ovl_snapshot_want_write(struct dentry *dentry) { return 0; }
 static inline void ovl_snapshot_drop_write(struct dentry *dentry) { }

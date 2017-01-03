@@ -230,7 +230,7 @@ static void ovl_put_super(struct super_block *sb)
 
 	dput(ufs->workdir);
 	mntput(ufs->upper_mnt);
-	mntput(ufs->snapshot_mnt);
+	mntput(ufs->__snapmnt);
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
 	kfree(ufs->lower_mnt);
@@ -1063,14 +1063,14 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	if (ufs->config.snapshot) {
 		struct ovl_fs *snapfs;
 
-		ufs->snapshot_mnt = clone_private_mount(&snappath);
-		err = PTR_ERR(ufs->snapshot_mnt);
-		if (IS_ERR(ufs->snapshot_mnt)) {
+		ufs->__snapmnt = clone_private_mount(&snappath);
+		err = PTR_ERR(ufs->__snapmnt);
+		if (IS_ERR(ufs->__snapmnt)) {
 			pr_err("overlayfs: failed to clone snapshot path\n");
 			goto out_put_workdir;
 		}
 
-		snapfs = ufs->snapshot_mnt->mnt_sb->s_fs_info;
+		snapfs = ufs->__snapmnt->mnt_sb->s_fs_info;
 		err = -EINVAL;
 		if (snapfs->numlower > 1 ||
 		    ufs->upper_mnt->mnt_root != snapfs->lower_mnt[0]->mnt_root) {
@@ -1118,7 +1118,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	if (!ufs->upper_mnt)
 		sb->s_flags |= MS_RDONLY;
 
-	if (ufs->snapshot_mnt)
+	if (ovl_is_snapshot_fs_type(sb))
 		sb->s_d_op = &ovl_snapshot_dentry_operations;
 	else if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;
@@ -1180,7 +1180,7 @@ out_put_lower_mnt:
 out_put_workdir:
 	dput(ufs->workdir);
 	mntput(ufs->upper_mnt);
-	mntput(ufs->snapshot_mnt);
+	mntput(ufs->__snapmnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)
 		path_put(&stack[i]);
@@ -1193,6 +1193,7 @@ out_put_upperpath:
 	path_put(&upperpath);
 	path_put(&snappath);
 out_free_config:
+	kfree(ufs->config.snapshot);
 	kfree(ufs->config.lowerdir);
 	kfree(ufs->config.upperdir);
 	kfree(ufs->config.workdir);

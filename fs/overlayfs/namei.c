@@ -360,7 +360,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct ovl_entry *poe = dentry->d_parent->d_fsdata;
 	struct path *stack = NULL;
 	struct dentry *upperdir, *upperdentry = NULL;
-	struct dentry *snapdir, *snapdentry = NULL;
+	struct dentry *snapdentry = NULL;
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
 	bool upperopaque = false;
@@ -416,16 +416,24 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		upperopaque = d.opaque;
 	}
 
-	snapdir = poe->__snapdentry;
-	if (snapdir && !d_is_negative(snapdir)) {
-		struct path snappath = {
-			.dentry = snapdir,
-			.mnt = ofs->snapshot_mnt,
-		};
+	if (ovl_is_snapshot_fs_type(dentry->d_sb)) {
+		struct path snappath = { NULL, NULL };
 
-		d.last = true;
-		d.want_negative = true;
-		err = ovl_lookup_layer(&snappath, &d, &this);
+		err = ovl_snapshot_path(dentry->d_parent, &snappath);
+
+		if (err && err != -ENOENT)
+			goto out_put_upper;
+
+		err = 0;
+		this = NULL;
+		if (snappath.dentry && !d_is_negative(snappath.dentry)) {
+			d.last = true;
+			d.want_negative = true;
+			err = ovl_lookup_layer(&snappath, &d, &this);
+		}
+
+		path_put(&snappath);
+
 		if (err)
 			goto out_put_upper;
 

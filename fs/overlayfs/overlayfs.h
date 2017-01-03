@@ -172,7 +172,6 @@ void ovl_path_upper(struct dentry *dentry, struct path *path);
 void ovl_path_lower(struct dentry *dentry, struct path *path);
 enum ovl_path_type ovl_path_real(struct dentry *dentry, struct path *path);
 struct dentry *ovl_dentry_upper(struct dentry *dentry);
-struct dentry *ovl_dentry_snapshot(struct dentry *dentry);
 struct dentry *ovl_dentry_lower(struct dentry *dentry);
 struct dentry *ovl_dentry_real(struct dentry *dentry);
 struct ovl_dir_cache *ovl_dir_cache(struct dentry *dentry);
@@ -262,11 +261,24 @@ int ovl_set_attr(struct dentry *upper, struct kstat *stat);
 bool ovl_is_snapshot_fs_type(struct super_block *sb);
 int ovl_snapshot_want_write(struct dentry *dentry);
 void ovl_snapshot_drop_write(struct dentry *dentry);
+struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
+int ovl_snapshot_path(struct dentry *dentry, struct path *path);
 struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
 				   const struct inode *inode,
 				   unsigned int open_flags);
 #else
-bool ovl_is_snapshot_fs_type(struct super_block *sb) { return false; }
 static inline int ovl_snapshot_want_write(struct dentry *dentry) { return 0; }
 static inline void ovl_snapshot_drop_write(struct dentry *dentry) { }
+static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
+{
+	return false;
+}
+static inline struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
+{
+	return NULL;
+}
+static inline int ovl_snapshot_path(struct dentry *dentry, struct path *path)
+{
+	return 0;
+}
 #endif

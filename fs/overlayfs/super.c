@@ -346,12 +346,14 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 
 	if (ufs->config.lowerdir)
 		seq_show_option(m, "lowerdir", ufs->config.lowerdir);
-	if (ufs->config.snapshot)
-		seq_show_option(m, "snapshot", ufs->config.snapshot);
 	if (ufs->config.upperdir)
 		seq_show_option(m, "upperdir", ufs->config.upperdir);
 	if (ufs->config.workdir)
 		seq_show_option(m, "workdir", ufs->config.workdir);
+	if (ufs->config.snapshot)
+		seq_show_option(m, "snapshot", ufs->config.snapshot);
+	else if (ovl_is_snapshot_fs_type(sb))
+		seq_puts(m, ",nosnapshot");
 	if (ufs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
 	if (ufs->config.redirect_dir != ovl_redirect_dir_def ||
@@ -397,10 +399,11 @@ static const struct super_operations ovl_super_operations = {
 };
 
 enum {
-	OPT_SNAPSHOT,
 	OPT_LOWERDIR,
 	OPT_UPPERDIR,
 	OPT_WORKDIR,
+	OPT_SNAPSHOT,
+	OPT_NOSNAPSHOT,
 	OPT_DEFAULT_PERMISSIONS,
 	OPT_REDIRECT_DIR_ON,
 	OPT_REDIRECT_DIR_OFF,
@@ -411,10 +414,11 @@ enum {
 };
 
 static const match_table_t ovl_tokens = {
-	{OPT_SNAPSHOT,			"snapshot=%s"},
 	{OPT_LOWERDIR,			"lowerdir=%s"},
 	{OPT_UPPERDIR,			"upperdir=%s"},
 	{OPT_WORKDIR,			"workdir=%s"},
+	{OPT_SNAPSHOT,			"snapshot=%s"},
+	{OPT_NOSNAPSHOT,		"nosnapshot"},
 	{OPT_DEFAULT_PERMISSIONS,	"default_permissions"},
 	{OPT_REDIRECT_DIR_ON,		"redirect_dir=on"},
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
@@ -520,6 +524,11 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config, bool remount)
 			config->snapshot = match_strdup(&args[0]);
 			if (!config->snapshot)
 				return -ENOMEM;
+			break;
+
+		case OPT_NOSNAPSHOT:
+			kfree(config->snapshot);
+			config->snapshot = NULL;
 			break;
 #endif
 		default:
@@ -960,25 +969,54 @@ static int ovl_snapshot_remount(struct super_block *sb, int *flags, char *data)
 		.upperdir = NULL,
 		.workdir = NULL,
 	};
+	char *nosnapshot = NULL;
 	int err;
 
-	if (data)
-		pr_info("%s: '%s'\n", __func__, (char *)data);
+	if (!data)
+		return 0;
+
+	pr_info("%s: -o'%s'\n", __func__, (char *)data);
+
+	/*
+	 * Set config.snapshot to an empty string and parse remount options.
+	 * If no new snapshot= option nor nosnapshot option was found,
+	 * config.snapshot will remain an empty string and nothing will change.
+	 * If snapshot= option will set a new config.snapshot value or
+	 * nosnapshot option will free the empty string, then we will
+	 * change the snapshot overlay to the new one or to NULL.
+	 */
+	if (ufs->config.snapshot) {
+		err = -ENOMEM;
+		nosnapshot = kstrdup("", GFP_KERNEL);
+		if (!nosnapshot)
+			return err;
+		config.snapshot = nosnapshot;
+	}
 
 	err = ovl_parse_opt((char *)data, &config, true);
 	if (err)
 		goto out_free_config;
 
-	if ((!config.snapshot && !ufs->config.snapshot) ||
-	    (config.snapshot && ufs->config.snapshot &&
-	     strcmp(config.snapshot, ufs->config.snapshot) == 0))
+	/*
+	 * If parser did not change empty string or if parser found
+	 * 'nosnapshot' and there is no snapshot - do nothing
+	 */
+	if ((config.snapshot && !*config.snapshot) ||
+	    (!config.snapshot && !ufs->config.snapshot))
 		goto out_free_config;
+
+	pr_debug("%s: old snapshot='%s'\n", __func__, ufs->config.snapshot);
 
 	if (config.snapshot) {
 		err = ovl_snapshot_dir(config.snapshot, &snappath,
 				       ufs, sb);
 		if (err)
 			goto out_free_config;
+
+		/* If new snappath is same sb as old snapmnt - do nothing */
+		if (ufs->__snapmnt &&
+		    ufs->__snapmnt->mnt_sb == snappath.mnt->mnt_sb)
+			goto out_put_snappath;
 
 		snapmnt = ovl_snapshot_mount(&snappath, ufs);
 		if (IS_ERR(snapmnt)) {
@@ -988,6 +1026,8 @@ static int ovl_snapshot_remount(struct super_block *sb, int *flags, char *data)
 
 		snaproot = dget(snappath.dentry);
 	}
+
+	pr_debug("%s: new snapshot='%s'\n", __func__, config.snapshot);
 
 	kfree(ufs->config.snapshot);
 	ufs->config.snapshot = config.snapshot;

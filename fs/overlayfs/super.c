@@ -693,6 +693,7 @@ out:
 static int ovl_snapshot_dir(const char *name, struct path *path,
 			    struct ovl_fs *ofs, struct super_block *sb)
 {
+	int stack_depth = 0;
 	int err = -ENOMEM;
 	bool remote = false;
 	char *tmp;
@@ -707,21 +708,40 @@ static int ovl_snapshot_dir(const char *name, struct path *path,
 		goto out;
 
 	ovl_unescape(tmp);
-	err = ovl_lower_dir(tmp, path, ofs, &sb->s_stack_depth, &remote);
+	err = ovl_lower_dir(tmp, path, ofs, &stack_depth, &remote);
 	if (err)
 		goto out;
 
+	/*
+	 * We already reserved stack depth for the underlying snapshot overlay
+	 * in start of ovl_fill_super(). This ensures that the underlying
+	 * snapshot overlay stack depth does not exceed this reservation.
+	 * ovl_snapshot_dir() is called from ovl_snapshot_remount()
+	 * to replace the underlying snapshot overlay, so that also guaranties
+	 * that replacing the snapshot overlay obays to stack depth limits.
+	 */
+	err = -EINVAL;
+	if (stack_depth > FILESYSTEM_MAX_STACK_DEPTH - 1) {
+		pr_err("overlayfs: snapshot overlay stacking depth exceeded\n");
+		goto err_out;
+	}
+
 	/* path has to be the root of an overlayfs mount */
+	err = -EINVAL;
 	if (!remote || path->dentry != path->mnt->mnt_root ||
 	    path->mnt->mnt_sb->s_magic != OVERLAYFS_SUPER_MAGIC) {
 		pr_err("overlayfs: '%s' is not an overlayfs mount\n", tmp);
-		path_put(path);
-		err = -EINVAL;
+		goto err_out;
 	}
 
+	err = 0;
 out:
 	kfree(tmp);
 	return err;
+
+err_out:
+	path_put(path);
+	goto out;
 }
 
 static struct vfsmount *ovl_snapshot_mount(struct path *path,
@@ -1046,6 +1066,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_config;
 	}
 
+	sb->s_stack_depth = 0;
+	sb->s_maxbytes = MAX_LFS_FILESIZE;
+
 	if (ovl_is_snapshot_fs_type(sb)) {
 		if (!ufs->config.upperdir) {
 			pr_err("overlayfs: fs type 'snapshot' requires 'upperdir'\n");
@@ -1059,10 +1082,15 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 		/* __snapmnt is overlayfs and does not support exportfs ops */
 		ufs->config.redirect_fh = false;
-	}
 
-	sb->s_stack_depth = 0;
-	sb->s_maxbytes = MAX_LFS_FILESIZE;
+		/*
+		 * snapshot mount may be remounted later with underlying
+		 * snapshot overlay. we must leave room in stack below us
+		 * for that overlay, even if snapshot= mount option is not
+		 * provided on the initial mount.
+		 */
+		sb->s_stack_depth = FILESYSTEM_MAX_STACK_DEPTH - 1;
+	}
 
 	if (ufs->config.upperdir) {
 		if (!ufs->config.workdir && ufs->config.lowerdir) {
@@ -1085,7 +1113,8 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		if (err)
 			goto out_put_upperpath;
 
-		sb->s_stack_depth = upperpath.mnt->mnt_sb->s_stack_depth;
+		sb->s_stack_depth = max(sb->s_stack_depth,
+					upperpath.mnt->mnt_sb->s_stack_depth);
 	}
 
 	if (ufs->config.snapshot) {

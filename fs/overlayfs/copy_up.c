@@ -291,7 +291,14 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		BUG_ON(upperpath.dentry != NULL);
 		upperpath.dentry = temp;
 
+		if (tmpfile)
+			inode_unlock(udir);
+
 		err = ovl_copy_up_data(lowerpath, &upperpath, stat->size);
+
+		if (tmpfile)
+			inode_lock_nested(udir, I_MUTEX_PARENT);
+
 		if (err)
 			goto out_cleanup;
 	}
@@ -374,6 +381,24 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 			return PTR_ERR(link);
 	}
 
+	if (tmpfile) {
+		err = ovl_copy_up_start(dentry);
+		/* err < 0: interrupted, err > 0: raced with another copy-up */
+		if (unlikely(err)) {
+			pr_debug("ovl_copy_up_start(%pd2) = %i\n", dentry, err);
+			if (err > 0)
+				err = 0;
+			goto out_done;
+		}
+
+		inode_lock_nested(upperdir->d_inode, I_MUTEX_PARENT);
+		err = ovl_copy_up_locked(workdir, upperdir, dentry, lowerpath,
+					 stat, link, &pstat, tmpfile);
+		inode_unlock(upperdir->d_inode);
+		ovl_copy_up_end(dentry);
+		goto out_done;
+	}
+
 	err = -EIO;
 	if (lock_rename(workdir, upperdir) != NULL) {
 		pr_err("overlayfs: failed to lock workdir+upperdir\n");
@@ -389,6 +414,7 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 				 stat, link, &pstat, tmpfile);
 out_unlock:
 	unlock_rename(workdir, upperdir);
+out_done:
 	do_delayed_call(&done);
 
 	return err;

@@ -91,24 +91,37 @@ bool ovl_dentry_weird(struct dentry *dentry)
 enum ovl_path_type ovl_path_type(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
+
+	return READ_ONCE(oe->__type);
+}
+
+void ovl_update_type(struct dentry *dentry, bool is_dir)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
 	enum ovl_path_type type = 0;
 
+	spin_lock(&dentry->d_lock);
 	if (oe->__upperdentry) {
 		type = __OVL_PATH_UPPER;
-
 		/*
 		 * Non-dir dentry can hold lower dentry of its copy up origin.
 		 */
 		if (oe->numlower) {
 			type |= __OVL_PATH_ORIGIN;
-			if (d_is_dir(dentry))
+			if (is_dir)
 				type |= __OVL_PATH_MERGE;
 		}
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
 	}
-	return type;
+
+	/*
+	 * The UPPER/MERGE/ORIGIN flags can never be cleared during the
+	 * lifetime of a dentry, so don't bother masking them out first.
+	 */
+	oe->__type |= type;
+	spin_unlock(&dentry->d_lock);
 }
 
 void ovl_path_upper(struct dentry *dentry, struct path *path)
@@ -243,6 +256,7 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 	 */
 	smp_wmb();
 	oe->__upperdentry = upperdentry;
+	ovl_update_type(dentry, d_is_dir(dentry));
 }
 
 void ovl_inode_init(struct inode *inode, struct inode *realinode, bool is_upper)

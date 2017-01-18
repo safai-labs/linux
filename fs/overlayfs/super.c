@@ -59,7 +59,7 @@ static struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
 				const char *dev_name, void *raw_data);
 
 #ifdef CONFIG_OVERLAY_FS_SNAPSHOT
-static struct file_system_type snapshot_fs_type = {
+static struct file_system_type ovl_snapshot_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "snapshot",
 	.mount		= ovl_mount,
@@ -67,11 +67,15 @@ static struct file_system_type snapshot_fs_type = {
 };
 MODULE_ALIAS_FS("snapshot");
 MODULE_ALIAS("snapshot");
-#define IS_SNAPSHOT_SB(sb) ((sb)->s_type == &snapshot_fs_type)
+
+bool ovl_is_snapshot_fs_type(struct super_block *sb)
+{
+	return sb->s_type == &ovl_snapshot_fs_type;
+}
 
 static inline void register_as_snapshot(void)
 {
-	int err = register_filesystem(&snapshot_fs_type);
+	int err = register_filesystem(&ovl_snapshot_fs_type);
 
 	if (err)
 		pr_warn("overlayfs: Unable to register as snapshotfs (%d)\n",
@@ -80,11 +84,9 @@ static inline void register_as_snapshot(void)
 
 static inline void unregister_as_snapshot(void)
 {
-	unregister_filesystem(&snapshot_fs_type);
+	unregister_filesystem(&ovl_snapshot_fs_type);
 }
-
 #else
-#define IS_SNAPSHOT_SB(sb) (0)
 static inline void register_as_snapshot(void) { }
 static inline void unregister_as_snapshot(void) { }
 static struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
@@ -927,7 +929,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	if (ufs->config.snapshot) {
-		if (!IS_SNAPSHOT_SB(sb)) {
+		if (!ovl_is_snapshot_fs_type(sb)) {
 			err = -EINVAL;
 			pr_err("overlayfs: option 'snapshot' requires fs type 'snapshot'\n");
 			goto out_put_upperpath;

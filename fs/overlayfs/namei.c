@@ -34,6 +34,7 @@ struct ovl_lookup_data {
 	char *redirect;
 	struct ovl_fh *fh;
 	bool want_negative;
+	bool want_whiteout;
 };
 
 static int ovl_check_redirect(struct dentry *dentry, struct ovl_lookup_data *d,
@@ -219,6 +220,8 @@ static int ovl_lookup_single(struct path *path, struct ovl_lookup_data *d,
 	}
 	if (ovl_is_whiteout(this)) {
 		d->stop = d->opaque = true;
+		if (d->want_whiteout)
+			goto out;
 		goto put_and_out;
 	}
 	if (!d_can_lookup(this)) {
@@ -377,6 +380,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		.redirect = NULL,
 		.fh = NULL,
 		.want_negative = false,
+		.want_whiteout = ovl_is_snapshot_fs_type(dentry->d_sb),
 	};
 
 	if (dentry->d_name.len > ofs->namelen)

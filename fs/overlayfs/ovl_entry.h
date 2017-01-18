@@ -34,6 +34,8 @@ struct ovl_fs {
 	struct super_block *same_sb;
 };
 
+enum ovl_path_type;
+
 /* private information held for every overlayfs dentry */
 struct ovl_entry {
 	struct dentry *__upperdentry;
@@ -48,6 +50,7 @@ struct ovl_entry {
 		};
 		struct rcu_head rcu;
 	};
+	enum ovl_path_type __type;
 	unsigned numlower;
 	struct path lowerstack[];
 };

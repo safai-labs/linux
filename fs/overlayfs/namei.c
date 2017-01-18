@@ -338,6 +338,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	kfree(stack);
 	kfree(d.redirect);
 	dentry->d_fsdata = oe;
+	ovl_update_type(dentry, d.is_dir);
 	d_add(dentry, inode);
 
 	return NULL;

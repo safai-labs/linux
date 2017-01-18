@@ -84,21 +84,38 @@ bool ovl_dentry_weird(struct dentry *dentry)
 enum ovl_path_type ovl_path_type(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
-	enum ovl_path_type type = 0;
+	enum ovl_path_type type = oe->__type;
 
+	/* Matches smp_wmb() in ovl_update_type() */
+	smp_rmb();
+	return type;
+}
+
+enum ovl_path_type ovl_update_type(struct dentry *dentry, bool is_dir)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+	enum ovl_path_type type = oe->__type;
+
+	/* Update UPPER/MERGE flags and preserve the rest */
+	type &= ~(__OVL_PATH_UPPER | __OVL_PATH_MERGE);
 	if (oe->__upperdentry) {
-		type = __OVL_PATH_UPPER;
-
+		type |= __OVL_PATH_UPPER;
 		/*
-		 * Non-dir dentry can hold lower dentry from previous
-		 * location.
+		 * Non-dir dentry can hold lower dentry from before
+		 * copy-up.
 		 */
-		if (oe->numlower && d_is_dir(dentry))
+		if (oe->numlower && is_dir)
 			type |= __OVL_PATH_MERGE;
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
 	}
+	/*
+	 * Make sure type is consistent with __upperdentry before making it
+	 * visible to ovl_path_type().
+	 */
+	smp_wmb();
+	oe->__type = type;
 	return type;
 }
 
@@ -234,6 +251,7 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 	 */
 	smp_wmb();
 	oe->__upperdentry = upperdentry;
+	ovl_update_type(dentry, d_is_dir(dentry));
 }
 
 void ovl_inode_init(struct inode *inode, struct inode *realinode, bool is_upper)

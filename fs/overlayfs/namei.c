@@ -34,6 +34,7 @@ struct ovl_lookup_data {
 	bool by_fh;   /* lookup by file handle */
 	char *redirect;
 	struct ovl_fh *fh;
+	bool want_negative;
 };
 
 static int ovl_check_redirect(struct dentry *dentry, struct ovl_lookup_data *d,
@@ -206,8 +207,11 @@ static int ovl_lookup_single(struct path *path, struct ovl_lookup_data *d,
 		d->fh = NULL;
 	}
 
-	if (!this->d_inode)
+	if (!this->d_inode) {
+		if (d->want_negative)
+			goto out;
 		goto put_and_out;
+	}
 
 	if (ovl_dentry_weird(this)) {
 		/* Don't support traversing automounts and other weirdness */
@@ -263,8 +267,9 @@ static int ovl_lookup_layer(struct path *path, struct ovl_lookup_data *d,
 {
 	/* Counting down from the end, since the prefix can change */
 	size_t rem = d->name.len - 1;
-	struct dentry *base = path->dentry;
 	struct dentry *dentry = NULL;
+	struct dentry *this = NULL;
+	struct path base;
 	int err;
 
 	/* Try to lookup by file handle and fallback to lookup by name/path */
@@ -273,19 +278,17 @@ static int ovl_lookup_layer(struct path *path, struct ovl_lookup_data *d,
 		if (!err)
 			return 0;
 	}
-
 	if (d->name.name[0] != '/') {
 		if (!d->by_name)
-			goto done;
+			goto notfound;
 		return ovl_lookup_single(path, d, d->name.name, d->name.len,
 					 0, "", ret);
-	} else if (!d->by_path) {
-done:
-		*ret = NULL;
-		return 0;
 	}
+	if (!d->by_path)
+		goto notfound;
 
-	while (!IS_ERR_OR_NULL(base) && d_can_lookup(base)) {
+	base = *path;
+	while (!IS_ERR_OR_NULL(base.dentry) && d_can_lookup(base.dentry)) {
 		const char *s = d->name.name + d->name.len - rem;
 		const char *next = strchrnul(s, '/');
 		size_t thislen = next - s;
@@ -295,21 +298,30 @@ done:
 		if (WARN_ON(s[-1] != '/'))
 			return -EIO;
 
-		err = ovl_lookup_single(path, d, s, thislen,
-					d->name.len - rem, next, &base);
+		err = ovl_lookup_single(&base, d, s, thislen,
+					d->name.len - rem, next, &this);
 		dput(dentry);
 		if (err)
 			return err;
-		dentry = path->dentry = base;
-		if (end)
-			break;
+		dentry = base.dentry = this;
+		if (end) {
+			*ret = dentry;
+			return 0;
+		}
 
+		this = NULL;
 		rem -= thislen + 1;
 
 		if (WARN_ON(rem >= d->name.len))
 			return -EIO;
 	}
-	*ret = dentry;
+
+	if (d->want_negative)
+		this = dentry;
+	else if (!IS_ERR_OR_NULL(dentry))
+		dput(dentry);
+notfound:
+	*ret = this;
 	return 0;
 }
 
@@ -351,9 +363,12 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct ovl_entry *oe;
 	const struct cred *old_cred;
 	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
-	struct ovl_entry *poe = dentry->d_parent->d_fsdata;
+	struct dentry *root = dentry->d_sb->s_root;
+	struct dentry *parent = dentry->d_parent;
+	struct ovl_entry *poe = parent->d_fsdata;
 	struct path *stack = NULL;
 	struct dentry *upperdir, *upperdentry = NULL;
+	struct dentry *snapdir, *snapdentry = NULL;
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
 	enum ovl_path_type type = 0;
@@ -361,17 +376,19 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct dentry *this;
 	unsigned int i;
 	int err;
+	bool is_snapshot_fs = ovl_is_snapshot_fs_type(dentry->d_sb);
 	struct ovl_lookup_data d = {
 		.name = dentry->d_name,
 		.is_dir = false,
 		.opaque = false,
 		.stop = false,
-		.last = !poe->numlower,
+		.last = !poe->numlower && !is_snapshot_fs,
 		.by_name = true,
 		.by_path = true,
-		.by_fh = ofs->config.redirect_fh,
+		.by_fh = ofs->config.redirect_fh && !is_snapshot_fs,
 		.redirect = NULL,
 		.fh = NULL,
+		.want_negative = false,
 	};
 
 	if (dentry->d_name.len > ofs->namelen)
@@ -401,11 +418,34 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 				goto out_put_upper;
 		}
 		if (ovl_redirect_absolute(&d)) {
-			poe = dentry->d_sb->s_root->d_fsdata;
+			parent = root;
+			poe = parent->d_fsdata;
 			d.by_name = false;
 		}
 		if (d.opaque)
 			type |= __OVL_PATH_OPAQUE;
+	}
+
+	snapdir = poe->__snapdentry;
+	if (is_snapshot_fs && snapdir && !d_is_negative(snapdir)) {
+		struct path snappath = {
+			.dentry = snapdir,
+			.mnt = ofs->snapshot_mnt,
+		};
+
+		/*
+		 * Snapshot lookup may return negative for explicit
+		 * whiteout and non-dir if old non-dir was Cowed
+		 */
+		d.is_dir = false;
+		d.last = true;
+		d.want_negative = true;
+		err = ovl_lookup_layer(&snappath, &d, &this);
+		if (err)
+			goto out_put_upper;
+
+		snapdentry = this;
+		d.stop = true;
 	}
 
 	if (!d.stop && poe->numlower) {
@@ -435,8 +475,9 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			break;
 
 		if (ovl_redirect_absolute(&d) &&
-		    poe != dentry->d_sb->s_root->d_fsdata) {
-			poe = dentry->d_sb->s_root->d_fsdata;
+		    parent != root) {
+			parent = root;
+			poe = parent->d_fsdata;
 			d.by_name = false;
 
 			/* Find the current layer on the root dentry */
@@ -478,6 +519,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	oe->__type = type;
 	oe->redirect = upperredirect;
 	oe->__upperdentry = upperdentry;
+	oe->__snapdentry = snapdentry;
 	memcpy(oe->lowerstack, stack, sizeof(struct path) * ctr);
 	kfree(stack);
 	kfree(d.redirect);
@@ -495,6 +537,7 @@ out_put:
 	kfree(stack);
 out_put_upper:
 	dput(upperdentry);
+	dput(snapdentry);
 	kfree(upperredirect);
 out:
 	kfree(d.redirect);

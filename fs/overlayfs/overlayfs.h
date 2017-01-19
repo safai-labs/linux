@@ -188,6 +188,7 @@ const char *ovl_dentry_get_redirect(struct dentry *dentry);
 void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect);
 bool ovl_redirect_fh(struct super_block *sb);
 void ovl_clear_redirect_fh(struct super_block *sb);
+bool ovl_redirect_fh_ok(const char *redirect, size_t size);
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry);
 void ovl_inode_init(struct inode *inode, struct inode *realinode,
 		    bool is_upper);

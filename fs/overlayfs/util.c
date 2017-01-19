@@ -238,6 +238,20 @@ void ovl_clear_redirect_fh(struct super_block *sb)
 	ofs->config.redirect_fh = false;
 }
 
+bool ovl_redirect_fh_ok(const char *redirect, size_t size)
+{
+	struct ovl_fh *fh = (void *)redirect;
+
+	if (size < sizeof(struct ovl_fh) || size < fh->len)
+		return false;
+
+	if (fh->version > OVL_FH_VERSION ||
+	    fh->magic != OVL_FH_MAGIC)
+		return false;
+
+	return true;
+}
+
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;

@@ -160,6 +160,25 @@ static void ovl_put_super(struct super_block *sb)
 	kfree(ufs);
 }
 
+static int ovl_sync_fs(struct super_block *sb, int wait)
+{
+	struct ovl_fs *ufs = sb->s_fs_info;
+	struct super_block *upper_sb;
+	int ret;
+
+	if (!ufs->upper_mnt)
+		return 0;
+	upper_sb = ufs->upper_mnt->mnt_sb;
+	if (!upper_sb->s_op->sync_fs)
+		return 0;
+
+	/* real inodes have already been synced by sync_filesystem(ovl_sb) */
+	down_read(&upper_sb->s_umount);
+	ret = upper_sb->s_op->sync_fs(upper_sb, wait);
+	up_read(&upper_sb->s_umount);
+	return ret;
+}
+
 static int ovl_freeze(struct super_block *sb)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
@@ -236,6 +255,7 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 
 static const struct super_operations ovl_super_operations = {
 	.put_super	= ovl_put_super,
+	.sync_fs	= ovl_sync_fs,
 	.freeze_fs	= ovl_freeze,
 	.unfreeze_fs	= ovl_unfreeze,
 	.statfs		= ovl_statfs,

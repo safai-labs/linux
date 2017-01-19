@@ -415,8 +415,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct dentry *upperdir, *upperdentry = NULL;
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
-	bool upperopaque = false;
-	bool upperimpure = false;
+	enum ovl_path_type type = 0;
 	char *upperredirect = NULL;
 	struct dentry *this;
 	unsigned int i;
@@ -470,9 +469,10 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			if (d.redirect[0] == '/')
 				poe = roe;
 		}
-		upperopaque = d.opaque;
-		if (upperdentry && d.is_dir)
-			upperimpure = ovl_is_impuredir(upperdentry);
+		if (d.opaque)
+			type |= __OVL_PATH_OPAQUE;
+		if (upperdentry && d.is_dir && ovl_is_impuredir(upperdentry))
+			type |= __OVL_PATH_IMPURE;
 	}
 
 	if (!d.stop && poe->numlower) {
@@ -540,8 +540,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	}
 
 	revert_creds(old_cred);
-	oe->opaque = upperopaque;
-	oe->impure = upperimpure;
+	oe->__type = type;
 	oe->redirect = upperredirect;
 	oe->__upperdentry = upperdentry;
 	memcpy(oe->lowerstack, stack, sizeof(struct path) * ctr);
@@ -582,7 +581,7 @@ bool ovl_lower_positive(struct dentry *dentry)
 	 * whiteout.
 	 */
 	if (!dentry->d_inode)
-		return oe->opaque;
+		return OVL_TYPE_OPAQUE(oe->__type);
 
 	/* Negative upper -> positive lower */
 	if (!oe->__upperdentry)

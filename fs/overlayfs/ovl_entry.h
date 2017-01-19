@@ -41,7 +41,6 @@ struct ovl_entry {
 		struct {
 			u64 version;
 			const char *redirect;
-			bool opaque;
 			bool copying;
 		};
 		struct rcu_head rcu;

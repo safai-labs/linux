@@ -199,15 +199,12 @@ void ovl_set_dir_cache(struct dentry *dentry, struct ovl_dir_cache *cache)
 
 bool ovl_dentry_is_opaque(struct dentry *dentry)
 {
-	struct ovl_entry *oe = dentry->d_fsdata;
-	return oe->opaque;
+	return OVL_TYPE_OPAQUE(ovl_path_type(dentry));
 }
 
 bool ovl_dentry_is_impure(struct dentry *dentry)
 {
-	struct ovl_entry *oe = dentry->d_fsdata;
-
-	return oe->impure;
+	return OVL_TYPE_IMPURE(ovl_path_type(dentry));
 }
 
 bool ovl_dentry_is_whiteout(struct dentry *dentry)
@@ -219,7 +216,18 @@ void ovl_dentry_set_opaque(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
 
-	oe->opaque = true;
+	spin_lock(&dentry->d_lock);
+	oe->__type |= __OVL_PATH_OPAQUE;
+	spin_unlock(&dentry->d_lock);
+}
+
+static void ovl_dentry_set_impure(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	spin_lock(&dentry->d_lock);
+	oe->__type |= __OVL_PATH_IMPURE;
+	spin_unlock(&dentry->d_lock);
 }
 
 bool ovl_redirect_dir(struct super_block *sb)
@@ -372,9 +380,8 @@ int ovl_check_setxattr(struct dentry *dentry, struct dentry *upperdentry,
 int ovl_set_impure(struct dentry *dentry, struct dentry *upperdentry)
 {
 	int err;
-	struct ovl_entry *oe = dentry->d_fsdata;
 
-	if (oe->impure)
+	if (ovl_dentry_is_impure(dentry))
 		return 0;
 
 	/*
@@ -384,7 +391,7 @@ int ovl_set_impure(struct dentry *dentry, struct dentry *upperdentry)
 	err = ovl_check_setxattr(dentry, upperdentry, OVL_XATTR_IMPURE,
 				 "y", 1, 0);
 	if (!err)
-		oe->impure = true;
+		ovl_dentry_set_impure(dentry);
 
 	return err;
 }

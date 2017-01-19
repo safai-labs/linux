@@ -1094,10 +1094,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	mntput(workpath.mnt);
 	kfree(lowertmp);
 
-	if (upperpath.dentry) {
-		oe->__upperdentry = upperpath.dentry;
-		oe->impure = ovl_is_impuredir(upperpath.dentry);
-	}
+	oe->__upperdentry = upperpath.dentry;
+	if (upperpath.dentry && ovl_is_impuredir(upperpath.dentry))
+		oe->__type |= __OVL_PATH_IMPURE;
 	for (i = 0; i < numlower; i++) {
 		oe->lowerstack[i].dentry = stack[i].dentry;
 		oe->lowerstack[i].mnt = ufs->lower_mnt[i];

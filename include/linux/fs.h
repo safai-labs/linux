@@ -2586,6 +2586,26 @@ static inline bool file_start_write_trylock(struct file *file)
 	return ret;
 }
 
+static inline void file_release_write(struct file *file)
+{
+	if (!S_ISREG(file_inode(file)->i_mode))
+		return;
+	__sb_writers_release(file_inode(file)->i_sb, SB_FREEZE_WRITE);
+	if (likely(locks_inode(file) == file_inode(file)))
+		return;
+	__sb_writers_release(locks_inode(file)->i_sb, SB_FREEZE_WRITE);
+}
+
+static inline void file_acquire_write(struct file *file)
+{
+	if (!S_ISREG(file_inode(file)->i_mode))
+		return;
+	__sb_writers_acquired(locks_inode(file)->i_sb, SB_FREEZE_WRITE);
+	if (likely(locks_inode(file) == file_inode(file)))
+		return;
+	__sb_writers_acquired(file_inode(file)->i_sb, SB_FREEZE_WRITE);
+}
+
 static inline void file_end_write(struct file *file)
 {
 	if (!S_ISREG(file_inode(file)->i_mode))

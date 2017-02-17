@@ -31,6 +31,7 @@
 #include <linux/workqueue.h>
 #include <linux/percpu-rwsem.h>
 #include <linux/delayed_call.h>
+#include <linux/overlay_util.h>
 
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
@@ -142,6 +143,9 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 
 /* File was opened by fanotify and shouldn't generate fanotify events */
 #define FMODE_NONOTIFY		((__force fmode_t)0x4000000)
+
+/* File comes from overlay filesystem */
+#define FMODE_OVERLAY		((__force fmode_t)0x8000000)
 
 /*
  * Flag for rw_copy_check_uvector and compat_rw_copy_check_uvector
@@ -1712,9 +1716,18 @@ struct inode_operations {
 	int (*set_acl)(struct inode *, struct posix_acl *, int);
 } ____cacheline_aligned;
 
+
+static inline bool is_overlay_file(struct file *file)
+{
+	return IS_ENABLED(CONFIG_OVERLAY_FS) && file->f_mode & FMODE_OVERLAY;
+}
+
 static inline ssize_t call_read_iter(struct file *file, struct kiocb *kio,
 				     struct iov_iter *iter)
 {
+	if (unlikely(is_overlay_file(file)))
+		return overlay_read_iter(file, kio, iter);
+
 	return file->f_op->read_iter(kio, iter);
 }
 

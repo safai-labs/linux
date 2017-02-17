@@ -10,6 +10,7 @@
 #include <linux/overlay_util.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/mm.h>
 #include "internal.h"
 
 static bool overlay_file_consistent(struct file *file)
@@ -35,5 +36,23 @@ ssize_t overlay_read_iter(struct file *file, struct kiocb *kio,
 	return ret;
 }
 EXPORT_SYMBOL(overlay_read_iter);
+
+int overlay_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	if (unlikely(!overlay_file_consistent(file))) {
+		file = filp_clone_open(file);
+		if (IS_ERR(file))
+			return PTR_ERR(file);
+
+		fput(vma->vm_file);
+		/* transfer ref: */
+		vma->vm_file = file;
+
+		if (!file->f_op->mmap)
+			return -ENODEV;
+	}
+	return file->f_op->mmap(file, vma);
+}
+EXPORT_SYMBOL(overlay_mmap);
 
 #endif /* IS_ENABLED(CONFIG_OVERLAY_FS) */

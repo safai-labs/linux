@@ -1746,6 +1746,9 @@ unacct_error:
 	return error;
 }
 
+/*
+ * Overlay needs special handling after copy-up
+ */
 unsigned long unmapped_area(struct vm_unmapped_area_info *info)
 {
 	/*

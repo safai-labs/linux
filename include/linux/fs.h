@@ -1748,6 +1748,9 @@ static inline int call_mmap(struct file *file, struct vm_area_struct *vma)
 static inline int call_fsync(struct file *file, loff_t start, loff_t end,
 			     int datasync)
 {
+	if (unlikely(is_overlay_file(file)))
+		return overlay_fsync(file, start, end, datasync);
+
 	return file->f_op->fsync(file, start, end, datasync);
 }
 

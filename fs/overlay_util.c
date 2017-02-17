@@ -37,6 +37,25 @@ ssize_t overlay_read_iter(struct file *file, struct kiocb *kio,
 }
 EXPORT_SYMBOL(overlay_read_iter);
 
+int overlay_fsync(struct file *file, loff_t start, loff_t end,
+		  int datasync)
+{
+	int ret;
+
+	if (likely(overlay_file_consistent(file)))
+		return file->f_op->fsync(file, start, end, datasync);
+
+	file = filp_clone_open(file);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+
+	ret = vfs_fsync_range(file, start, end, datasync);
+	fput(file);
+
+	return ret;
+}
+EXPORT_SYMBOL(overlay_fsync);
+
 int overlay_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	if (unlikely(!overlay_file_consistent(file))) {

@@ -16,14 +16,30 @@ static bool should_merge(struct fsnotify_event *old_fsn,
 			 struct fsnotify_event *new_fsn)
 {
 	struct fanotify_event_info *old, *new;
+	struct fanotify_file_event_info *old_ffe = NULL;
+	struct fanotify_file_event_info *new_ffe = NULL;
 
 	pr_debug("%s: old=%p new=%p\n", __func__, old_fsn, new_fsn);
 	old = FANOTIFY_E(old_fsn);
 	new = FANOTIFY_E(new_fsn);
+	if (old_fsn->mask & FAN_FILENAME_EVENTS)
+		old_ffe = FANOTIFY_FE(old_fsn);
+	if (new_fsn->mask & FAN_FILENAME_EVENTS)
+		new_ffe = FANOTIFY_FE(new_fsn);
 
-	if (old_fsn->inode == new_fsn->inode && old->tgid == new->tgid &&
-	    old->path.mnt == new->path.mnt &&
-	    old->path.dentry == new->path.dentry)
+	if (old_fsn->inode != new_fsn->inode || old->tgid != new->tgid ||
+	    old->path.mnt != new->path.mnt ||
+	    old->path.dentry != new->path.dentry ||
+	    !old_ffe != !new_ffe)
+		return false;
+
+	if (!old_ffe)
+		return true;
+
+	/* Check if 2 filename events (on same parent) should be merged */
+	if (old_ffe->name_len == new_ffe->name_len &&
+	    (!old_ffe->name_len ||
+	     !strncmp(old_ffe->name, new_ffe->name, old_ffe->name_len)))
 		return true;
 	return false;
 }
@@ -44,12 +60,6 @@ static int fanotify_merge(struct list_head *list, struct fsnotify_event *event)
 	if (event->mask & FAN_ALL_PERM_EVENTS)
 		return 0;
 #endif
-
-	/*
-	 * Don't merge a filename event with any other event
-	 */
-	if (event->mask & FAN_FILENAME_EVENTS)
-		return 0;
 
 	list_for_each_entry_reverse(test_event, list, list) {
 		if (should_merge(test_event, event)) {

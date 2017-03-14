@@ -965,14 +965,6 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 	    !(group->fanotify_data.flags & FAN_EVENT_INFO_PARENT))
 		mask &= ~FAN_DENTRY_EVENTS;
 
-	/*
-	 * Filename events are not interesting without the name inforamtion.
-	 * Ignore filename events unless user explicitly set the new
-	 * FAN_EVENT_INFO_NAME flag to fanotify_init().
-	 */
-	if (!(group->fanotify_data.flags & FAN_EVENT_INFO_NAME))
-		mask &= ~FAN_FILENAME_EVENTS;
-
 	/* create/update an inode mark */
 	switch (flags & (FAN_MARK_ADD | FAN_MARK_REMOVE)) {
 	case FAN_MARK_ADD:

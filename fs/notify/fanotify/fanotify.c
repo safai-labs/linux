@@ -259,6 +259,10 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 	pr_debug("%s: group=%p inode=%p mask=%x\n", __func__, group, inode,
 		 mask);
 
+	/* Do not pass file_name info if not explicitly requested by user */
+	if (!(group->fanotify_data.flags & FAN_EVENT_INFO_NAME))
+		file_name = NULL;
+
 	event = fanotify_alloc_event(inode, mask, &path, file_name);
 	if (unlikely(!event))
 		return -ENOMEM;

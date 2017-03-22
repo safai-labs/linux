@@ -876,6 +876,8 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	ufs->lower_mnt = kcalloc(numlower, sizeof(struct vfsmount *), GFP_KERNEL);
 	if (ufs->lower_mnt == NULL)
 		goto out_put_workdir;
+
+	ufs->samefs = true;
 	for (i = 0; i < numlower; i++) {
 		struct vfsmount *mnt = clone_private_mount(&stack[i]);
 
@@ -892,6 +894,11 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 		ufs->lower_mnt[ufs->numlower] = mnt;
 		ufs->numlower++;
+
+		/* Check if all layers on same sb */
+		if ((ufs->upper_mnt && ufs->upper_mnt->mnt_sb != mnt->mnt_sb) ||
+		    (i > 0 && ufs->lower_mnt[0]->mnt_sb != mnt->mnt_sb))
+			ufs->samefs = false;
 	}
 
 	/* If the upper fs is nonexistent, we mark overlayfs r/o too */

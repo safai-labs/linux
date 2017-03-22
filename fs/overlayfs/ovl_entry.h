@@ -27,7 +27,8 @@ struct ovl_fs {
 	struct ovl_config config;
 	/* creds of process who forced instantiation of super block */
 	const struct cred *creator_cred;
-	bool tmpfile;
+	bool tmpfile;	/* upper supports O_TMPFILE */
+	bool samefs;	/* all layers on same fs */
 	wait_queue_head_t copyup_wq;
 };
 

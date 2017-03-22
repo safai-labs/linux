@@ -134,7 +134,8 @@ out:
 	return error;
 }
 
-static int ovl_copy_up_data(struct path *old, struct path *new, loff_t len)
+static int ovl_copy_up_data(struct path *old, struct path *new, loff_t len,
+			    bool cloneup)
 {
 	struct file *old_file;
 	struct file *new_file;
@@ -155,12 +156,15 @@ static int ovl_copy_up_data(struct path *old, struct path *new, loff_t len)
 		goto out_fput;
 	}
 
-	/* Try to use clone_file_range to clone up within the same fs */
-	error = vfs_clone_file_range(old_file, 0, new_file, 0, len);
-	if (!error)
-		goto out;
-	/* Couldn't clone, so now we try to copy the data */
-	error = 0;
+	if (cloneup) {
+		/* Try to use clone_file_range to clone up within the same fs */
+		error = vfs_clone_file_range(old_file, 0, new_file, 0, len);
+		if (!error)
+			goto out;
+
+		/* Couldn't clone, so now we try to copy the data */
+		error = 0;
+	}
 
 	/* FIXME: copy up sparse files efficiently */
 	while (len) {
@@ -251,6 +255,7 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		.rdev = stat->rdev,
 		.link = link
 	};
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
 
 	upper = lookup_one_len(dentry->d_name.name, upperdir,
 			       dentry->d_name.len);
@@ -295,11 +300,11 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		if (tmpfile) {
 			inode_unlock(udir);
 			err = ovl_copy_up_data(lowerpath, &upperpath,
-					       stat->size);
+					       stat->size, ofs->cloneup);
 			inode_lock_nested(udir, I_MUTEX_PARENT);
 		} else {
 			err = ovl_copy_up_data(lowerpath, &upperpath,
-					       stat->size);
+					       stat->size, ofs->cloneup);
 		}
 
 		if (err)

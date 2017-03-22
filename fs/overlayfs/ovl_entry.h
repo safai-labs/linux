@@ -29,6 +29,7 @@ struct ovl_fs {
 	const struct cred *creator_cred;
 	bool tmpfile;	/* upper supports O_TMPFILE */
 	bool samefs;	/* all layers on same fs */
+	bool cloneup;	/* can clone from lower to upper */
 	wait_queue_head_t copyup_wq;
 };
 

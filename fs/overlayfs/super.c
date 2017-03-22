@@ -865,10 +865,15 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			/* Check if upper/work fs supports O_TMPFILE */
 			temp = ovl_do_tmpfile(ufs->workdir, S_IFREG | 0);
 			ufs->tmpfile = !IS_ERR(temp);
-			if (ufs->tmpfile)
+			if (ufs->tmpfile) {
+				/* Check if upper/work supports clone */
+				if (temp->d_inode && temp->d_inode->i_fop &&
+				    temp->d_inode->i_fop->clone_file_range)
+					ufs->cloneup = true;
 				dput(temp);
-			else
+			} else {
 				pr_warn("overlayfs: upper fs does not support tmpfile.\n");
+			}
 		}
 	}
 
@@ -898,7 +903,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		/* Check if all layers on same sb */
 		if ((ufs->upper_mnt && ufs->upper_mnt->mnt_sb != mnt->mnt_sb) ||
 		    (i > 0 && ufs->lower_mnt[0]->mnt_sb != mnt->mnt_sb))
-			ufs->samefs = false;
+			ufs->cloneup = ufs->samefs = false;
 	}
 
 	/* If the upper fs is nonexistent, we mark overlayfs r/o too */

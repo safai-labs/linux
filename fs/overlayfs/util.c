@@ -195,6 +195,13 @@ void ovl_dentry_set_opaque(struct dentry *dentry)
 	oe->__type |= __OVL_PATH_OPAQUE;
 }
 
+bool ovl_consistent_fd(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	return ofs->config.consistent_fd;
+}
+
 bool ovl_redirect_dir(struct super_block *sb)
 {
 	struct ovl_fs *ofs = sb->s_fs_info;

@@ -40,7 +40,10 @@ enum ovl_path_type;
 /* private information held for every overlayfs dentry */
 struct ovl_entry {
 	struct dentry *__upperdentry;
-	struct ovl_dir_cache *cache;
+	union {
+		struct dentry *__roupperdentry; /* regular file */
+		struct ovl_dir_cache *cache; /* directory */
+	};
 	union {
 		struct {
 			u64 version;
@@ -59,4 +62,9 @@ struct ovl_entry *ovl_alloc_entry(unsigned int numlower);
 static inline struct dentry *ovl_upperdentry_dereference(struct ovl_entry *oe)
 {
 	return lockless_dereference(oe->__upperdentry);
+}
+
+static inline struct dentry *ovl_roupperdentry_dereference(struct ovl_entry *oe)
+{
+	return lockless_dereference(oe->__roupperdentry);
 }

@@ -90,12 +90,14 @@ enum ovl_path_type ovl_update_type(struct dentry *dentry)
 		type |= __OVL_PATH_UPPER;
 		if (oe->numlower)
 			type |= __OVL_PATH_MERGE;
+	} else if (oe->__roupperdentry) {
+		type |= __OVL_PATH_RO_UPPER;
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
 	}
 	/*
-	 * Make sure type is consistent with __upperdentry before making it
+	 * Make sure type is consistent with __[ro]upperdentry before making it
 	 * visible to ovl_path_type().
 	 */
 	smp_wmb();
@@ -136,6 +138,13 @@ struct dentry *ovl_dentry_upper(struct dentry *dentry)
 	struct ovl_entry *oe = dentry->d_fsdata;
 
 	return ovl_upperdentry_dereference(oe);
+}
+
+struct dentry *ovl_dentry_ro_upper(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	return ovl_roupperdentry_dereference(oe);
 }
 
 static struct dentry *__ovl_dentry_lower(struct ovl_entry *oe)
@@ -231,18 +240,30 @@ void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect)
 	oe->redirect = redirect;
 }
 
+/*
+ * May be called up to twice in the lifetime of an overlay dentry -
+ * the first time when updating a ro upper dentry with a tempfile (nlink == 0)
+ * and the second time when updating a linked upper dentry (nlink > 0).
+ * Linked upper must have the same inode as the temp ro upper.
+ */
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
+	struct inode *inode = upperdentry->d_inode;
 
 	WARN_ON(!inode_is_locked(upperdentry->d_parent->d_inode));
 	WARN_ON(oe->__upperdentry);
+	if (WARN_ON(!inode))
+		return;
 	/*
 	 * Make sure upperdentry is consistent before making it visible to
-	 * ovl_upperdentry_dereference().
+	 * ovl_[ro]upperdentry_dereference()
 	 */
 	smp_wmb();
-	oe->__upperdentry = upperdentry;
+	if (inode->i_nlink)
+		oe->__upperdentry = upperdentry;
+	else
+		oe->__roupperdentry = upperdentry;
 	ovl_update_type(dentry);
 }
 

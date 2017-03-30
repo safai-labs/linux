@@ -321,3 +321,13 @@ int ovl_copy_xattr(struct dentry *old, struct dentry *new);
 int ovl_set_attr(struct dentry *upper, struct kstat *stat);
 bool ovl_can_decode_fh(struct super_block *sb);
 struct ovl_fh *ovl_encode_fh(struct dentry *lower);
+
+#ifdef CONFIG_OVERLAY_FS_SNAPSHOT
+/* super.c */
+bool ovl_is_snapshot_fs_type(struct super_block *sb);
+#else
+static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
+{
+	return false;
+}
+#endif

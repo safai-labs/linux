@@ -381,6 +381,9 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
 
+	if (ovl_is_snapshot_fs_type(sb))
+		return ovl_snapshot_remount(sb, flags, data);
+
 	if (*flags & MS_RDONLY)
 		return 0;
 
@@ -459,7 +462,7 @@ static char *ovl_next_opt(char **s)
 	return sbegin;
 }
 
-static int ovl_parse_opt(char *opt, struct ovl_config *config)
+int ovl_parse_opt(char *opt, struct ovl_config *config, bool remount)
 {
 	char *p;
 
@@ -473,6 +476,8 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 		token = match_token(p, ovl_tokens, args);
 		switch (token) {
 		case OPT_UPPERDIR:
+			if (remount)
+				break;
 			kfree(config->upperdir);
 			config->upperdir = match_strdup(&args[0]);
 			if (!config->upperdir)
@@ -480,6 +485,8 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			break;
 
 		case OPT_LOWERDIR:
+			if (remount)
+				break;
 			kfree(config->lowerdir);
 			config->lowerdir = match_strdup(&args[0]);
 			if (!config->lowerdir)
@@ -487,6 +494,8 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			break;
 
 		case OPT_WORKDIR:
+			if (remount)
+				break;
 			kfree(config->workdir);
 			config->workdir = match_strdup(&args[0]);
 			if (!config->workdir)
@@ -928,7 +937,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	ufs->config.redirect_dir = ovl_redirect_dir_def;
 	ufs->config.index = ovl_index_def;
 	ufs->config.consistent_fd = ovl_consistent_fd_def;
-	err = ovl_parse_opt((char *) data, &ufs->config);
+	err = ovl_parse_opt((char *) data, &ufs->config, false);
 	if (err)
 		goto out_free_config;
 

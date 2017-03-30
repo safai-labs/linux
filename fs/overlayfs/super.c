@@ -222,6 +222,12 @@ static int ovl_statfs(struct dentry *dentry, struct kstatfs *buf)
 	return err;
 }
 
+/* Will this overlay be forced to mount/remount ro? */
+static bool ovl_force_readonly(struct ovl_fs *ufs)
+{
+	return (!ufs->upper_mnt || !ufs->workdir);
+}
+
 /**
  * ovl_show_options
  *
@@ -243,7 +249,7 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
 		seq_printf(m, ",redirect_dir=%s",
 			   ufs->config.redirect_dir ? "on" : "off");
-	if (!(sb->s_flags & MS_RDONLY) &&
+	if (!ovl_force_readonly(ufs) &&
 	    ufs->config.consistent_fd != ovl_consistent_fd_def)
 		seq_printf(m, ",consistent_fd=%s",
 			   ufs->config.consistent_fd ? "on" : "off");
@@ -254,7 +260,7 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
 
-	if (!(*flags & MS_RDONLY) && (!ufs->upper_mnt || !ufs->workdir))
+	if (!(*flags & MS_RDONLY) && ovl_force_readonly(ufs))
 		return -EROFS;
 
 	return 0;
@@ -942,8 +948,14 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	if (!ufs->upper_mnt)
 		sb->s_flags |= MS_RDONLY;
 
-	/* Copy on read for consistent fd depends on clone support */
-	if (!ufs->cloneup)
+	/*
+	 * Copy on read for consistent fd depends on clone support.
+	 * On ro mount fd is always consistent, but if overlay can be
+	 * later remounted rw, we need to copy on read anyway, so that
+	 * ro fd that was opened during ro mount will be consistent with
+	 * rw fd that is opened after remount rw.
+	 */
+	if (!ufs->cloneup || ovl_force_readonly(ufs))
 		ufs->config.consistent_fd = false;
 
 	if (remote)

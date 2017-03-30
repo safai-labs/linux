@@ -53,6 +53,7 @@ static void ovl_dentry_release(struct dentry *dentry)
 		unsigned int i;
 
 		dput(oe->__upperdentry);
+		/* on snapshot mount, this puts __snapdentry union member */
 		dput(oe->__roupperdentry);
 		kfree(oe->redirect);
 		for (i = 0; i < oe->numlower; i++)
@@ -239,10 +240,12 @@ static void ovl_put_super(struct super_block *sb)
 
 	dput(ufs->workdir);
 	mntput(ufs->upper_mnt);
+	mntput(ufs->snapshot_mnt);
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
 	kfree(ufs->lower_mnt);
 
+	kfree(ufs->config.snapshot);
 	kfree(ufs->config.lowerdir);
 	kfree(ufs->config.upperdir);
 	kfree(ufs->config.workdir);
@@ -324,6 +327,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 
 	if (ufs->config.lowerdir)
 		seq_show_option(m, "lowerdir", ufs->config.lowerdir);
+	if (ufs->config.snapshot)
+		seq_show_option(m, "snapshot", ufs->config.snapshot);
 	if (ufs->config.upperdir)
 		seq_show_option(m, "upperdir", ufs->config.upperdir);
 	if (ufs->config.workdir)
@@ -370,6 +375,7 @@ static const struct super_operations ovl_super_operations = {
 };
 
 enum {
+	OPT_SNAPSHOT,
 	OPT_LOWERDIR,
 	OPT_UPPERDIR,
 	OPT_WORKDIR,
@@ -383,6 +389,7 @@ enum {
 };
 
 static const match_table_t ovl_tokens = {
+	{OPT_SNAPSHOT,			"snapshot=%s"},
 	{OPT_LOWERDIR,			"lowerdir=%s"},
 	{OPT_UPPERDIR,			"upperdir=%s"},
 	{OPT_WORKDIR,			"workdir=%s"},
@@ -479,6 +486,14 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->consistent_fd = false;
 			break;
 
+#ifdef CONFIG_OVERLAY_FS_SNAPSHOT
+		case OPT_SNAPSHOT:
+			kfree(config->snapshot);
+			config->snapshot = match_strdup(&args[0]);
+			if (!config->snapshot)
+				return -ENOMEM;
+			break;
+#endif
 		default:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
@@ -682,6 +697,62 @@ out:
 	return err;
 }
 
+static int ovl_snapshot_dir(const char *name, struct path *path,
+			    struct ovl_fs *ofs, struct super_block *sb)
+{
+	int err = -ENOMEM;
+	bool remote = false;
+	char *tmp;
+
+	if (!ovl_is_snapshot_fs_type(sb)) {
+		pr_err("overlayfs: option 'snapshot' requires fs type 'snapshot'\n");
+		return -EINVAL;
+	}
+
+	tmp = kstrdup(name, GFP_KERNEL);
+	if (!tmp)
+		goto out;
+
+	ovl_unescape(tmp);
+	err = ovl_lower_dir(tmp, path, ofs, &sb->s_stack_depth, &remote);
+	if (err)
+		goto out;
+
+	/* path has to be the root of an overlayfs mount */
+	if (!remote || path->dentry != path->mnt->mnt_root ||
+	    path->mnt->mnt_sb->s_magic != OVERLAYFS_SUPER_MAGIC) {
+		pr_err("overlayfs: '%s' is not an overlayfs mount\n", tmp);
+		path_put(path);
+		err = -EINVAL;
+	}
+
+out:
+	kfree(tmp);
+	return err;
+}
+
+static struct vfsmount *ovl_snapshot_mount(struct path *path,
+					   struct ovl_fs *ufs)
+{
+	struct ovl_fs *snapfs;
+	struct vfsmount *snapmnt = clone_private_mount(path);
+
+	if (IS_ERR(snapmnt)) {
+		pr_err("overlayfs: failed to clone snapshot path\n");
+		return snapmnt;
+	}
+
+	snapfs = snapmnt->mnt_sb->s_fs_info;
+	if (snapfs->numlower > 1 ||
+	    ufs->upper_mnt->mnt_root != snapfs->lower_mnt[0]->mnt_root) {
+		pr_err("overlayfs: upperdir and snapshot's lowerdir mismatch\n");
+		mntput(snapmnt);
+		return ERR_PTR(-EINVAL);
+	}
+
+	return snapmnt;
+}
+
 /* Workdir should not be subdir of upperdir and vice versa */
 static bool ovl_workdir_ok(struct dentry *workdir, struct dentry *upperdir)
 {
@@ -850,8 +921,9 @@ static const struct xattr_handler *ovl_xattr_handlers[] = {
 
 static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 {
-	struct path upperpath = { NULL, NULL };
-	struct path workpath = { NULL, NULL };
+	struct path upperpath = { };
+	struct path snappath = { };
+	struct path workpath = { };
 	struct dentry *root_dentry;
 	struct inode *realinode;
 	struct ovl_entry *oe;
@@ -927,6 +999,13 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_stack_depth = upperpath.mnt->mnt_sb->s_stack_depth;
 	}
 
+	if (ufs->config.snapshot) {
+		err = ovl_snapshot_dir(ufs->config.snapshot, &snappath,
+				       ufs, sb);
+		if (err)
+			goto out_put_upperpath;
+	}
+
 	if (ufs->config.workdir) {
 		err = ovl_mount_dir(ufs->config.workdir, &workpath);
 		if (err)
@@ -997,6 +1076,15 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		ufs->upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 
 		sb->s_time_gran = ufs->upper_mnt->mnt_sb->s_time_gran;
+	}
+
+	if (ufs->config.snapshot) {
+		struct vfsmount *snapmnt = ovl_snapshot_mount(&snappath, ufs);
+
+		if (IS_ERR(snapmnt))
+			goto out_put_workdir;
+
+		ufs->snapshot_mnt = snapmnt;
 	}
 
 	if (ufs->config.workdir) {
@@ -1122,12 +1210,14 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_oe;
 
 	mntput(upperpath.mnt);
+	mntput(snappath.mnt);
 	for (i = 0; i < numlower; i++)
 		mntput(stack[i].mnt);
 	path_put(&workpath);
 	kfree(lowertmp);
 
 	oe->__upperdentry = upperpath.dentry;
+	oe->__snapdentry = snappath.dentry;
 	for (i = 0; i < numlower; i++) {
 		oe->lowerstack[i].dentry = stack[i].dentry;
 		oe->lowerstack[i].mnt = ufs->lower_mnt[i];
@@ -1156,6 +1246,7 @@ out_put_lower_mnt:
 out_put_workdir:
 	dput(ufs->workdir);
 	mntput(ufs->upper_mnt);
+	mntput(ufs->snapshot_mnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)
 		path_put(&stack[i]);
@@ -1166,6 +1257,7 @@ out_put_workpath:
 	path_put(&workpath);
 out_put_upperpath:
 	path_put(&upperpath);
+	path_put(&snappath);
 out_free_config:
 	kfree(ufs->config.lowerdir);
 	kfree(ufs->config.upperdir);

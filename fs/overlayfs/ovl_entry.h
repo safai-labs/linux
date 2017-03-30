@@ -9,6 +9,7 @@
  */
 
 struct ovl_config {
+	char *snapshot;
 	char *lowerdir;
 	char *upperdir;
 	char *workdir;
@@ -21,6 +22,7 @@ struct ovl_config {
 /* private information held for overlayfs's superblock */
 struct ovl_fs {
 	struct vfsmount *upper_mnt;
+	struct vfsmount *snapshot_mnt;
 	unsigned numlower;
 	struct vfsmount **lower_mnt;
 	struct dentry *workdir;
@@ -44,6 +46,7 @@ struct ovl_entry {
 	union {
 		struct dentry *__roupperdentry; /* regular file */
 		struct ovl_dir_cache *cache; /* directory */
+		struct dentry *__snapdentry; /* snapshot fs */
 	};
 	union {
 		struct {

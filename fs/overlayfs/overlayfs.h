@@ -263,3 +263,13 @@ int ovl_copy_up(struct dentry *dentry);
 int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup);
 int ovl_copy_xattr(struct dentry *old, struct dentry *new);
 int ovl_set_attr(struct dentry *upper, struct kstat *stat);
+
+#ifdef CONFIG_OVERLAY_FS_SNAPSHOT
+/* super.c */
+bool ovl_is_snapshot_fs_type(struct super_block *sb);
+#else
+static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
+{
+	return false;
+}
+#endif

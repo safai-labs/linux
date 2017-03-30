@@ -22,6 +22,7 @@ enum ovl_path_type {
 #define OVL_XATTR_PREFIX XATTR_TRUSTED_PREFIX "overlay."
 #define OVL_XATTR_OPAQUE OVL_XATTR_PREFIX "opaque"
 #define OVL_XATTR_REDIRECT OVL_XATTR_PREFIX "redirect"
+#define OVL_XATTR_FH OVL_XATTR_PREFIX "fh"
 
 #define OVL_ISUPPER_MASK 1UL
 
@@ -148,6 +149,18 @@ static inline struct inode *ovl_inode_real(struct inode *inode, bool *is_upper)
 	return (struct inode *) (x & ~OVL_ISUPPER_MASK);
 }
 
+/* redirect data format for redirect by file handle */
+struct ovl_fh {
+	unsigned char version;	/* 0 */
+	unsigned char magic;	/* 0xfb */
+	unsigned char len;	/* size of this header + size of fid */
+	unsigned char type;	/* fid_type of fid */
+	unsigned char fid[0];	/* file identifier */
+} __attribute__((packed));
+
+#define OVL_FH_VERSION	0
+#define OVL_FH_MAGIC	0xfb
+
 /* util.c */
 int ovl_want_write(struct dentry *dentry);
 void ovl_drop_write(struct dentry *dentry);
@@ -173,6 +186,8 @@ bool ovl_redirect_dir(struct super_block *sb);
 void ovl_clear_redirect_dir(struct super_block *sb);
 const char *ovl_dentry_get_redirect(struct dentry *dentry);
 void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect);
+bool ovl_redirect_fh(struct super_block *sb);
+void ovl_clear_redirect_fh(struct super_block *sb);
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry);
 void ovl_inode_init(struct inode *inode, struct inode *realinode,
 		    bool is_upper);

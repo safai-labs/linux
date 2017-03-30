@@ -34,6 +34,12 @@ module_param_named(redirect_dir, ovl_redirect_dir_def, bool, 0644);
 MODULE_PARM_DESC(ovl_redirect_dir_def,
 		 "Default to on or off for the redirect_dir feature");
 
+static bool ovl_redirect_fh_def =
+	    IS_ENABLED(CONFIG_OVERLAY_FS_REDIRECT_FH);
+module_param_named(redirect_fh, ovl_redirect_fh_def, bool, 0644);
+MODULE_PARM_DESC(ovl_redirect_fh_def,
+		 "Default to on or off for redirect by file handle");
+
 static void ovl_dentry_release(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
@@ -224,9 +230,11 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	}
 	if (ufs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
-	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
+	if (ufs->config.redirect_dir != ovl_redirect_dir_def ||
+	    ufs->config.redirect_fh != ovl_redirect_fh_def)
 		seq_printf(m, ",redirect_dir=%s",
-			   ufs->config.redirect_dir ? "on" : "off");
+			   !ufs->config.redirect_dir ? "off" :
+			   ufs->config.redirect_fh ? "fh" : "on");
 	return 0;
 }
 
@@ -256,6 +264,7 @@ enum {
 	OPT_DEFAULT_PERMISSIONS,
 	OPT_REDIRECT_DIR_ON,
 	OPT_REDIRECT_DIR_OFF,
+	OPT_REDIRECT_DIR_FH,
 	OPT_ERR,
 };
 
@@ -266,6 +275,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_DEFAULT_PERMISSIONS,	"default_permissions"},
 	{OPT_REDIRECT_DIR_ON,		"redirect_dir=on"},
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
+	{OPT_REDIRECT_DIR_FH,		"redirect_dir=fh"},
 	{OPT_ERR,			NULL}
 };
 
@@ -332,10 +342,17 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 
 		case OPT_REDIRECT_DIR_ON:
 			config->redirect_dir = true;
+			config->redirect_fh = false;
 			break;
 
 		case OPT_REDIRECT_DIR_OFF:
 			config->redirect_dir = false;
+			config->redirect_fh = false;
+			break;
+
+		case OPT_REDIRECT_DIR_FH:
+			config->redirect_dir = true;
+			config->redirect_fh = true;
 			break;
 
 		default:
@@ -732,6 +749,8 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	init_waitqueue_head(&ufs->copyup_wq);
 	ufs->config.redirect_dir = ovl_redirect_dir_def;
+	ufs->config.redirect_fh = ovl_redirect_fh_def;
+	ufs->samefs = true;
 	err = ovl_parse_opt((char *) data, &ufs->config);
 	if (err)
 		goto out_free_config;
@@ -909,6 +928,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	/* If the upper fs is nonexistent, we mark overlayfs r/o too */
 	if (!ufs->upper_mnt)
 		sb->s_flags |= MS_RDONLY;
+
+	/* Redirect by file handle only if all layers on same sb */
+	if (!ufs->samefs)
+		ufs->config.redirect_fh = false;
 
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;

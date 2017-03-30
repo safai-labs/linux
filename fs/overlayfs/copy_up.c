@@ -20,6 +20,7 @@
 #include <linux/namei.h>
 #include <linux/fdtable.h>
 #include <linux/ratelimit.h>
+#include <linux/exportfs.h>
 #include "overlayfs.h"
 #include "ovl_entry.h"
 
@@ -236,6 +237,80 @@ int ovl_set_attr(struct dentry *upperdentry, struct kstat *stat)
 	return err;
 }
 
+static struct ovl_fh *ovl_get_redirect_fh(struct dentry *lower)
+{
+	const struct export_operations *nop = lower->d_sb->s_export_op;
+	struct ovl_fh *fh;
+	int fh_type, fh_len, dwords;
+	void *buf, *ret;
+	int buflen = MAX_HANDLE_SZ;
+
+	/* Do not encode file handle if we cannot decode it later */
+	if (!nop || !nop->fh_to_dentry) {
+		pr_info("overlay: redirect by file handle not supported "
+			"by lower - turning off redirect\n");
+		return ERR_PTR(-EOPNOTSUPP);
+	}
+
+	buf = kmalloc(buflen, GFP_TEMPORARY);
+	if (!buf)
+		return ERR_PTR(-ENOMEM);
+
+	fh = buf;
+	dwords = (buflen - offsetof(struct ovl_fh, fid)) >> 2;
+	fh_type = exportfs_encode_fh(lower,
+				     (struct fid *)fh->fid,
+				     &dwords, 0);
+	fh_len = (dwords << 2) + offsetof(struct ovl_fh, fid);
+
+	ret = ERR_PTR(-EOVERFLOW);
+	if (fh_len > buflen || fh_type <= 0 || fh_type == FILEID_INVALID)
+		goto out;
+
+	fh->version = OVL_FH_VERSION;
+	fh->magic = OVL_FH_MAGIC;
+	fh->type = fh_type;
+	fh->len = fh_len;
+
+	ret = kmalloc(fh_len, GFP_KERNEL);
+	if (!ret) {
+		ret = ERR_PTR(-ENOMEM);
+		goto out;
+	}
+
+	memcpy(ret, buf, fh_len);
+out:
+	kfree(buf);
+	return ret;
+}
+
+static int ovl_set_redirect_fh(struct dentry *dentry, struct dentry *upper)
+{
+	int err;
+	const struct ovl_fh *fh;
+
+	fh = ovl_get_redirect_fh(ovl_dentry_lower(dentry));
+	err = PTR_ERR(fh);
+	if (IS_ERR(fh))
+		goto out_err;
+
+	err = ovl_do_setxattr(upper, OVL_XATTR_FH, fh, fh->len, 0);
+	if (err)
+		goto out_free;
+
+	return 0;
+
+out_free:
+	kfree(fh);
+out_err:
+	if (err == -EOPNOTSUPP) {
+		ovl_clear_redirect_fh(dentry->d_sb);
+		return 0;
+	}
+	pr_warn_ratelimited("overlay: failed to set redirect fh (%i)\n", err);
+	return err;
+}
+
 static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 			      struct dentry *dentry, struct path *lowerpath,
 			      struct kstat *stat, const char *link,
@@ -320,6 +395,18 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	inode_unlock(temp->d_inode);
 	if (err)
 		goto out_cleanup;
+
+	if (S_ISDIR(stat->mode) &&
+	    ovl_redirect_dir(dentry->d_sb) &&
+	    ovl_redirect_fh(dentry->d_sb)) {
+		/*
+		 * Store file handle of lower dir in upper dir xattr to
+		 * create a chain of file handles for merged dir stack
+		 */
+		err = ovl_set_redirect_fh(dentry, temp);
+		if (err)
+			goto out_cleanup;
+	}
 
 	if (tmpfile)
 		err = ovl_do_link(temp, udir, upper, true);

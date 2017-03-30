@@ -224,6 +224,20 @@ void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect)
 	oe->redirect = redirect;
 }
 
+bool ovl_redirect_fh(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	return ofs->config.redirect_fh;
+}
+
+void ovl_clear_redirect_fh(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	ofs->config.redirect_fh = false;
+}
+
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;

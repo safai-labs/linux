@@ -34,6 +34,12 @@ module_param_named(redirect_dir, ovl_redirect_dir_def, bool, 0644);
 MODULE_PARM_DESC(ovl_redirect_dir_def,
 		 "Default to on or off for the redirect_dir feature");
 
+static bool ovl_redirect_fh_def =
+	    IS_ENABLED(CONFIG_OVERLAY_FS_REDIRECT_FH);
+module_param_named(redirect_fh, ovl_redirect_fh_def, bool, 0644);
+MODULE_PARM_DESC(ovl_redirect_fh_def,
+		 "Default to on or off for redirect by file handle");
+
 static bool ovl_consistent_fd_def = IS_ENABLED(CONFIG_OVERLAY_FS_CONSISTENT_FD);
 module_param_named(consistent_fd, ovl_consistent_fd_def, bool, 0644);
 MODULE_PARM_DESC(ovl_consistent_fd_def,
@@ -256,9 +262,11 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	}
 	if (ufs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
-	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
+	if (ufs->config.redirect_dir != ovl_redirect_dir_def ||
+	    ufs->config.redirect_fh != ovl_redirect_fh_def)
 		seq_printf(m, ",redirect_dir=%s",
-			   ufs->config.redirect_dir ? "on" : "off");
+			   !ufs->config.redirect_dir ? "off" :
+			   ufs->config.redirect_fh ? "fh" : "on");
 	if (!ovl_force_readonly(ufs) &&
 	    ufs->config.consistent_fd != ovl_consistent_fd_def)
 		seq_printf(m, ",consistent_fd=%s",
@@ -294,6 +302,7 @@ enum {
 	OPT_DEFAULT_PERMISSIONS,
 	OPT_REDIRECT_DIR_ON,
 	OPT_REDIRECT_DIR_OFF,
+	OPT_REDIRECT_DIR_FH,
 	OPT_CONSISTENT_FD_ON,
 	OPT_CONSISTENT_FD_OFF,
 	OPT_ERR,
@@ -306,6 +315,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_DEFAULT_PERMISSIONS,	"default_permissions"},
 	{OPT_REDIRECT_DIR_ON,		"redirect_dir=on"},
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
+	{OPT_REDIRECT_DIR_FH,		"redirect_dir=fh"},
 	{OPT_CONSISTENT_FD_ON,		"consistent_fd=on"},
 	{OPT_CONSISTENT_FD_OFF,		"consistent_fd=off"},
 	{OPT_ERR,			NULL}
@@ -374,10 +384,17 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 
 		case OPT_REDIRECT_DIR_ON:
 			config->redirect_dir = true;
+			config->redirect_fh = false;
 			break;
 
 		case OPT_REDIRECT_DIR_OFF:
 			config->redirect_dir = false;
+			config->redirect_fh = false;
+			break;
+
+		case OPT_REDIRECT_DIR_FH:
+			config->redirect_dir = true;
+			config->redirect_fh = true;
 			break;
 
 		case OPT_CONSISTENT_FD_ON:
@@ -782,6 +799,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	init_waitqueue_head(&ufs->copyup_wq);
 	ufs->config.redirect_dir = ovl_redirect_dir_def;
+	ufs->config.redirect_fh = ovl_redirect_fh_def;
 	ufs->config.consistent_fd = ovl_consistent_fd_def;
 	err = ovl_parse_opt((char *) data, &ufs->config);
 	if (err)
@@ -969,6 +987,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	 */
 	if (!ufs->cloneup || ovl_force_readonly(ufs))
 		ufs->config.consistent_fd = false;
+
+	/* Redirect by file handle only if all layers on same sb */
+	if (!ufs->samefs)
+		ufs->config.redirect_fh = false;
 
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;

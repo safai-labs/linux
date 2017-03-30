@@ -240,6 +240,34 @@ void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect)
 	oe->redirect = redirect;
 }
 
+bool ovl_redirect_fh(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	return ofs->config.redirect_fh;
+}
+
+void ovl_clear_redirect_fh(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	ofs->config.redirect_fh = false;
+}
+
+bool ovl_redirect_fh_ok(const char *redirect, size_t size)
+{
+	struct ovl_fh *fh = (void *)redirect;
+
+	if (size < sizeof(struct ovl_fh) || size < fh->len)
+		return false;
+
+	if (fh->version > OVL_FH_VERSION ||
+	    fh->magic != OVL_FH_MAGIC)
+		return false;
+
+	return true;
+}
+
 /*
  * May be called up to twice in the lifetime of an overlay dentry -
  * the first time when updating a ro upper dentry with a tempfile (nlink == 0)

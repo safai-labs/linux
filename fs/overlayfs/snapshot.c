@@ -19,13 +19,9 @@ static int ovl_snapshot_dentry_is_valid(struct dentry *snapdentry,
 	if (!snapmnt && !snapdentry)
 		return 0;
 
-	/*
-	 * Could be an uninitialized snapdentry after snapshot take,
-	 * but it can also be that the snapshot dentry is nested inside an
-	 * already whited out directory, so we assume its the former.
-	 */
+	/* an uninitialized snapdentry after snapshot take */
 	if (!snapdentry)
-		return 0;
+		return -ENOENT;
 
 	/*
 	 * snapmnt is NULL and snapdentry is non-NULL
@@ -92,21 +88,21 @@ static int ovl_snapshot_copy_down(struct dentry *dentry)
 	int err;
 
 	err = ovl_snapshot_path(dentry, &snappath);
-	if (!err && !snappath.mnt)
+	if (!err && !snappath.dentry)
 		goto out_path_put;
 
 	if (unlikely(err))
 		goto bug;
 
 	/*
-	 * Snapshot dentry may be positive or negative or NULL.
+	 * Snapshot dentry may be positive or negative or point at root.
 	 * If positive, it may need to be copied down.
 	 * If negative, it may need to be explicitly whited out.
-	 * If NULL, it may be an uninitialized snapdentry after snapshot take,
-	 * but it can also be that the snapshot dentry is nested inside an
-	 * already whited out directory, so we do nothing about it.
+	 * If snapentry is root, but dentry is not, that indicates that
+	 * snapentry is nested inside an already whited out directory,
+	 * so need to do nothing about it.
 	 */
-	if (!snappath.dentry)
+	if (IS_ROOT(snappath.dentry) && !IS_ROOT(dentry))
 		goto out_path_put;
 
 	/* Trigger 'copy down' to snapshot */
@@ -188,7 +184,8 @@ void ovl_snapshot_drop_write(struct dentry *dentry)
 	 * overlayfs dentry, so if we hold a reference to an unhashed dentry,
 	 * drop our dentry.
 	 */
-	if (snap && (d_unhashed(dentry) || d_unhashed(snap))) {
+	if (snap && !IS_ROOT(snap) &&
+	    (d_unhashed(dentry) || d_unhashed(snap))) {
 		pr_debug("ovl_snapshot_d_drop(%pd4, %lu): is_dir=%d, negative=%d, unhashed=%d, snap unhashed=%d\n",
 			dentry, inode ? inode->i_ino : 0,
 			d_is_dir(snap), d_is_negative(dentry),

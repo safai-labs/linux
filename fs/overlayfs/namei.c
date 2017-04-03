@@ -432,13 +432,23 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 
 	if (is_snapshot_fs) {
 		struct path snappath = { };
+		struct ovl_entry *roe = root->d_fsdata;
 
 		err = ovl_snapshot_path(parent, &snappath);
 		if (err)
 			goto out_put_upper;
-
-		if (!snappath.dentry || !d_can_lookup(snappath.dentry)) {
+		/*
+		 * !snappath.dentry means no active snapshot overlay.
+		 * When snapparent is negative or non-dir or when snapparent
+		 * is nested under a negative or non-dir snapdentry, point the
+		 * snapdentry to the snapshot overlay root. This is needed to
+		 * indicate this special case and to access snapshot overlay sb.
+		 */
+		if (!snappath.dentry) {
 			this = NULL;
+		} else if (!d_can_lookup(snappath.dentry) ||
+			   (IS_ROOT(snappath.dentry) && !IS_ROOT(parent))) {
+			this = dget(roe->__snapdentry);
 		} else {
 			/*
 			 * even if upper is a dir, snapshot lookup may return

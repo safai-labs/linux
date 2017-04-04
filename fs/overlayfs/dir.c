@@ -583,7 +583,8 @@ static int ovl_mknod(struct inode *dir, struct dentry *dentry, umode_t mode,
 		     dev_t rdev)
 {
 	/* Don't allow creation of "whiteout" on overlay */
-	if (S_ISCHR(mode) && rdev == WHITEOUT_DEV)
+	if (S_ISCHR(mode) && rdev == WHITEOUT_DEV &&
+	    !ovl_is_snapshot_fs_type(dentry->d_sb))
 		return -EPERM;
 
 	return ovl_create_object(dentry, mode, rdev, NULL);

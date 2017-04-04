@@ -231,3 +231,38 @@ int ovl_snapshot_revalidate(struct dentry *dentry, unsigned int flags)
 
 	return err;
 }
+
+void ovl_snapshot_barrier(struct super_block *sb)
+{
+	struct ovl_fs *ufs = sb->s_fs_info;
+	struct ovl_entry *roe = sb->s_root->d_fsdata;
+	struct path oldsnappath;
+
+	if (ufs->__snapmnt == ufs->snap_mnt)
+		return;
+
+	/*
+	 * Make the new snapshot requested in remount effective.
+	 * We only update __snapdentry for the snapshot mount root dentry.
+	 * All other dentries may still reference the old snapshot overlay.
+	 * Those will be invalidated either by shrink_dcache_parent() below
+	 * or during RCU lookup by ovl_snapshot_revalidate().
+	 * TODO: handle stale dentries of open files.
+	 */
+	pr_debug("%s: old snap_sid='%s'\n", __func__,
+		 ufs->__snapmnt ? ufs->__snapmnt->mnt_sb->s_id : "");
+	oldsnappath.mnt = ufs->__snapmnt;
+	oldsnappath.dentry = roe->__snapdentry;
+	rcu_assign_pointer(ufs->__snapmnt, mntget(ufs->snap_mnt));
+	rcu_assign_pointer(roe->__snapdentry, ufs->snap_mnt ?
+			   dget(ufs->snap_mnt->mnt_root) : NULL);
+	pr_debug("%s: new snap_sid='%s'\n", __func__,
+		 ufs->__snapmnt ? ufs->__snapmnt->mnt_sb->s_id : "");
+
+	/* wait grace period before dropping old snapshot overlay */
+	synchronize_rcu();
+	/* prune invalid dcache entries - this doesn't deal with open files */
+	shrink_dcache_parent(sb->s_root);
+	/* drop old snapmnt - this may warn about dentries still in use */
+	path_put(&oldsnappath);
+}

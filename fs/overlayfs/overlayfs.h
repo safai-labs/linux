@@ -277,9 +277,11 @@ struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
 				   const struct inode *inode,
 				   unsigned int open_flags);
 int ovl_snapshot_revalidate(struct dentry *dentry, unsigned int flags);
+void ovl_snapshot_barrier(struct super_block *sb);
 #else
 static inline int ovl_snapshot_want_write(struct dentry *dentry) { return 0; }
 static inline void ovl_snapshot_drop_write(struct dentry *dentry) { }
+static inline void ovl_snapshot_barrier(struct super_block *sb) { }
 static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 {
 	return false;

@@ -409,6 +409,37 @@ fail:
 }
 
 /*
+ * Lookup the overlay snapshot dentry in the same path as the looked up
+ * snapshot mount dentry. We need to hold a reference to a negative snapshot
+ * dentry for explicit whiteout before create in snapshot mount and we need
+ * to hold a reference to positive non-dir snapshot dentry even if snapshot
+ * mount dentry is a directory, so we know that we don't need to copy up the
+ * snapshot mount directory children.
+ */
+static int ovl_snapshot_lookup(struct dentry *parent, struct ovl_lookup_data *d,
+			       struct dentry **ret)
+{
+	struct path snappath;
+	struct dentry *snapdentry = NULL;
+	int err;
+
+	err = ovl_snapshot_path(parent, &snappath);
+	if (err)
+		return err;
+
+	if (!snappath.dentry || !d_can_lookup(snappath.dentry))
+		goto out;
+
+	d->is_snapshot = true;
+	err = ovl_lookup_layer(snappath.dentry, d, &snapdentry);
+
+out:
+	path_put(&snappath);
+	*ret = snapdentry;
+	return err;
+}
+
+/*
  * Returns next layer in stack starting from top.
  * Returns -1 if this is the last layer.
  */
@@ -438,11 +469,12 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct ovl_entry *oe;
 	const struct cred *old_cred;
 	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
-	struct ovl_entry *poe = dentry->d_parent->d_fsdata;
+	struct dentry *parent = dentry->d_parent;
+	struct ovl_entry *poe = parent->d_fsdata;
 	struct ovl_entry *roe = dentry->d_sb->s_root->d_fsdata;
 	struct path *stack = NULL;
 	struct dentry *upperdir, *upperdentry = NULL;
-	struct dentry *snapdir, *snapdentry = NULL;
+	struct dentry *snapdentry = NULL;
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
 	bool upperopaque = false;
@@ -499,27 +531,21 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			upperredirect = kstrdup(d.redirect, GFP_KERNEL);
 			if (!upperredirect)
 				goto out_put_upper;
-			if (d.redirect[0] == '/')
+			if (d.redirect[0] == '/') {
+				parent = dentry->d_sb->s_root;
 				poe = roe;
+			}
 		}
 		upperopaque = d.opaque;
 		if (upperdentry && d.is_dir)
 			upperimpure = ovl_is_impuredir(upperdentry);
 	}
 
-	snapdir = poe->__snapdentry;
-	if (is_snapshot_fs && snapdir && d_can_lookup(snapdir)) {
-		/*
-		 * Snapshot lookup may return negative for explicit
-		 * whiteout and positive non-dir even if upper was dir,
-		 * so we know we don't need to CoW.
-		 */
-		d.is_snapshot = true;
-		err = ovl_lookup_layer(snapdir, &d, &this);
+	if (is_snapshot_fs) {
+		err = ovl_snapshot_lookup(parent, &d, &snapdentry);
 		if (err)
 			goto out_put_upper;
 
-		snapdentry = this;
 		d.stop = true;
 	}
 

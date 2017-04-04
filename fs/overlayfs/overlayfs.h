@@ -221,7 +221,6 @@ void ovl_path_lower(struct dentry *dentry, struct path *path);
 enum ovl_path_type ovl_path_real(struct dentry *dentry, struct path *path);
 struct dentry *ovl_dentry_upper(struct dentry *dentry);
 struct dentry *ovl_dentry_ro_upper(struct dentry *dentry);
-struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
 struct dentry *ovl_dentry_lower(struct dentry *dentry);
 struct dentry *ovl_dentry_real(struct dentry *dentry);
 struct ovl_dir_cache *ovl_dir_cache(struct dentry *dentry);
@@ -326,9 +325,19 @@ struct ovl_fh *ovl_encode_fh(struct dentry *lower);
 #ifdef CONFIG_OVERLAY_FS_SNAPSHOT
 /* super.c */
 bool ovl_is_snapshot_fs_type(struct super_block *sb);
+
+/* snapshot.c */
+struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
+struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
+				   const struct inode *inode,
+				   unsigned int open_flags);
 #else
 static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 {
 	return false;
+}
+static inline struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
+{
+	return NULL;
 }
 #endif

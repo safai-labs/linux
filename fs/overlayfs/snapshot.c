@@ -88,3 +88,17 @@ bug:
 	     inode ? inode->i_ino : 0);
 	return dentry;
 }
+
+int ovl_snapshot_want_write(struct dentry *dentry)
+{
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
+
+	if (!ofs->snapshot_mnt)
+		return 0;
+
+	return ovl_snapshot_copy_down(dentry);
+}
+
+void ovl_snapshot_drop_write(struct dentry *dentry)
+{
+}

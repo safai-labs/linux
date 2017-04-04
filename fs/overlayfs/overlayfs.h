@@ -269,11 +269,15 @@ int ovl_set_attr(struct dentry *upper, struct kstat *stat);
 bool ovl_is_snapshot_fs_type(struct super_block *sb);
 
 /* snapshot.c */
+int ovl_snapshot_want_write(struct dentry *dentry);
+void ovl_snapshot_drop_write(struct dentry *dentry);
 struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
 struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
 				   const struct inode *inode,
 				   unsigned int open_flags);
 #else
+static inline int ovl_snapshot_want_write(struct dentry *dentry) { return 0; }
+static inline void ovl_snapshot_drop_write(struct dentry *dentry) { }
 static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 {
 	return false;

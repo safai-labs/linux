@@ -371,7 +371,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct ovl_entry *poe = parent->d_fsdata;
 	struct path *stack = NULL;
 	struct dentry *upperdir, *upperdentry = NULL;
-	struct dentry *snapdir, *snapdentry = NULL;
+	struct dentry *snapdentry = NULL;
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
 	enum ovl_path_type type = 0;
@@ -430,21 +430,29 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			type |= __OVL_PATH_OPAQUE;
 	}
 
-	snapdir = poe->__snapdentry;
-	if (is_snapshot_fs && snapdir && !d_is_negative(snapdir)) {
-		struct path snappath = {
-			.dentry = snapdir,
-			.mnt = ofs->snapshot_mnt,
-		};
+	if (is_snapshot_fs) {
+		struct path snappath = { };
 
-		/*
-		 * Snapshot lookup may return negative for explicit
-		 * whiteout and non-dir if old non-dir was Cowed
-		 */
-		d.is_dir = false;
-		d.last = true;
-		d.want_negative = true;
-		err = ovl_lookup_layer(&snappath, &d, &this);
+		err = ovl_snapshot_path(parent, &snappath);
+		if (err)
+			goto out_put_upper;
+
+		if (!snappath.dentry || !d_can_lookup(snappath.dentry)) {
+			this = NULL;
+		} else {
+			/*
+			 * even if upper is a dir, snapshot lookup may return
+			 * non-dir if an old non-dir was copied to snapshot.
+			 */
+			d.is_dir = false;
+			d.last = true;
+			/* lookup may return negative for explicit whiteout */
+			d.want_negative = true;
+			err = ovl_lookup_layer(&snappath, &d, &this);
+		}
+
+		path_put(&snappath);
+
 		if (err)
 			goto out_put_upper;
 

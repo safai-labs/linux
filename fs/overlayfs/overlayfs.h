@@ -272,6 +272,7 @@ bool ovl_is_snapshot_fs_type(struct super_block *sb);
 int ovl_snapshot_want_write(struct dentry *dentry);
 void ovl_snapshot_drop_write(struct dentry *dentry);
 struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
+int ovl_snapshot_path(struct dentry *dentry, struct path *path);
 struct dentry *ovl_snapshot_d_real(struct dentry *dentry,
 				   const struct inode *inode,
 				   unsigned int open_flags);
@@ -285,5 +286,9 @@ static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 static inline struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
 {
 	return NULL;
+}
+static inline int ovl_snapshot_path(struct dentry *dentry, struct path *path)
+{
+	return 0;
 }
 #endif

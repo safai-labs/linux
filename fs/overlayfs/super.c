@@ -221,6 +221,7 @@ static void ovl_put_super(struct super_block *sb)
 	if (ufs->upper_mnt)
 		ovl_inuse_unlock(ufs->upper_mnt->mnt_root);
 	mntput(ufs->upper_mnt);
+	mntput(ufs->snap_mnt);
 	mntput(ufs->__snapmnt);
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
@@ -255,6 +256,8 @@ static int ovl_sync_fs(struct super_block *sb, int wait)
 
 static int ovl_freeze(struct super_block *sb)
 {
+	/* Make requested snapshot effective after fs is frozen */
+	ovl_snapshot_barrier(sb);
 	return 0;
 }
 
@@ -1103,7 +1106,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		if (IS_ERR(snapmnt))
 			goto out_put_upper_mnt;
 
-		ufs->__snapmnt = snapmnt;
+		/* Set both requested and effective snapshot overlay */
+		ufs->snap_mnt = snapmnt;
+		ufs->__snapmnt = mntget(snapmnt);
 	}
 
 	if (ufs->config.workdir) {
@@ -1337,6 +1342,7 @@ out_put_workdir:
 	dput(ufs->workdir);
 out_put_upper_mnt:
 	mntput(ufs->upper_mnt);
+	mntput(ufs->snap_mnt);
 	mntput(ufs->__snapmnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)

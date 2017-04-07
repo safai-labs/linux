@@ -14,6 +14,7 @@ struct ovl_config {
 	char *workdir;
 	bool default_permissions;
 	bool redirect_dir;
+	bool consistent_fd;
 };
 
 /* private information held for overlayfs's superblock */
@@ -29,6 +30,7 @@ struct ovl_fs {
 	const struct cred *creator_cred;
 	bool tmpfile;	/* upper supports O_TMPFILE */
 	bool cloneup;	/* can clone from lower to upper */
+	bool rocopyup;	/* copy up on open for read */
 	wait_queue_head_t copyup_wq;
 	/* sb common to all (or all lower) layers */
 	struct super_block *same_lower_sb;

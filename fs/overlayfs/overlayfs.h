@@ -209,6 +209,7 @@ bool ovl_dentry_is_whiteout(struct dentry *dentry);
 void ovl_dentry_set_opaque(struct dentry *dentry);
 void ovl_dentry_set_indexed(struct dentry *dentry);
 bool ovl_redirect_dir(struct super_block *sb);
+bool ovl_consistent_fd(struct super_block *sb);
 const char *ovl_dentry_get_redirect(struct dentry *dentry);
 void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect);
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry);
@@ -267,7 +268,8 @@ int ovl_xattr_get(struct dentry *dentry, const char *name,
 		  void *value, size_t size);
 ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size);
 struct posix_acl *ovl_get_acl(struct inode *inode, int type);
-int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags);
+int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags,
+			   bool rocopyup);
 int ovl_update_time(struct inode *inode, struct timespec *ts, int flags);
 bool ovl_is_private_xattr(const char *name);
 

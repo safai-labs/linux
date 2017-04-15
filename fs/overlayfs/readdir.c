@@ -15,15 +15,18 @@
 #include <linux/rbtree.h>
 #include <linux/security.h>
 #include <linux/cred.h>
+#include <linux/ratelimit.h>
 #include "overlayfs.h"
 
 struct ovl_cache_entry {
 	unsigned int len;
 	unsigned int type;
+	u64 real_ino;
 	u64 ino;
 	struct list_head l_node;
 	struct rb_node node;
 	struct ovl_cache_entry *next_maybe_whiteout;
+	int idx;
 	bool is_whiteout;
 	char name[];
 };
@@ -43,6 +46,7 @@ struct ovl_readdir_data {
 	struct list_head middle;
 	struct ovl_cache_entry *first_maybe_whiteout;
 	int count;
+	int idx;
 	int err;
 	bool d_type_supported;
 };
@@ -97,8 +101,20 @@ static struct ovl_cache_entry *ovl_cache_entry_new(struct ovl_readdir_data *rdd,
 	p->name[len] = '\0';
 	p->len = len;
 	p->type = d_type;
-	p->ino = ino;
+	p->ino = p->real_ino = ino;
+	/*
+	 * For upper dir entries and for upper non-dir entries of impure dir,
+	 * d_ino will be updated during ovl_iterate() to the copy up origin ino.
+	 * A non-impure upper dir cannot have non-dir entries with origin xattr,
+	 * but it can have legacy merge dir entries without origin xattr.
+	 * stat will show the lower ino for those legacy merge dir entries, so
+	 * readdir should show it as well.
+	 */
+	if (rdd->idx == 0 && rdd->dentry &&
+	    (d_type == DT_DIR || ovl_dentry_is_impure(rdd->dentry)))
+		p->ino = 0;
 	p->is_whiteout = false;
+	p->idx = rdd->idx;
 
 	if (d_type == DT_CHR) {
 		p->next_maybe_whiteout = rdd->first_maybe_whiteout;
@@ -225,6 +241,7 @@ static int ovl_check_whiteouts(struct dentry *dir, struct ovl_readdir_data *rdd)
 	}
 	revert_creds(old_cred);
 
+
 	return err;
 }
 
@@ -256,21 +273,41 @@ static inline int ovl_dir_read(struct path *realpath,
 	return err;
 }
 
+/* Can we iterate real dir directly? */
+static bool ovl_dir_is_real(struct dentry *dir)
+{
+	enum ovl_path_type type = ovl_path_type(dir);
+
+	if (OVL_TYPE_MERGE(type))
+		return false;
+
+	/* Upper dir may contain copied up entries that were moved into it */
+	return !OVL_TYPE_UPPER(type) || !ovl_dentry_is_impure(dir);
+}
+
 static void ovl_dir_reset(struct file *file)
 {
 	struct ovl_dir_file *od = file->private_data;
 	struct ovl_dir_cache *cache = od->cache;
 	struct dentry *dentry = file->f_path.dentry;
-	enum ovl_path_type type = ovl_path_type(dentry);
+	bool is_real;
 
 	if (cache && ovl_dentry_version_get(dentry) != cache->version) {
 		ovl_cache_put(od, dentry);
 		od->cache = NULL;
 		od->cursor = NULL;
 	}
-	WARN_ON(!od->is_real && !OVL_TYPE_MERGE(type));
-	if (od->is_real && OVL_TYPE_MERGE(type))
+	is_real = ovl_dir_is_real(dentry);
+	if (od->is_real != is_real) {
+		/*
+		 * is_real can only become false. This can happen after dir
+		 * itself is copied up or after child is moved into pure upper
+		 * dir and makes the dir impure.
+		 */
+		if (WARN_ON(is_real))
+			return;
 		od->is_real = false;
+	}
 }
 
 static int ovl_dir_read_merged(struct dentry *dentry, struct list_head *list)
@@ -287,7 +324,7 @@ static int ovl_dir_read_merged(struct dentry *dentry, struct list_head *list)
 	int idx, next;
 
 	for (idx = 0; idx != -1; idx = next) {
-		next = ovl_path_next(idx, dentry, &realpath);
+		next = ovl_path_next(idx, dentry, &realpath, &rdd.idx);
 
 		if (next != -1) {
 			err = ovl_dir_read(&realpath, &rdd);
@@ -353,11 +390,87 @@ static struct ovl_dir_cache *ovl_cache_get(struct dentry *dentry)
 	return cache;
 }
 
+/*
+ * Set d_ino for upper entries with known copy up origin.
+ *
+ * Non-upper entries should always report the uppermost real inode ino and
+ * this function should never be called for them.
+ *
+ * Upper entries should report the ino of their copy up origin if it is known.
+ * Call vfs_getattr() on the overlay entries to make sure that d_ino will be
+ * consistent with st_ino from stat(2).
+ */
+static int ovl_cache_update_ino(struct path *path, struct ovl_cache_entry *p)
+
+{
+	struct dentry *dir = path->dentry;
+	struct dentry *this = NULL;
+	enum ovl_path_type type;
+	u64 ino = p->real_ino;
+	int err = 0;
+
+	if (WARN_ON(p->idx))
+		goto out;
+
+	if (p->name[0] == '.') {
+		if (p->len == 1) {
+			this = dget(dir);
+			goto get;
+		}
+		if (p->len == 2 && p->name[1] == '.') {
+			/* we shall not be moved */
+			this = dget(dir->d_parent);
+			goto get;
+		}
+	}
+
+	/* Task doing readdir may not have exec permissions on dir */
+	this = lookup_one_len_noperm(p->name, dir, p->len);
+	if (IS_ERR_OR_NULL(this) || !this->d_inode) {
+		if (IS_ERR(this)) {
+			err = PTR_ERR(this);
+			this = NULL;
+			goto fail;
+		}
+		goto out;
+	}
+
+get:
+	type = ovl_path_type(this);
+	if (OVL_TYPE_ORIGIN(type)) {
+		struct kstat stat;
+		struct path statpath = *path;
+		bool samefs = ovl_same_sb(dir->d_sb);
+		bool is_dir = S_ISDIR(this->d_inode->i_mode);
+
+		statpath.dentry = this;
+		err = vfs_getattr(&statpath, &stat, STATX_INO, 0);
+		if (err)
+			goto fail;
+
+		if (samefs || is_dir)
+			WARN_ON_ONCE(dir->d_sb->s_dev != stat.dev);
+
+		ino = stat.ino;
+	}
+
+out:
+	p->ino = ino;
+	dput(this);
+	return err;
+
+fail:
+	pr_warn_ratelimited("overlay: failed to look up (%s) for ino (%i)\n",
+			    p->name, err);
+	goto out;
+}
+
 static int ovl_iterate(struct file *file, struct dir_context *ctx)
 {
 	struct ovl_dir_file *od = file->private_data;
 	struct dentry *dentry = file->f_path.dentry;
 	struct ovl_cache_entry *p;
+	int err;
 
 	if (!ctx->pos)
 		ovl_dir_reset(file);
@@ -378,9 +491,15 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 
 	while (od->cursor != &od->cache->entries) {
 		p = list_entry(od->cursor, struct ovl_cache_entry, l_node);
-		if (!p->is_whiteout)
+		if (!p->is_whiteout) {
+			if (!p->ino) {
+				err = ovl_cache_update_ino(&file->f_path, p);
+				if (err)
+					return err;
+			}
 			if (!dir_emit(ctx, p->name, p->len, p->ino, p->type))
 				break;
+		}
 		od->cursor = p->l_node.next;
 		ctx->pos++;
 	}
@@ -502,7 +621,7 @@ static int ovl_dir_open(struct inode *inode, struct file *file)
 		return PTR_ERR(realfile);
 	}
 	od->realfile = realfile;
-	od->is_real = !OVL_TYPE_MERGE(type);
+	od->is_real = ovl_dir_is_real(file->f_path.dentry);
 	od->is_upper = OVL_TYPE_UPPER(type);
 	file->private_data = od;
 

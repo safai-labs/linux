@@ -263,7 +263,11 @@ bool ovl_is_whiteout(struct dentry *dentry)
 
 struct file *ovl_path_open(struct path *path, int flags)
 {
-	return dentry_open(path, flags | O_NOATIME, current_cred());
+	struct file *f = dentry_open(path, flags | O_NOATIME, current_cred());
+
+	if (unlikely(IS_ERR(f) && PTR_ERR(f) == -EOPENSTALE))
+		return ERR_PTR(-ESTALE);
+	return f;
 }
 
 int ovl_copy_up_start(struct dentry *dentry)

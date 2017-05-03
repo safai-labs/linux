@@ -242,7 +242,7 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 			      struct kstat *pstat, bool tmpfile)
 {
 	struct inode *wdir = workdir->d_inode;
-	struct inode *udir = upperdir->d_inode;
+	struct inode *udir = NULL;
 	struct dentry *newdentry = NULL;
 	struct dentry *upper = NULL;
 	struct dentry *temp = NULL;
@@ -257,11 +257,17 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	};
 	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
 
-	upper = lookup_one_len(dentry->d_name.name, upperdir,
-			       dentry->d_name.len);
-	err = PTR_ERR(upper);
-	if (IS_ERR(upper))
-		goto out;
+	if (WARN_ON((!tmpfile || stat->nlink) && !upperdir))
+		return -EROFS;
+
+	if (upperdir) {
+		udir = upperdir->d_inode;
+		upper = lookup_one_len(dentry->d_name.name, upperdir,
+				       dentry->d_name.len);
+		err = PTR_ERR(upper);
+		if (IS_ERR(upper))
+			goto out;
+	}
 
 	err = security_inode_copy_up(dentry, &new_creds);
 	if (err < 0)
@@ -271,7 +277,7 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		old_creds = override_creds(new_creds);
 
 	if (tmpfile)
-		temp = ovl_do_tmpfile(upperdir, stat->mode);
+		temp = ovl_do_tmpfile(workdir, stat->mode);
 	else
 		temp = ovl_lookup_temp(workdir, dentry);
 	err = PTR_ERR(temp);
@@ -297,7 +303,7 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		BUG_ON(upperpath.dentry != NULL);
 		upperpath.dentry = temp;
 
-		if (tmpfile) {
+		if (tmpfile && udir) {
 			inode_unlock(udir);
 			err = ovl_copy_up_data(lowerpath, &upperpath,
 					       stat->size, ofs->cloneup);
@@ -321,19 +327,20 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	if (err)
 		goto out_cleanup;
 
-	if (tmpfile)
-		err = ovl_do_link(temp, udir, upper, true);
-	else
+	if (!tmpfile)
 		err = ovl_do_rename(wdir, temp, udir, upper, 0);
+	else if (stat->nlink)
+		err = ovl_do_link(temp, udir, upper, true);
 	if (err)
 		goto out_cleanup;
 
-	newdentry = dget(tmpfile ? upper : temp);
+	newdentry = dget((tmpfile && stat->nlink) ? upper : temp);
 	ovl_dentry_update(dentry, newdentry);
 	ovl_inode_update(d_inode(dentry), d_inode(newdentry));
 
 	/* Restore timestamps on parent (best effort) */
-	ovl_set_timestamps(upperdir, pstat);
+	if (pstat && upperdir)
+		ovl_set_timestamps(upperdir, pstat);
 out2:
 	dput(temp);
 out1:
@@ -345,6 +352,75 @@ out_cleanup:
 	if (!tmpfile)
 		ovl_cleanup(wdir, temp);
 	goto out2;
+}
+
+/*
+ * Link a temp upperdentry to upper dir
+ *
+ * After copy up on open for read, upperdentry remains unlinked.
+ * On first copy up on open for write upperdentry should be linked.
+ */
+static int ovl_link_ro_upper(struct dentry *upperdir, struct dentry *dentry,
+			     struct kstat *stat, struct kstat *pstat)
+{
+	struct dentry *temp = ovl_dentry_ro_upper(dentry);
+	struct dentry *upper = NULL;
+	int err;
+
+	if (WARN_ON(!temp))
+		return -EROFS;
+
+	upper = lookup_one_len(dentry->d_name.name, upperdir,
+			       dentry->d_name.len);
+	err = PTR_ERR(upper);
+	if (IS_ERR(upper))
+		goto out;
+
+	err = ovl_do_link(temp, upperdir->d_inode, upper, true);
+	if (err)
+		goto out_dput;
+
+	/* inode is already hashed. only need to update upperdentry */
+	ovl_dentry_update(dentry, upper);
+
+	/* Restore timestamps on parent (best effort) */
+	ovl_set_timestamps(upperdir, pstat);
+
+	return err;
+
+out_dput:
+	dput(upper);
+out:
+	return err;
+}
+
+/*
+ * Copy up to an unlinked O_TMPFILE
+ *
+ * Called on open for read when consistent_fd feature is enabled.
+ */
+static int ovl_ro_copy_up(struct dentry *dentry, struct path *lowerpath,
+		          struct kstat *stat)
+{
+	struct dentry *workdir = ovl_workdir(dentry);
+	int err;
+
+	if (WARN_ON(!workdir))
+		return -EROFS;
+
+	err = ovl_copy_up_start(dentry);
+	/* err < 0: interrupted, err > 0: raced with another ro/rw copy-up */
+	if (unlikely(err)) {
+		pr_debug("ovl_copy_up_start(%pd2) = %i\n", dentry, err);
+		if (err > 0)
+			return 0;
+	}
+
+	err = ovl_copy_up_locked(workdir, NULL, dentry, lowerpath,
+			stat, NULL, NULL, true);
+	ovl_copy_up_end(dentry);
+
+	return err;
 }
 
 /*
@@ -361,7 +437,7 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 {
 	DEFINE_DELAYED_CALL(done);
 	struct dentry *workdir = ovl_workdir(dentry);
-	int err;
+	int err = 0;
 	struct kstat pstat;
 	struct path parentpath;
 	struct dentry *lowerdentry = lowerpath->dentry;
@@ -391,6 +467,14 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	/* Should we copyup with O_TMPFILE or with workdir? */
 	if (S_ISREG(stat->mode) && ofs->tmpfile) {
 		err = ovl_copy_up_start(dentry);
+		/* Maybe link a ro temp upper dentry on open for write? */
+		if (err == __OVL_PATH_RO_UPPER) {
+			inode_lock_nested(upperdir->d_inode, I_MUTEX_PARENT);
+			err = ovl_link_ro_upper(upperdir, dentry, stat, &pstat);
+			inode_unlock(upperdir->d_inode);
+			goto out_done;
+		}
+
 		/* err < 0: interrupted, err > 0: raced with another copy-up */
 		if (unlikely(err)) {
 			pr_debug("ovl_copy_up_start(%pd2) = %i\n", dentry, err);
@@ -428,24 +512,25 @@ out_done:
 	return err;
 }
 
-int ovl_copy_up_flags(struct dentry *dentry, int flags)
+int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup)
 {
 	int err = 0;
 	const struct cred *old_cred = ovl_override_creds(dentry->d_sb);
 
 	while (!err) {
 		struct dentry *next;
-		struct dentry *parent;
+		struct dentry *parent = NULL;
 		struct path lowerpath;
 		struct kstat stat;
 		enum ovl_path_type type = ovl_path_type(dentry);
 
-		if (OVL_TYPE_UPPER(type))
+		if (OVL_TYPE_UPPER(type) ||
+		    (rocopyup && OVL_TYPE_RO_UPPER(type)))
 			break;
 
 		next = dget(dentry);
 		/* find the topmost dentry not yet copied up */
-		for (;;) {
+		for (; !rocopyup;) {
 			parent = dget_parent(next);
 
 			type = ovl_path_type(parent);
@@ -459,10 +544,18 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags)
 		ovl_path_lower(next, &lowerpath);
 		err = vfs_getattr(&lowerpath, &stat,
 				  STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
-		/* maybe truncate regular file. this has no effect on dirs */
+		/*
+		 * maybe truncate regular file and maybe copy up as unlinked
+		 * tempfile for readonly open. this has no effect on dirs.
+		 */
+		WARN_ON(stat.nlink == 0);
 		if (flags & O_TRUNC)
 			stat.size = 0;
-		if (!err)
+		else if (rocopyup)
+			stat.nlink = 0;
+		if (!err && rocopyup)
+			err = ovl_ro_copy_up(next, &lowerpath, &stat);
+		else if (!err)
 			err = ovl_copy_up_one(parent, next, &lowerpath, &stat);
 
 		dput(parent);
@@ -475,5 +568,5 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags)
 
 int ovl_copy_up(struct dentry *dentry)
 {
-	return ovl_copy_up_flags(dentry, 0);
+	return ovl_copy_up_flags(dentry, 0, false);
 }

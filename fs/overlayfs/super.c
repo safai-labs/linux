@@ -887,10 +887,15 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			/* Check if upper/work fs supports O_TMPFILE */
 			temp = ovl_do_tmpfile(ufs->workdir, S_IFREG | 0);
 			ufs->tmpfile = !IS_ERR(temp);
-			if (ufs->tmpfile)
+			if (ufs->tmpfile) {
+				/* Check if upper/work supports clone */
+				if (temp->d_inode && temp->d_inode->i_fop &&
+				    temp->d_inode->i_fop->clone_file_range)
+					ufs->cloneup = true;
 				dput(temp);
-			else
+			} else {
 				pr_warn("overlayfs: upper fs does not support tmpfile.\n");
+			}
 		}
 	}
 
@@ -928,6 +933,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_flags |= MS_RDONLY;
 	else if (ufs->upper_mnt->mnt_sb == ufs->same_lower_sb)
 		ufs->same_sb = ufs->same_lower_sb;
+
+	if (!ufs->same_sb)
+		ufs->cloneup = false;
 
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;

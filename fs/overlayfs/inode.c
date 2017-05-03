@@ -315,8 +315,15 @@ struct posix_acl *ovl_get_acl(struct inode *inode, int type)
 	return acl;
 }
 
+/*
+ * Depending on open flags and overlay dentry type, determines if file needs
+ * to be copied up on open.  If *rocopyup is true, then file needs to be
+ * copied up to unlinked tmpfiles on open for read.  If this file has already
+ * been copied up to unlinked tmpfile or if this is an open for write, then
+ * *rocopyup will be set to false.
+ */
 static bool ovl_open_need_copy_up(int flags, enum ovl_path_type type,
-				  struct dentry *realdentry, bool rocopyup)
+				  struct dentry *realdentry, bool *rocopyup)
 {
 	if (OVL_TYPE_UPPER(type))
 		return false;
@@ -324,13 +331,16 @@ static bool ovl_open_need_copy_up(int flags, enum ovl_path_type type,
 	if (special_file(realdentry->d_inode->i_mode))
 		return false;
 
-	/* Copy up on open for read for consistent fd */
-	if (rocopyup)
-		return true;
+	/* Need copy up to unlinked tmpfile on open for read? */
+	if (!S_ISREG(realdentry->d_inode->i_mode) ||
+	    OVL_TYPE_RO_UPPER(type))
+		*rocopyup = false;
 
 	if (!(OPEN_FMODE(flags) & FMODE_WRITE) && !(flags & O_TRUNC))
-		return false;
+		return *rocopyup;
 
+	/* Open for write - need properly linked copy up */
+	*rocopyup = false;
 	return true;
 }
 
@@ -342,12 +352,13 @@ int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags,
 	enum ovl_path_type type;
 
 	type = ovl_path_real(dentry, &realpath);
-	if (!ovl_open_need_copy_up(file_flags, type, realpath.dentry, rocopyup))
+	if (!ovl_open_need_copy_up(file_flags, type, realpath.dentry,
+				   &rocopyup))
 		return 0;
 
 	err = ovl_want_write(dentry);
 	if (!err) {
-		err = ovl_copy_up_flags(dentry, file_flags);
+		err = ovl_copy_up_flags(dentry, file_flags, rocopyup);
 		ovl_drop_write(dentry);
 	}
 
@@ -525,7 +536,9 @@ unsigned int ovl_get_nlink(struct ovl_inode_info *info, struct dentry *index,
 		return real_nlink;
 
 	res = vfs_getxattr(index, OVL_XATTR_NLINK, &onlink, sizeof(onlink));
-	if (res < sizeof(onlink))
+	if (res == -ENODATA)
+		return real_nlink;
+	else if (res != sizeof(onlink))
 		goto fail;
 
 	if (onlink.flags & OVL_NLINK_ADD_UPPER) {

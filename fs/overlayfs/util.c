@@ -111,13 +111,15 @@ void ovl_update_type(struct dentry *dentry, bool is_dir)
 			if (is_dir)
 				type |= __OVL_PATH_MERGE;
 		}
+	} else if (!is_dir && oe->__roupperdentry) {
+		type |= __OVL_PATH_RO_UPPER;
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
 	}
 
 	/*
-	 * The UPPER/MERGE/ORIGIN flags can never be cleared during the
+	 * The [RO]UPPER/MERGE/ORIGIN flags can never be cleared during the
 	 * lifetime of a dentry, so don't bother masking them out first.
 	 */
 	oe->__type |= type;
@@ -157,6 +159,16 @@ struct dentry *ovl_dentry_upper(struct dentry *dentry)
 	struct ovl_entry *oe = dentry->d_fsdata;
 
 	return ovl_upperdentry_dereference(oe);
+}
+
+struct dentry *ovl_dentry_ro_upper(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	if (d_is_dir(dentry))
+		return NULL;
+
+	return ovl_roupperdentry_dereference(oe);
 }
 
 static struct dentry *__ovl_dentry_lower(struct ovl_entry *oe)
@@ -268,19 +280,34 @@ void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect)
 	oe->redirect = redirect;
 }
 
-void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
+/*
+ * May be called up to twice in the lifetime of an overlay dentry -
+ * the first time when updating a ro upper dentry with an orphan index
+ * and the second time when updating a linked upper dentry.
+ * Linked upper must have the same inode as the index.
+ */
+void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry,
+		       bool rocopyup)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
+	struct inode *inode = upperdentry->d_inode;
 
 	WARN_ON(!inode_is_locked(upperdentry->d_parent->d_inode) &&
 		!mutex_is_locked(&OVL_I(d_inode(dentry))->oi_lock));
 	WARN_ON(oe->__upperdentry);
 	/*
 	 * Make sure upperdentry is consistent before making it visible to
-	 * ovl_upperdentry_dereference().
+	 * ovl_[ro]upperdentry_dereference()
 	 */
 	smp_wmb();
-	oe->__upperdentry = upperdentry;
+	if (rocopyup) {
+		WARN_ON(oe->__roupperdentry);
+		oe->__roupperdentry = upperdentry;
+	} else {
+		WARN_ON(!d_is_dir(dentry) && oe->__roupperdentry &&
+			oe->__roupperdentry->d_inode != inode);
+		oe->__upperdentry = upperdentry;
+	}
 	ovl_update_type(dentry, d_is_dir(dentry));
 }
 

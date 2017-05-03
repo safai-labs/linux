@@ -52,6 +52,7 @@ static void ovl_dentry_release(struct dentry *dentry)
 		unsigned int i;
 
 		dput(oe->__upperdentry);
+		dput(oe->__roupperdentry);
 		kfree(oe->redirect);
 		for (i = 0; i < oe->numlower; i++)
 			dput(oe->lowerstack[i].dentry);
@@ -109,6 +110,12 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 				return ERR_PTR(err);
 		}
 		return real;
+	}
+
+	if (rocopyup) {
+		real = ovl_dentry_ro_upper(dentry);
+		if (real)
+			return real;
 	}
 
 	real = ovl_dentry_lower(dentry);

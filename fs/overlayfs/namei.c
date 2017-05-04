@@ -148,20 +148,26 @@ invalid:
 	goto out;
 }
 
+static struct dentry *ovl_decode_fh(struct vfsmount *mnt, struct ovl_fh *fh,
+				    int (*acceptable)(void *, struct dentry *))
+{
+	int bytes = (fh->len - offsetof(struct ovl_fh, fid));
+
+	return exportfs_decode_fh(mnt, (struct fid *)fh->fid,
+				  bytes >> 2, (int)fh->type,
+				  acceptable, mnt);
+}
+
 static struct dentry *ovl_get_origin(struct dentry *dentry,
 				     struct vfsmount *mnt)
 {
 	struct dentry *origin = NULL;
 	struct ovl_fh *fh = ovl_get_origin_fh(dentry, mnt);
-	int bytes;
 
 	if (!fh)
 		return NULL;
 
-	bytes = (fh->len - offsetof(struct ovl_fh, fid));
-	origin = exportfs_decode_fh(mnt, (struct fid *)fh->fid,
-				    bytes >> 2, (int)fh->type,
-				    ovl_acceptable, NULL);
+	origin = ovl_decode_fh(mnt, fh, ovl_acceptable);
 	if (IS_ERR(origin)) {
 		/* Treat stale file handle as "origin unknown" */
 		if (origin == ERR_PTR(-ESTALE))
@@ -335,49 +341,79 @@ static int ovl_check_origin(struct dentry *dentry, struct dentry *upperdentry,
 	return 0;
 }
 
+/* Check if dentry belongs to the layer mounted at @mnt */
+static int ovl_in_layer(void *mnt, struct dentry *dentry)
+{
+	return is_subdir(dentry, ((struct vfsmount *)mnt)->mnt_root);
+}
+
 /*
  * Verify that a lower directory matches the file handle stored in upper.
- * Return 0 on match, > 0 on mismatch, < 0 on error.
+ * Return 0 on match, > 0 on finding by stored fh, < 0 on error.
  */
 static int ovl_verify_lower_fh(struct dentry *upperdentry, struct path *path)
 {
-	int ret;
+	struct dentry *origin = NULL;
 	struct inode *inode = NULL;
 	struct ovl_fh *fh = NULL;
 	struct ovl_fh *ofh = ovl_get_origin_fh(upperdentry, path->mnt);
+	int ret;
 
 	if (IS_ERR_OR_NULL(ofh))
 		return PTR_ERR(ofh);
 
-	/* If we have a copy up origin, we should have found a lower dir */
-	ret = -ENOENT;
-	if (!path->dentry) {
-		pr_warn_ratelimited("overlayfs: failed to find lower dir\n");
-		goto out;
+	/* Check if lower dir was moved or removed */
+	if (path->dentry) {
+		inode = d_inode(path->dentry);
+		fh = ovl_encode_fh(path->dentry);
 	}
-
-	fh = ovl_encode_fh(path->dentry);
 	if (IS_ERR(fh)) {
 		ret = PTR_ERR(fh);
 		fh = NULL;
 		goto fail;
-	} else if (fh->len != ofh->len || memcmp(fh, ofh, fh->len)) {
-		ret = fh->len;
-		goto fail;
 	}
+	if (fh && fh->len == ofh->len && !memcmp(fh, ofh, fh->len)) {
+		/* Stored origin is a match */
+		ret = 0;
+		goto match;
+	}
+	/* Lookup moved/renamed lower dir by fh */
+	origin = ovl_decode_fh(path->mnt, ofh, ovl_in_layer);
+	if (IS_ERR(origin)) {
+		ret = PTR_ERR(origin);
+	} else if (ovl_dentry_weird(origin)) {
+		dput(origin);
+		ret = -EREMOTE;
+	} else if (!d_is_dir(origin) || d_unhashed(origin)) {
+		pr_debug("%s(%pd4): is_dir=%d, unhashed=%d\n", __func__,
+			 origin, d_is_dir(origin), d_unhashed(origin));
+		dput(origin);
+		ret = -ENOENT;
+	} else {
+		/* Found a positive origin */
+		ret = 1;
+		goto out;
+	}
+	origin = NULL;
+	if (ret == -ESTALE || ret == -ENOENT) {
+		/* Found a negative origin */
+		ret = 1;
+		goto out;
+	}
+	if (ret)
+		goto fail;
 
-	ret = 0;
 out:
+	dput(path->dentry);
+	path->dentry = origin;
+match:
 	kfree(ofh);
 	kfree(fh);
 	return ret;
 
 fail:
-	inode = d_inode(path->dentry);
 	pr_warn_ratelimited("overlayfs: failed to verify lower dir (ino=%lu, ret=%i) - were layers copied?\n",
 			    inode ? inode->i_ino : 0, ret);
-	dput(path->dentry);
-	path->dentry = NULL;
 	goto out;
 }
 
@@ -480,7 +516,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		/* Verify that lower matches the copy up origin fh */
 		lowerpath.dentry = this;
 		if (upperdentry && ovl_verify_lower(dentry->d_sb) &&
-		    ovl_verify_lower_fh(upperdentry, &lowerpath))
+		    ovl_verify_lower_fh(upperdentry, &lowerpath) < 0)
 			break;
 
 		if (!lowerpath.dentry)

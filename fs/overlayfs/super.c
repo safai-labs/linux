@@ -249,6 +249,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
 		seq_printf(m, ",redirect_dir=%s",
 			   ufs->config.redirect_dir ? "on" : "off");
+	if (ufs->config.verify_lower)
+		seq_puts(m, ",verify_lower");
 	return 0;
 }
 
@@ -278,6 +280,7 @@ enum {
 	OPT_DEFAULT_PERMISSIONS,
 	OPT_REDIRECT_DIR_ON,
 	OPT_REDIRECT_DIR_OFF,
+	OPT_VERIFY_LOWER,
 	OPT_ERR,
 };
 
@@ -288,6 +291,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_DEFAULT_PERMISSIONS,	"default_permissions"},
 	{OPT_REDIRECT_DIR_ON,		"redirect_dir=on"},
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
+	{OPT_VERIFY_LOWER,		"verify_lower"},
 	{OPT_ERR,			NULL}
 };
 
@@ -358,6 +362,10 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 
 		case OPT_REDIRECT_DIR_OFF:
 			config->redirect_dir = false;
+			break;
+
+		case OPT_VERIFY_LOWER:
+			config->verify_lower = true;
 			break;
 
 		default:
@@ -927,6 +935,22 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		sb->s_flags |= MS_RDONLY;
 	else if (ufs->upper_mnt->mnt_sb != ufs->same_sb)
 		ufs->same_sb = NULL;
+
+	/*
+	 * The verify_lower feature is used to verify that lower directory
+	 * found by path matches the stored copy up origin.  Currently, only
+	 * single lower layer on same fs as upper layer is supported.
+	 */
+	if (ufs->config.verify_lower) {
+		if (!ufs->same_sb || numlower > 1) {
+			pr_warn("overlayfs: option \"verify_lower\" requires single lower and upper on same fs.\n");
+			ufs->config.verify_lower = false;
+		}
+		if (!ovl_can_decode_fh(ufs->same_sb)) {
+			pr_warn("overlayfs: option \"verify_lower\" not supported by lower fs.\n");
+			ufs->config.verify_lower = false;
+		}
+	}
 
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;

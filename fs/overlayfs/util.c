@@ -201,6 +201,13 @@ void ovl_clear_redirect_dir(struct super_block *sb)
 	ofs->config.redirect_dir = false;
 }
 
+bool ovl_verify_lower(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	return ofs->config.verify_lower;
+}
+
 const char *ovl_dentry_get_redirect(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;

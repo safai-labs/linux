@@ -88,13 +88,11 @@ static int ovl_acceptable(void *ctx, struct dentry *dentry)
 	return 1;
 }
 
-static struct dentry *ovl_get_origin(struct dentry *dentry,
-				     struct vfsmount *mnt)
+static struct ovl_fh *ovl_get_origin_fh(struct dentry *dentry,
+					struct vfsmount *mnt)
 {
 	int res;
 	struct ovl_fh *fh = NULL;
-	struct dentry *origin = NULL;
-	int bytes;
 
 	res = vfs_getxattr(dentry, OVL_XATTR_ORIGIN, NULL, 0);
 	if (res < 0) {
@@ -106,7 +104,7 @@ static struct dentry *ovl_get_origin(struct dentry *dentry,
 	if (res == 0)
 		return NULL;
 
-	fh  = kzalloc(res, GFP_TEMPORARY);
+	fh = kzalloc(res, GFP_TEMPORARY);
 	if (!fh)
 		return ERR_PTR(-ENOMEM);
 
@@ -129,8 +127,6 @@ static struct dentry *ovl_get_origin(struct dentry *dentry,
 	    (fh->flags & OVL_FH_FLAG_BIG_ENDIAN) != OVL_FH_FLAG_CPU_ENDIAN)
 		goto out;
 
-	bytes = (fh->len - offsetof(struct ovl_fh, fid));
-
 	/*
 	 * Make sure that the stored uuid matches the uuid of the lower
 	 * layer where file handle will be decoded.
@@ -138,6 +134,31 @@ static struct dentry *ovl_get_origin(struct dentry *dentry,
 	if (uuid_be_cmp(fh->uuid, *(uuid_be *) &mnt->mnt_sb->s_uuid))
 		goto out;
 
+	return fh;
+
+out:
+	kfree(fh);
+	return NULL;
+
+fail:
+	pr_warn_ratelimited("overlayfs: failed to get origin (%i)\n", res);
+	goto out;
+invalid:
+	pr_warn_ratelimited("overlayfs: invalid origin (%*phN)\n", res, fh);
+	goto out;
+}
+
+static struct dentry *ovl_get_origin(struct dentry *dentry,
+				     struct vfsmount *mnt)
+{
+	struct dentry *origin = NULL;
+	struct ovl_fh *fh = ovl_get_origin_fh(dentry, mnt);
+	int bytes;
+
+	if (!fh)
+		return NULL;
+
+	bytes = (fh->len - offsetof(struct ovl_fh, fid));
 	origin = exportfs_decode_fh(mnt, (struct fid *)fh->fid,
 				    bytes >> 2, (int)fh->type,
 				    ovl_acceptable, NULL);
@@ -159,11 +180,8 @@ out:
 	kfree(fh);
 	return origin;
 
-fail:
-	pr_warn_ratelimited("overlayfs: failed to get origin (%i)\n", res);
-	goto out;
 invalid:
-	pr_warn_ratelimited("overlayfs: invalid origin (%*phN)\n", res, fh);
+	pr_warn_ratelimited("overlayfs: invalid origin (%*phN)\n", fh->len, fh);
 	goto out;
 }
 
@@ -318,6 +336,52 @@ static int ovl_check_origin(struct dentry *dentry, struct dentry *upperdentry,
 }
 
 /*
+ * Verify that a lower directory matches the file handle stored in upper.
+ * Return 0 on match, > 0 on mismatch, < 0 on error.
+ */
+static int ovl_verify_lower_fh(struct dentry *upperdentry, struct path *path)
+{
+	int ret;
+	struct inode *inode = NULL;
+	struct ovl_fh *fh = NULL;
+	struct ovl_fh *ofh = ovl_get_origin_fh(upperdentry, path->mnt);
+
+	if (IS_ERR_OR_NULL(ofh))
+		return PTR_ERR(ofh);
+
+	/* If we have a copy up origin, we should have found a lower dir */
+	ret = -ENOENT;
+	if (!path->dentry) {
+		pr_warn_ratelimited("overlayfs: failed to find lower dir\n");
+		goto out;
+	}
+
+	fh = ovl_encode_fh(path->dentry);
+	if (IS_ERR(fh)) {
+		ret = PTR_ERR(fh);
+		fh = NULL;
+		goto fail;
+	} else if (fh->len != ofh->len || memcmp(fh, ofh, fh->len)) {
+		ret = fh->len;
+		goto fail;
+	}
+
+	ret = 0;
+out:
+	kfree(ofh);
+	kfree(fh);
+	return ret;
+
+fail:
+	inode = d_inode(path->dentry);
+	pr_warn_ratelimited("overlayfs: failed to verify lower dir (ino=%lu, ret=%i) - were layers copied?\n",
+			    inode ? inode->i_ino : 0, ret);
+	dput(path->dentry);
+	path->dentry = NULL;
+	goto out;
+}
+
+/*
  * Returns next layer in stack starting from top.
  * Returns -1 if this is the last layer.
  */
@@ -413,11 +477,16 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		if (err)
 			goto out_put;
 
-		if (!this)
+		/* Verify that lower matches the copy up origin fh */
+		lowerpath.dentry = this;
+		if (upperdentry && ovl_verify_lower(dentry->d_sb) &&
+		    ovl_verify_lower_fh(upperdentry, &lowerpath))
+			break;
+
+		if (!lowerpath.dentry)
 			continue;
 
-		stack[ctr].dentry = this;
-		stack[ctr].mnt = lowerpath.mnt;
+		stack[ctr] = lowerpath;
 		ctr++;
 
 		if (d.stop)

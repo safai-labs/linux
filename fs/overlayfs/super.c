@@ -123,16 +123,11 @@ static int ovl_dentry_revalidate(struct dentry *dentry, unsigned int flags)
 
 		if (d->d_flags & DCACHE_OP_REVALIDATE) {
 			ret = d->d_op->d_revalidate(d, flags);
-			if (ret < 0)
-				return ret;
-			if (!ret) {
-				if (!(flags & LOOKUP_RCU))
-					d_invalidate(d);
-				return -ESTALE;
-			}
+			if (ret <= 0)
+				break;
 		}
 	}
-	return 1;
+	return ret;
 }
 
 static int ovl_dentry_weak_revalidate(struct dentry *dentry, unsigned int flags)

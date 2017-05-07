@@ -112,11 +112,34 @@ bug:
 	return dentry;
 }
 
+static int ovl_dir_revalidate(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+	struct dentry *d = ovl_upperdentry_dereference(oe);
+	unsigned int i;
+
+	/* XXX: is d_unhashed() safe in rcu-walk? */
+	if (d && unlikely(d_unhashed(d)))
+		return 0;
+
+	for (i = 0; i < oe->numlower; i++) {
+		d = oe->lowerstack[i].dentry;
+		if (unlikely(d_unhashed(d)))
+			return 0;
+	}
+	return 1;
+}
+
 static int ovl_dentry_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
 	unsigned int i;
 	int ret = 1;
+
+	if (d_is_dir(dentry) && !ovl_dir_revalidate(dentry)) {
+		pr_debug("%s(%pd4): unhashed dir\n", __func__, dentry);
+		return 0;
+	}
 
 	for (i = 0; i < oe->numlower; i++) {
 		struct dentry *d = oe->lowerstack[i].dentry;
@@ -135,6 +158,12 @@ static int ovl_dentry_weak_revalidate(struct dentry *dentry, unsigned int flags)
 	struct ovl_entry *oe = dentry->d_fsdata;
 	unsigned int i;
 	int ret = 1;
+
+	if (d_is_dir(dentry) && !IS_ROOT(dentry) &&
+	    !ovl_dir_revalidate(dentry)) {
+		pr_debug("%s(%pd4): unhashed dir\n", __func__, dentry);
+		return 0;
+	}
 
 	for (i = 0; i < oe->numlower; i++) {
 		struct dentry *d = oe->lowerstack[i].dentry;
@@ -947,7 +976,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
-	if (remote)
+	if (remote || ufs->config.verify_lower)
 		sb->s_d_op = &ovl_reval_dentry_operations;
 	else
 		sb->s_d_op = &ovl_dentry_operations;

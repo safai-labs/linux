@@ -452,6 +452,50 @@ out:
 }
 
 /*
+ * Verify that found overlay snapshot dentry in sane -
+ * If the snapshot overlay dentry is a merge/lower dir, then its lower dentry
+ * should be pointing back to the snapshot mount upper dentry.
+ * If the snapshot overlay dentry is non-opaque negative (i.e. not a whiteout),
+ * then the snapshot mount should be also negative (i.e. no upper).
+ * Otherwise, this may be a stray redirect that is pointing the snapshot mount
+ * at the wrong path in overlay snapshot.
+ *
+ * TODO: when overlayfs supports exportfs, encode fh from upperdentry and use
+ *       it to decode a snapshot overlay dentry.
+ *
+ * Return 0 for sane, < 0 for inconsitency
+ */
+static int ovl_snapshot_verify(struct dentry *upperdentry,
+			       struct ovl_lookup_data *d,
+			       struct dentry *snapdentry)
+{
+	enum ovl_path_type snaptype;
+	struct path lowerpath;
+
+	if (!snapdentry || IS_ROOT(snapdentry))
+		return 0;
+
+	if (!d->is_dir)
+		return 0;
+
+	snaptype = ovl_path_type(snapdentry);
+	ovl_path_lower(snapdentry, &lowerpath);
+	if ((!OVL_TYPE_UPPER(snaptype) || OVL_TYPE_MERGE(snaptype)) &&
+	    !ovl_dentry_is_opaque(snapdentry) &&
+	    lowerpath.dentry != upperdentry)
+		goto fail;
+
+	return 0;
+
+fail:
+	/* Did We get derailed by a stale redirect? */
+	pr_warn("ovl_snapshot_verify(%pd4): redirect=%s, is_dir=%d, negative=%d, snap_is_dir=%d, snap_negative=%d\n",
+		snapdentry, d->redirect, d->is_dir, !upperdentry,
+		d_is_dir(snapdentry), d_is_negative(snapdentry));
+	return -ESTALE;
+}
+
+/*
  * Returns next layer in stack starting from top.
  * Returns -1 if this is the last layer.
  */
@@ -557,6 +601,16 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		err = ovl_snapshot_lookup(parent, &d, &snapdentry);
 		if (err)
 			goto out_put_upper;
+
+		err = ovl_snapshot_verify(upperdentry, &d, snapdentry);
+		if (err) {
+			if (ovl_verify_dir(dentry->d_sb))
+				goto out_put_upper;
+			dput(snapdentry);
+			snapdentry = dget(roe->__snapdentry);
+			kfree(upperredirect);
+			upperredirect = NULL;
+		}
 
 		d.stop = true;
 	}

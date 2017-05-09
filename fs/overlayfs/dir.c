@@ -813,7 +813,7 @@ static bool ovl_snapshot_type_merge_or_lower(struct dentry *dentry)
 	bool ret = ovl_type_merge_or_lower(dentry);
 
 	/* Could be upper for us and merge for snapshot overlay */
-	if (!ret && snap)
+	if (!ret && snap && !IS_ROOT(snap))
 		ret = ovl_type_merge_or_lower(snap);
 
 	dput(snap);

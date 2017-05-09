@@ -427,8 +427,20 @@ static int ovl_snapshot_lookup(struct dentry *parent, struct ovl_lookup_data *d,
 	if (err)
 		return err;
 
-	if (!snappath.dentry || !d_can_lookup(snappath.dentry))
+	/*
+	 * !snappath.dentry means no active snapshot overlay.
+	 * When snapparent is negative or non-dir or when snapparent
+	 * is nested under a negative or non-dir snapdentry, point the
+	 * snapdentry to the snapshot overlay root. This is needed to
+	 * indicate this special case and to access snapshot overlay sb.
+	 */
+	if (!snappath.dentry) {
 		goto out;
+	} else if (!d_can_lookup(snappath.dentry) ||
+		   (IS_ROOT(snappath.dentry) && !IS_ROOT(parent))) {
+		snapdentry = dget(snappath.mnt->mnt_root);
+		goto out;
+	}
 
 	d->is_snapshot = true;
 	err = ovl_lookup_layer(snappath.dentry, d, &snapdentry);

@@ -338,6 +338,55 @@ struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
 }
 
 /*
+ * Verify that found overlay snapshot dentry in sane -
+ * If the snapshot overlay dentry is a merge/lower dir, then its lower dentry
+ * should be pointing back to the snapshot mount upper dentry.
+ * If the snapshot overlay dentry is non-opaque negative (i.e. not a whiteout),
+ * then the snapshot mount should be also negative (i.e. no upper).
+ * Otherwise, this may be a stray redirect that is pointing the snapshot mount
+ * at the wrong path in overlay snapshot.
+ *
+ * Return 0 for sane, < 0 for inconsitency
+ */
+int ovl_snapshot_verify(struct dentry *snapdentry, struct dentry *upperdentry,
+			char *redirect)
+{
+	enum ovl_path_type snaptype;
+	struct path lowerpath;
+	int err = 0;
+
+	if (!snapdentry || IS_ROOT(snapdentry))
+		goto no_redirect;
+
+	if (!upperdentry || !d_is_dir(upperdentry))
+		goto no_redirect;
+
+	snaptype = ovl_path_type(snapdentry);
+	ovl_path_lower(snapdentry, &lowerpath);
+	if ((!OVL_TYPE_UPPER(snaptype) || OVL_TYPE_MERGE(snaptype)) &&
+	    !ovl_dentry_is_opaque(snapdentry) &&
+	    lowerpath.dentry != upperdentry)
+		goto fail;
+
+	return 0;
+
+no_redirect:
+	/* Redirect should not be pointing at non-dir/opaque/negative */
+	if (!redirect)
+		return 0;
+fail:
+	/* Try to clear redirect */
+	if (redirect && upperdentry)
+		err = ovl_do_removexattr(upperdentry, OVL_XATTR_REDIRECT);
+	/* Did we get derailed by a stale redirect? */
+	pr_warn_ratelimited("%s(%pd2): redirect=%s, is_dir=%d, negative=%d, snap_is_dir=%d, snap_negative=%d, err=%i\n",
+		__func__, snapdentry, redirect,
+		upperdentry && d_is_dir(upperdentry), !upperdentry,
+		d_is_dir(snapdentry), d_is_negative(snapdentry), err);
+	return -ESTALE;
+}
+
+/*
  * Lookup the overlay snapshot dentry in the same path as the looked up
  * snapshot mount dentry. We need to hold a reference to a negative snapshot
  * dentry for explicit whiteout before create in snapshot mount and we need

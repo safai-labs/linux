@@ -256,7 +256,8 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
 
-	WARN_ON(!inode_is_locked(upperdentry->d_parent->d_inode));
+	WARN_ON(!inode_is_locked(upperdentry->d_parent->d_inode) &&
+		!oe->copying);
 	WARN_ON(oe->__upperdentry);
 	/*
 	 * Make sure upperdentry is consistent before making it visible to

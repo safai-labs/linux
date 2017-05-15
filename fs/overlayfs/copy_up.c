@@ -336,8 +336,13 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		.link = link
 	};
 
-	upper = lookup_one_len(dentry->d_name.name, upperdir,
-			       dentry->d_name.len);
+	if (tmpfile) {
+		upper = lookup_one_len_unlocked(dentry->d_name.name, upperdir,
+						dentry->d_name.len);
+	} else {
+		upper = lookup_one_len(dentry->d_name.name, upperdir,
+				       dentry->d_name.len);
+	}
 	err = PTR_ERR(upper);
 	if (IS_ERR(upper))
 		goto out;
@@ -377,16 +382,7 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 		BUG_ON(upperpath.dentry != NULL);
 		upperpath.dentry = temp;
 
-		if (tmpfile) {
-			inode_unlock(udir);
-			err = ovl_copy_up_data(lowerpath, &upperpath,
-					       stat->size);
-			inode_lock_nested(udir, I_MUTEX_PARENT);
-		} else {
-			err = ovl_copy_up_data(lowerpath, &upperpath,
-					       stat->size);
-		}
-
+		err = ovl_copy_up_data(lowerpath, &upperpath, stat->size);
 		if (err)
 			goto out_cleanup;
 	}
@@ -409,10 +405,16 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	if (err)
 		goto out_cleanup;
 
-	if (tmpfile)
+	if (tmpfile) {
+		inode_lock_nested(udir, I_MUTEX_PARENT);
 		err = ovl_do_link(temp, udir, upper, true);
-	else
+		if (!err)
+			ovl_set_timestamps(upperdir, pstat);
+		pstat = NULL;
+		inode_unlock(udir);
+	} else {
 		err = ovl_do_rename(wdir, temp, udir, upper, 0);
+	}
 	if (err)
 		goto out_cleanup;
 
@@ -425,7 +427,8 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 	}
 
 	/* Restore timestamps on parent (best effort) */
-	ovl_set_timestamps(upperdir, pstat);
+	if (pstat)
+		ovl_set_timestamps(upperdir, pstat);
 out2:
 	dput(temp);
 out1:
@@ -496,10 +499,8 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 			goto out_done;
 		}
 
-		inode_lock_nested(upperdir->d_inode, I_MUTEX_PARENT);
 		err = ovl_copy_up_locked(workdir, upperdir, dentry, lowerpath,
 					 stat, link, &pstat, true);
-		inode_unlock(upperdir->d_inode);
 		ovl_copy_up_end(dentry);
 		goto out_done;
 	}

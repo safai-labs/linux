@@ -2511,6 +2511,35 @@ struct dentry *lookup_one_len(const char *name, struct dentry *base, int len)
 EXPORT_SYMBOL(lookup_one_len);
 
 /**
+ * lookup_one_len_noperm - filesystem helper to lookup single pathname component
+ * @name:	pathname component to lookup
+ * @base:	base directory to lookup from
+ * @len:	maximum length @len should be interpreted to
+ *
+ * Note that this routine is purely a helper for filesystem usage and should
+ * not be called by generic code.
+ *
+ * Unlike lookup_one_len, it does not check the task permissions.
+ *
+ * The caller must hold base->i_mutex.
+ */
+struct dentry *lookup_one_len_noperm(const char *name, struct dentry *base,
+				     int len)
+{
+	struct qstr this;
+	int err;
+
+	WARN_ON_ONCE(!inode_is_locked(base->d_inode));
+
+	err = lookup_one_len_init(&this, base, name, len);
+	if (err)
+		return ERR_PTR(err);
+
+	return __lookup_hash(&this, base, 0);
+}
+EXPORT_SYMBOL(lookup_one_len);
+
+/**
  * lookup_one_len_unlocked - filesystem helper to lookup single pathname component
  * @name:	pathname component to lookup
  * @base:	base directory to lookup from

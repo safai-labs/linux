@@ -279,6 +279,12 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
 		seq_printf(m, ",redirect_dir=%s",
 			   ufs->config.redirect_dir ? "on" : "off");
+	if (ufs->config.verify_dir) {
+		if (ufs->config.verify_dir == OVL_VERIFY_LOWER)
+			seq_puts(m, ",verify_lower");
+		else
+			seq_printf(m, ",verify_dir=%x", ufs->config.verify_dir);
+	}
 	return 0;
 }
 
@@ -308,6 +314,8 @@ enum {
 	OPT_DEFAULT_PERMISSIONS,
 	OPT_REDIRECT_DIR_ON,
 	OPT_REDIRECT_DIR_OFF,
+	OPT_VERIFY_LOWER,
+	OPT_VERIFY_DIR,
 	OPT_ERR,
 };
 
@@ -318,6 +326,8 @@ static const match_table_t ovl_tokens = {
 	{OPT_DEFAULT_PERMISSIONS,	"default_permissions"},
 	{OPT_REDIRECT_DIR_ON,		"redirect_dir=on"},
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
+	{OPT_VERIFY_LOWER,		"verify_lower"},
+	{OPT_VERIFY_DIR,		"verify_dir=%u"},
 	{OPT_ERR,			NULL}
 };
 
@@ -390,7 +400,17 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->redirect_dir = false;
 			break;
 
+		case OPT_VERIFY_LOWER:
+			config->verify_dir = OVL_VERIFY_LOWER;
+			break;
+
+		case OPT_VERIFY_DIR:
+			if (match_hex(args, &config->verify_dir))
+				goto parse_err;
+			break;
+
 		default:
+parse_err:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
 		}
@@ -993,6 +1013,20 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			ufs->same_sb = mnt->mnt_sb;
 		else if (ufs->same_sb != mnt->mnt_sb)
 			ufs->same_sb = NULL;
+
+		/*
+		 * The verify_lower feature is used to verify that lower dir
+		 * found by path matches the stored copy up origin file handle.
+		 * It requires that all layers support NFS export.
+		 */
+		if (ufs->config.verify_dir) {
+			err = -EOPNOTSUPP;
+			if (!ovl_can_decode_fh(mnt->mnt_sb)) {
+				pr_err("overlayfs: option \"verify_lower\" not supported by lower fs.\n");
+				goto out_put_lower_mnt;
+			}
+		}
+
 	}
 
 	/* If the upper fs is nonexistent, we mark overlayfs r/o too */

@@ -14,6 +14,7 @@ struct ovl_config {
 	char *workdir;
 	bool default_permissions;
 	bool redirect_dir;
+	unsigned verify_dir;
 };
 
 /* private information held for overlayfs's superblock */

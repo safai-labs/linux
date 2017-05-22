@@ -427,6 +427,41 @@ parse_err:
 	return 0;
 }
 
+/*
+ * Verify that stored file handle in dir matches origin.
+ * If dir has no stored file handle, encode and store origin file handle.
+ */
+static int ovl_verify_set_origin(struct dentry *dir, struct vfsmount *mnt,
+				 struct dentry *origin, const char *name)
+{
+	const struct ovl_fh *fh = NULL;
+	int err;
+
+	err = ovl_verify_origin(dir, mnt, origin);
+	if (!err)
+		return 0;
+
+	if (err != -ENODATA)
+		goto fail;
+
+	fh = ovl_encode_fh(origin);
+	err = PTR_ERR(fh);
+	if (IS_ERR(fh))
+		goto fail;
+	err = ovl_do_setxattr(dir, OVL_XATTR_ORIGIN, fh, fh->len, 0);
+	if (err)
+		goto fail;
+
+out:
+	kfree(fh);
+	return err;
+
+fail:
+	pr_err("overlayfs: failed to verify %s dir. (err=%i)\n",
+	       name, err);
+	goto out;
+}
+
 #define OVL_WORKDIR_NAME "work"
 
 static struct dentry *ovl_workdir_create(struct vfsmount *mnt,
@@ -1024,6 +1059,14 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			if (!ovl_can_decode_fh(mnt->mnt_sb)) {
 				pr_err("overlayfs: option \"verify_lower\" not supported by lower fs.\n");
 				goto out_put_lower_mnt;
+			}
+			/* Verify lower root matches origin stored in upper */
+			if (i == 0 && OVL_VERIFY_ROOT(ufs->config.verify_dir)) {
+				err = ovl_verify_set_origin(upperpath.dentry,
+							    mnt, mnt->mnt_root,
+							    "lower root");
+				if (err)
+					goto out_put_lower_mnt;
 			}
 		}
 

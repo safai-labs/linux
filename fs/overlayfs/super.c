@@ -165,12 +165,42 @@ static const struct dentry_operations ovl_reval_dentry_operations = {
 	.d_weak_revalidate = ovl_dentry_weak_revalidate,
 };
 
+/* Get exclusive ownership on upper/work dir among overlay mounts */
+static bool ovl_dir_lock(struct dentry *dentry)
+{
+	struct inode *inode;
+
+	if (!dentry)
+		return false;
+
+	inode = d_inode(dentry);
+	if (!inode || inode_inuse(inode))
+		return false;
+
+	return inode_inuse_trylock(inode);
+}
+
+static void ovl_dir_unlock(struct dentry *dentry)
+{
+	struct inode *inode;
+
+	if (!dentry)
+		return;
+
+	inode = d_inode(dentry);
+	if (inode && inode_inuse(inode))
+		inode_inuse_unlock(inode);
+}
+
 static void ovl_put_super(struct super_block *sb)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
 	unsigned i;
 
+	ovl_dir_unlock(ufs->workdir);
 	dput(ufs->workdir);
+	if (ufs->upper_mnt)
+		ovl_dir_unlock(ufs->upper_mnt->mnt_root);
 	mntput(ufs->upper_mnt);
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
@@ -407,6 +437,14 @@ retry:
 			if (retried)
 				goto out_dput;
 
+			/*
+			 * We have parent i_mutex, so this test is race free
+			 * w.r.t. ovl_dir_lock() below by another overlay mount.
+			 */
+			err = -EBUSY;
+			if (inode_inuse(work->d_inode))
+				goto out_dput;
+
 			retried = true;
 			ovl_workdir_cleanup(dir, mnt, work, 0);
 			dput(work);
@@ -445,6 +483,14 @@ retry:
 		err = notify_change(work, &attr, NULL);
 		inode_unlock(work->d_inode);
 		if (err)
+			goto out_dput;
+
+		/*
+		 * Protect our work dir from being deleted/renamed and from
+		 * being reused by another overlay mount.
+		 */
+		err = -EBUSY;
+		if (!ovl_dir_lock(work))
 			goto out_dput;
 	}
 out_unlock:
@@ -849,6 +895,16 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			pr_err("overlayfs: failed to clone upperpath\n");
 			goto out_put_lowerpath;
 		}
+		/*
+		 * Protect our upper dir from being deleted/renamed and from
+		 * being reused by another overlay mount.
+		 */
+		err = -EBUSY;
+		if (!ovl_dir_lock(upperpath.dentry)) {
+			pr_err("overlayfs: upperdir in-use by another overlay mount?\n");
+			goto out_put_upper_mnt;
+		}
+
 		/* Don't inherit atime flags */
 		ufs->upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 
@@ -857,6 +913,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		ufs->workdir = ovl_workdir_create(ufs->upper_mnt, workpath.dentry);
 		err = PTR_ERR(ufs->workdir);
 		if (IS_ERR(ufs->workdir)) {
+			if (err == -EBUSY) {
+				pr_err("overlayfs: workdir in-use by another overlay mount?\n");
+				goto out_unlock_upperdir;
+			}
 			pr_warn("overlayfs: failed to create directory %s/%s (errno: %i); mounting read-only\n",
 				ufs->config.workdir, OVL_WORKDIR_NAME, -err);
 			sb->s_flags |= MS_RDONLY;
@@ -874,7 +934,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 			err = ovl_check_d_type_supported(&workpath);
 			if (err < 0)
-				goto out_put_workdir;
+				goto out_unlock_workdir;
 
 			/*
 			 * We allowed this configuration and don't want to
@@ -910,7 +970,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	err = -ENOMEM;
 	ufs->lower_mnt = kcalloc(numlower, sizeof(struct vfsmount *), GFP_KERNEL);
 	if (ufs->lower_mnt == NULL)
-		goto out_put_workdir;
+		goto out_unlock_workdir;
 	for (i = 0; i < numlower; i++) {
 		struct vfsmount *mnt = clone_private_mount(&stack[i]);
 
@@ -1002,8 +1062,12 @@ out_put_lower_mnt:
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
 	kfree(ufs->lower_mnt);
-out_put_workdir:
+out_unlock_workdir:
+	ovl_dir_unlock(ufs->workdir);
 	dput(ufs->workdir);
+out_unlock_upperdir:
+	ovl_dir_unlock(upperpath.dentry);
+out_put_upper_mnt:
 	mntput(ufs->upper_mnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)

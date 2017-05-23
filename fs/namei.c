@@ -2773,6 +2773,7 @@ EXPORT_SYMBOL(__check_sticky);
  * 10. We can't remove a root or mountpoint.
  * 11. We don't allow removal of NFS sillyrenamed files; it's handled by
  *     nfs_async_unlink().
+ * 12. We don't allow removal of inodes marked 'inuse'.
  */
 static int may_delete(struct inode *dir, struct dentry *victim, bool isdir)
 {
@@ -2805,6 +2806,8 @@ static int may_delete(struct inode *dir, struct dentry *victim, bool isdir)
 	if (IS_DEADDIR(dir))
 		return -ENOENT;
 	if (victim->d_flags & DCACHE_NFSFS_RENAMED)
+		return -EBUSY;
+	if (inode_inuse(d_inode(victim)))
 		return -EBUSY;
 	return 0;
 }

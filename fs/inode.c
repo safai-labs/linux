@@ -2120,3 +2120,43 @@ struct timespec current_time(struct inode *inode)
 	return timespec_trunc(now, inode->i_sb->s_time_gran);
 }
 EXPORT_SYMBOL(current_time);
+
+/**
+ * inode_inuse_trylock - try to get an exclusive 'inuse' lock on inode
+ * @inode: inode being locked
+ *
+ * The 'inuse' lock is an 'advisory' inode lock, which also provides
+ * may_delete() protection, so can be used to extend exclusive create
+ * protection beyond parent->i_mutex lock among cooperating users.
+ * Used by overlayfs to get exclusive ownership on upper and work dirs
+ * among overlayfs mounts.
+ *
+ * Return true if I_INUSE flag was set by this call.
+ */
+bool inode_inuse_trylock(struct inode *inode)
+{
+	bool locked = false;
+
+	spin_lock(&inode->i_lock);
+	if (!(inode->i_state & (I_FREEING|I_WILL_FREE|I_INUSE))) {
+		inode->i_state |= I_INUSE;
+		locked = true;
+	}
+	spin_unlock(&inode->i_lock);
+	return locked;
+}
+EXPORT_SYMBOL(inode_inuse_trylock);
+
+/*
+ * Non-cooperating users should not be calling this functions and cooperating
+ * users should call this function only if they have the exclusive 'inuse' lock.
+ */
+void inode_inuse_unlock(struct inode *inode)
+{
+	WARN_ON(!inode_inuse(inode));
+
+	spin_lock(&inode->i_lock);
+	inode->i_state &= ~I_INUSE;
+	spin_unlock(&inode->i_lock);
+}
+EXPORT_SYMBOL(inode_inuse_unlock);

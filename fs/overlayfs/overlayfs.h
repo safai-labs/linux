@@ -23,15 +23,19 @@ enum ovl_path_type {
 enum ovl_verify_dir {
 	__OVL_VERIFY_MERGE	= (1 << 0),
 	__OVL_VERIFY_ROOT	= (1 << 1),
+	__OVL_VERIFY_DECODE	= (1 << 2),
 };
 
 /* Verify on lookup of merge dir that lower matches origin fh stored in upper */
 #define OVL_VERIFY_MERGE(v)	((v) & __OVL_VERIFY_MERGE)
 /* Verify on mount that lower root matches origin fh stored in upper root */
 #define OVL_VERIFY_ROOT(v)	((v) & __OVL_VERIFY_ROOT)
+/* On failure to verify merge dir lower, try to follow decoded file handle */
+#define OVL_VERIFY_DECODE(v)	((v) & __OVL_VERIFY_DECODE)
 
 /* Verify flags for mount options 'verify_lower' */
-#define OVL_VERIFY_LOWER	(__OVL_VERIFY_MERGE | __OVL_VERIFY_ROOT)
+#define OVL_VERIFY_LOWER \
+	(__OVL_VERIFY_MERGE | __OVL_VERIFY_ROOT | __OVL_VERIFY_DECODE)
 
 #define OVL_XATTR_PREFIX XATTR_TRUSTED_PREFIX "overlay."
 #define OVL_XATTR_OPAQUE OVL_XATTR_PREFIX "opaque"

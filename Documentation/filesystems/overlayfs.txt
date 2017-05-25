@@ -285,6 +285,70 @@ merged with the upper directory instead.  The "verify_dir" feature,
 therefore, makes an overlay mount cope better with the situations of
 lower directory rename and delete.
 
+
+NFS export
+----------
+
+An overlay mount may be exported to NFS if all underlying filesystems
+support NFS export and overlayfs is mounted with the mount options
+"index=all,verify_dir".
+
+With the "index=all" feature, an index directory is created on first
+mount under the workdir path.  On copy_up of a lower object, an index
+entry is created under the index directory.  The index entry name is the
+hexadecimal representation of the copy up origin file handle.  For a
+non-directory object, the index entry is a hard link to the upper inode.
+For a directory object, the index entry has an extended attribute
+"trusted.overlay.origin" with an encoded file handle of the upper
+directory inode.
+
+When encoding a file handle from an overlay filesystem object, the
+following rules apply:
+
+1. For a non-upper object, encode a lower file handle from lower inode
+2. For a copied up object, encode a lower file handle from copy_up origin
+3. For an upper-only object, encode an upper file handle from upper inode
+
+The encoded overlay file handle includes:
+ - Header including path type information (e.g. lower/upper)
+ - UUID of the underlying filesystem
+ - Underlying filesystem encoding of underlying inode
+
+This encoding is identical to the encoding of copy_up origin stored in
+"trusted.overlay.origin" for the case of encoding directory and hard link
+file handles.  For non-directory non-hard-link objects, the underlying
+filesystem is asked to encode a connectable file handle, which also
+includes the parent inode encoding, so when that file handle is later
+decoded, its path can be used to lookup the overlay dentry.
+
+When decoding an overlay file handle, the following steps are followed:
+
+1. Find underlying layer by UUID and path type information
+2. Decode the underlying filesystem file handle to underlying dentry
+3. Lookup the file handle in index directory by name
+4. If not found in index, lookup an overlay dentry with the same parent
+   and name as the decoded lower dentry.
+5. If a directory is found in index, obtain upper dentry from extended
+   attribute "trusted.overlay.origin" and lookup an overlay dentry with
+   the same path as the upper dentry.
+6. If a non-directory is found in index, instantiate an overlay dentry
+   from the upper index dentry and the decoded lower dentry.
+7. If a whiteout is found in index, return ESTALE. This represents a lower
+   file that was copied up and since then deleted.
+
+Decoding an overlay directory file handle is guarantied to return an
+overlay dentry that is equivalent to the object that was used to encode the
+file handle, because all the underlying dentries involved are unique and
+connected.  The "verify_dir" feature ensures, that for a merge directory
+object, the lower directory inode used for encoding the file handle,
+matches the correct upper index entry.
+
+Decoding a lower hard link file handle may return a disconnected dentry.
+copy_up of that disconnected dentry will create an upper index entry with
+no upper alias (i.e. an orphan upper inode).  To avoid that, we copy_up
+lower hard link when encoding the file handle.
+
+
 Testsuite
 ---------
 

@@ -22,6 +22,23 @@ enum ovl_path_type {
 #define OVL_TYPE_ORIGIN(type)	((type) & __OVL_PATH_ORIGIN)
 #define OVL_TYPE_RO_UPPER(type)	((type) & __OVL_PATH_RO_UPPER)
 
+enum ovl_verify_dir {
+	__OVL_VERIFY_MERGE	= (1 << 0),
+	__OVL_VERIFY_ROOT	= (1 << 1),
+	__OVL_VERIFY_DECODE	= (1 << 2),
+};
+
+/* Verify on lookup of merge dir that lower matches origin fh stored in upper */
+#define OVL_VERIFY_MERGE(v)	((v) & __OVL_VERIFY_MERGE)
+/* Verify on mount that lower root matches origin fh stored in upper root */
+#define OVL_VERIFY_ROOT(v)	((v) & __OVL_VERIFY_ROOT)
+/* On failure to verify merge dir lower, try to follow decoded file handle */
+#define OVL_VERIFY_DECODE(v)	((v) & __OVL_VERIFY_DECODE)
+
+/* Verify flags for mount options 'verify_lower' */
+#define OVL_VERIFY_LOWER \
+	(__OVL_VERIFY_MERGE | __OVL_VERIFY_ROOT | __OVL_VERIFY_DECODE)
+
 #define OVL_XATTR_PREFIX XATTR_TRUSTED_PREFIX "overlay."
 #define OVL_XATTR_OPAQUE OVL_XATTR_PREFIX "opaque"
 #define OVL_XATTR_REDIRECT OVL_XATTR_PREFIX "redirect"
@@ -193,6 +210,7 @@ void ovl_drop_write(struct dentry *dentry);
 struct dentry *ovl_workdir(struct dentry *dentry);
 const struct cred *ovl_override_creds(struct super_block *sb);
 struct super_block *ovl_same_sb(struct super_block *sb);
+unsigned ovl_verify_dir(struct super_block *sb);
 struct ovl_entry *ovl_alloc_entry(unsigned int numlower);
 bool ovl_dentry_remote(struct dentry *dentry);
 bool ovl_dentry_weird(struct dentry *dentry);
@@ -239,7 +257,9 @@ static inline bool ovl_is_impuredir(struct dentry *dentry)
 
 
 /* namei.c */
-int ovl_path_next(int idx, struct dentry *dentry, struct path *path);
+int ovl_verify_origin(struct dentry *dentry, struct vfsmount *mnt,
+		      struct dentry *origin);
+int ovl_path_next(int idx, struct dentry *dentry, struct path *path, int *idxp);
 struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags);
 bool ovl_lower_positive(struct dentry *dentry);
 
@@ -298,3 +318,5 @@ int ovl_copy_up(struct dentry *dentry);
 int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup);
 int ovl_copy_xattr(struct dentry *old, struct dentry *new);
 int ovl_set_attr(struct dentry *upper, struct kstat *stat);
+bool ovl_can_decode_fh(struct super_block *sb);
+struct ovl_fh *ovl_encode_fh(struct dentry *lower);

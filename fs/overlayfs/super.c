@@ -181,12 +181,42 @@ static const struct dentry_operations ovl_reval_dentry_operations = {
 	.d_weak_revalidate = ovl_dentry_weak_revalidate,
 };
 
+/* Get exclusive ownership on upper/work dir among overlay mounts */
+static bool ovl_dir_lock(struct dentry *dentry)
+{
+	struct inode *inode;
+
+	if (!dentry)
+		return false;
+
+	inode = d_inode(dentry);
+	if (!inode || inode_inuse(inode))
+		return false;
+
+	return inode_inuse_trylock(inode);
+}
+
+static void ovl_dir_unlock(struct dentry *dentry)
+{
+	struct inode *inode;
+
+	if (!dentry)
+		return;
+
+	inode = d_inode(dentry);
+	if (inode && inode_inuse(inode))
+		inode_inuse_unlock(inode);
+}
+
 static void ovl_put_super(struct super_block *sb)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
 	unsigned i;
 
+	ovl_dir_unlock(ufs->workdir);
 	dput(ufs->workdir);
+	if (ufs->upper_mnt)
+		ovl_dir_unlock(ufs->upper_mnt->mnt_root);
 	mntput(ufs->upper_mnt);
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
@@ -285,6 +315,12 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	    ufs->config.consistent_fd != ovl_consistent_fd_def)
 		seq_printf(m, ",consistent_fd=%s",
 			   ufs->config.consistent_fd ? "on" : "off");
+	if (ufs->config.verify_dir) {
+		if (ufs->config.verify_dir == OVL_VERIFY_LOWER)
+			seq_puts(m, ",verify_lower");
+		else
+			seq_printf(m, ",verify_dir=%x", ufs->config.verify_dir);
+	}
 	return 0;
 }
 
@@ -318,6 +354,8 @@ enum {
 	OPT_REDIRECT_DIR_OFF,
 	OPT_CONSISTENT_FD_ON,
 	OPT_CONSISTENT_FD_OFF,
+	OPT_VERIFY_LOWER,
+	OPT_VERIFY_DIR,
 	OPT_ERR,
 };
 
@@ -330,6 +368,8 @@ static const match_table_t ovl_tokens = {
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
 	{OPT_CONSISTENT_FD_ON,		"consistent_fd=on"},
 	{OPT_CONSISTENT_FD_OFF,		"consistent_fd=off"},
+	{OPT_VERIFY_LOWER,		"verify_lower"},
+	{OPT_VERIFY_DIR,		"verify_dir=%u"},
 	{OPT_ERR,			NULL}
 };
 
@@ -410,7 +450,17 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->consistent_fd = false;
 			break;
 
+		case OPT_VERIFY_LOWER:
+			config->verify_dir = OVL_VERIFY_LOWER;
+			break;
+
+		case OPT_VERIFY_DIR:
+			if (match_hex(args, &config->verify_dir))
+				goto parse_err;
+			break;
+
 		default:
+parse_err:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
 		}
@@ -425,6 +475,41 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 	}
 
 	return 0;
+}
+
+/*
+ * Verify that stored file handle in dir matches origin.
+ * If dir has no stored file handle, encode and store origin file handle.
+ */
+static int ovl_verify_set_origin(struct dentry *dir, struct vfsmount *mnt,
+				 struct dentry *origin, const char *name)
+{
+	const struct ovl_fh *fh = NULL;
+	int err;
+
+	err = ovl_verify_origin(dir, mnt, origin);
+	if (!err)
+		return 0;
+
+	if (err != -ENODATA)
+		goto fail;
+
+	fh = ovl_encode_fh(origin);
+	err = PTR_ERR(fh);
+	if (IS_ERR(fh))
+		goto fail;
+	err = ovl_do_setxattr(dir, OVL_XATTR_ORIGIN, fh, fh->len, 0);
+	if (err)
+		goto fail;
+
+out:
+	kfree(fh);
+	return err;
+
+fail:
+	pr_err("overlayfs: failed to verify %s dir. (err=%i)\n",
+	       name, err);
+	goto out;
 }
 
 #define OVL_WORKDIR_NAME "work"
@@ -455,6 +540,14 @@ retry:
 		if (work->d_inode) {
 			err = -EEXIST;
 			if (retried)
+				goto out_dput;
+
+			/*
+			 * We have parent i_mutex, so this test is race free
+			 * w.r.t. ovl_dir_lock() below by another overlay mount.
+			 */
+			err = -EBUSY;
+			if (inode_inuse(work->d_inode))
 				goto out_dput;
 
 			retried = true;
@@ -495,6 +588,14 @@ retry:
 		err = notify_change(work, &attr, NULL);
 		inode_unlock(work->d_inode);
 		if (err)
+			goto out_dput;
+
+		/*
+		 * Protect our work dir from being deleted/renamed and from
+		 * being reused by another overlay mount.
+		 */
+		err = -EBUSY;
+		if (!ovl_dir_lock(work))
 			goto out_dput;
 	}
 out_unlock:
@@ -900,6 +1001,16 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			pr_err("overlayfs: failed to clone upperpath\n");
 			goto out_put_lowerpath;
 		}
+		/*
+		 * Protect our upper dir from being deleted/renamed and from
+		 * being reused by another overlay mount.
+		 */
+		err = -EBUSY;
+		if (!ovl_dir_lock(upperpath.dentry)) {
+			pr_err("overlayfs: upperdir in-use by another overlay mount?\n");
+			goto out_put_upper_mnt;
+		}
+
 		/* Don't inherit atime flags */
 		ufs->upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 
@@ -908,6 +1019,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		ufs->workdir = ovl_workdir_create(ufs->upper_mnt, workpath.dentry);
 		err = PTR_ERR(ufs->workdir);
 		if (IS_ERR(ufs->workdir)) {
+			if (err == -EBUSY) {
+				pr_err("overlayfs: workdir in-use by another overlay mount?\n");
+				goto out_unlock_upperdir;
+			}
 			pr_warn("overlayfs: failed to create directory %s/%s (errno: %i); mounting read-only\n",
 				ufs->config.workdir, OVL_WORKDIR_NAME, -err);
 			sb->s_flags |= MS_RDONLY;
@@ -925,7 +1040,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 			err = ovl_check_d_type_supported(&workpath);
 			if (err < 0)
-				goto out_put_workdir;
+				goto out_unlock_workdir;
 
 			/*
 			 * We allowed this configuration and don't want to
@@ -966,7 +1081,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	err = -ENOMEM;
 	ufs->lower_mnt = kcalloc(numlower, sizeof(struct vfsmount *), GFP_KERNEL);
 	if (ufs->lower_mnt == NULL)
-		goto out_put_workdir;
+		goto out_unlock_workdir;
 	for (i = 0; i < numlower; i++) {
 		struct vfsmount *mnt = clone_private_mount(&stack[i]);
 
@@ -989,6 +1104,28 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			ufs->same_sb = mnt->mnt_sb;
 		else if (ufs->same_sb != mnt->mnt_sb)
 			ufs->same_sb = NULL;
+
+		/*
+		 * The verify_lower feature is used to verify that lower dir
+		 * found by path matches the stored copy up origin file handle.
+		 * It requires that all layers support NFS export.
+		 */
+		if (ufs->config.verify_dir) {
+			err = -EOPNOTSUPP;
+			if (!ovl_can_decode_fh(mnt->mnt_sb)) {
+				pr_err("overlayfs: option \"verify_lower\" not supported by lower fs.\n");
+				goto out_put_lower_mnt;
+			}
+			/* Verify lower root matches origin stored in upper */
+			if (i == 0 && OVL_VERIFY_ROOT(ufs->config.verify_dir)) {
+				err = ovl_verify_set_origin(upperpath.dentry,
+							    mnt, mnt->mnt_root,
+							    "lower root");
+				if (err)
+					goto out_put_lower_mnt;
+			}
+		}
+
 	}
 
 	/* If the upper fs is nonexistent, we mark overlayfs r/o too */
@@ -1072,8 +1209,12 @@ out_put_lower_mnt:
 	for (i = 0; i < ufs->numlower; i++)
 		mntput(ufs->lower_mnt[i]);
 	kfree(ufs->lower_mnt);
-out_put_workdir:
+out_unlock_workdir:
+	ovl_dir_unlock(ufs->workdir);
 	dput(ufs->workdir);
+out_unlock_upperdir:
+	ovl_dir_unlock(upperpath.dentry);
+out_put_upper_mnt:
 	mntput(ufs->upper_mnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)

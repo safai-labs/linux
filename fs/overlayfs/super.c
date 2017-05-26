@@ -202,6 +202,16 @@ static int ovl_sync_fs(struct super_block *sb, int wait)
 	return ret;
 }
 
+static int ovl_freeze(struct super_block *sb)
+{
+	return 0;
+}
+
+static int ovl_unfreeze(struct super_block *sb)
+{
+	return 0;
+}
+
 /**
  * ovl_statfs
  * @sb: The overlayfs super block
@@ -265,6 +275,8 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 static const struct super_operations ovl_super_operations = {
 	.put_super	= ovl_put_super,
 	.sync_fs	= ovl_sync_fs,
+	.freeze_fs	= ovl_freeze,
+	.unfreeze_fs	= ovl_unfreeze,
 	.statfs		= ovl_statfs,
 	.show_options	= ovl_show_options,
 	.remount_fs	= ovl_remount,

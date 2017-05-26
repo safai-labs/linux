@@ -14,6 +14,7 @@ struct ovl_config {
 	char *workdir;
 	bool default_permissions;
 	bool redirect_dir;
+	bool consistent_fd;
 };
 
 /* private information held for overlayfs's superblock */
@@ -29,15 +30,22 @@ struct ovl_fs {
 	const struct cred *creator_cred;
 	bool tmpfile;
 	bool noxattr;
+	bool cloneup;
+	bool rocopyup;	/* copy up on open for read */
 	wait_queue_head_t copyup_wq;
 	/* sb common to all layers */
 	struct super_block *same_sb;
 };
 
+enum ovl_path_type;
+
 /* private information held for every overlayfs dentry */
 struct ovl_entry {
 	struct dentry *__upperdentry;
-	struct ovl_dir_cache *cache;
+	union {
+		struct dentry *__roupperdentry; /* regular file */
+		struct ovl_dir_cache *cache; /* directory */
+	};
 	union {
 		struct {
 			u64 version;
@@ -48,6 +56,7 @@ struct ovl_entry {
 		};
 		struct rcu_head rcu;
 	};
+	enum ovl_path_type __type;
 	unsigned numlower;
 	struct path lowerstack[];
 };
@@ -57,4 +66,9 @@ struct ovl_entry *ovl_alloc_entry(unsigned int numlower);
 static inline struct dentry *ovl_upperdentry_dereference(struct ovl_entry *oe)
 {
 	return lockless_dereference(oe->__upperdentry);
+}
+
+static inline struct dentry *ovl_roupperdentry_dereference(struct ovl_entry *oe)
+{
+	return lockless_dereference(oe->__roupperdentry);
 }

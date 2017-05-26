@@ -34,6 +34,11 @@ module_param_named(redirect_dir, ovl_redirect_dir_def, bool, 0644);
 MODULE_PARM_DESC(ovl_redirect_dir_def,
 		 "Default to on or off for the redirect_dir feature");
 
+static bool ovl_consistent_fd_def = IS_ENABLED(CONFIG_OVERLAY_FS_CONSISTENT_FD);
+module_param_named(consistent_fd, ovl_consistent_fd_def, bool, 0644);
+MODULE_PARM_DESC(ovl_consistent_fd_def,
+		 "Default to on or off for the consistent_fd feature");
+
 static void ovl_dentry_release(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
@@ -42,6 +47,7 @@ static void ovl_dentry_release(struct dentry *dentry)
 		unsigned int i;
 
 		dput(oe->__upperdentry);
+		dput(oe->__roupperdentry);
 		kfree(oe->redirect);
 		for (i = 0; i < oe->numlower; i++)
 			dput(oe->lowerstack[i].dentry);
@@ -70,7 +76,11 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 				 unsigned int open_flags)
 {
 	struct dentry *real;
+	bool rocopyup = !inode && ovl_consistent_fd(dentry->d_sb);
 	int err;
+
+	if (WARN_ON(open_flags && inode))
+		return dentry;
 
 	if (!d_is_reg(dentry)) {
 		if (!inode || inode == d_inode(dentry))
@@ -81,8 +91,8 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 	if (d_is_negative(dentry))
 		return dentry;
 
-	if (open_flags) {
-		err = ovl_open_maybe_copy_up(dentry, open_flags);
+	if (open_flags || rocopyup) {
+		err = ovl_open_maybe_copy_up(dentry, open_flags, rocopyup);
 		if (err)
 			return ERR_PTR(err);
 	}
@@ -95,6 +105,12 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 				return ERR_PTR(err);
 		}
 		return real;
+	}
+
+	if (rocopyup) {
+		real = ovl_dentry_ro_upper(dentry);
+		if (real)
+			return real;
 	}
 
 	real = ovl_dentry_lower(dentry);
@@ -238,6 +254,12 @@ static int ovl_statfs(struct dentry *dentry, struct kstatfs *buf)
 	return err;
 }
 
+/* Will this overlay be forced to mount/remount ro? */
+static bool ovl_force_readonly(struct ovl_fs *ufs)
+{
+	return (!ufs->upper_mnt || !ufs->workdir);
+}
+
 /**
  * ovl_show_options
  *
@@ -259,6 +281,10 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
 		seq_printf(m, ",redirect_dir=%s",
 			   ufs->config.redirect_dir ? "on" : "off");
+	if (!ovl_force_readonly(ufs) &&
+	    ufs->config.consistent_fd != ovl_consistent_fd_def)
+		seq_printf(m, ",consistent_fd=%s",
+			   ufs->config.consistent_fd ? "on" : "off");
 	return 0;
 }
 
@@ -266,7 +292,7 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
 
-	if (!(*flags & MS_RDONLY) && (!ufs->upper_mnt || !ufs->workdir))
+	if (!(*flags & MS_RDONLY) && ovl_force_readonly(ufs))
 		return -EROFS;
 
 	return 0;
@@ -290,6 +316,8 @@ enum {
 	OPT_DEFAULT_PERMISSIONS,
 	OPT_REDIRECT_DIR_ON,
 	OPT_REDIRECT_DIR_OFF,
+	OPT_CONSISTENT_FD_ON,
+	OPT_CONSISTENT_FD_OFF,
 	OPT_ERR,
 };
 
@@ -300,6 +328,8 @@ static const match_table_t ovl_tokens = {
 	{OPT_DEFAULT_PERMISSIONS,	"default_permissions"},
 	{OPT_REDIRECT_DIR_ON,		"redirect_dir=on"},
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
+	{OPT_CONSISTENT_FD_ON,		"consistent_fd=on"},
+	{OPT_CONSISTENT_FD_OFF,		"consistent_fd=off"},
 	{OPT_ERR,			NULL}
 };
 
@@ -370,6 +400,14 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 
 		case OPT_REDIRECT_DIR_OFF:
 			config->redirect_dir = false;
+			break;
+
+		case OPT_CONSISTENT_FD_ON:
+			config->consistent_fd = true;
+			break;
+
+		case OPT_CONSISTENT_FD_OFF:
+			config->consistent_fd = false;
 			break;
 
 		default:
@@ -766,6 +804,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	init_waitqueue_head(&ufs->copyup_wq);
 	ufs->config.redirect_dir = ovl_redirect_dir_def;
+	ufs->config.consistent_fd = ovl_consistent_fd_def;
 	err = ovl_parse_opt((char *) data, &ufs->config);
 	if (err)
 		goto out_free_config;
@@ -899,10 +938,15 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			/* Check if upper/work fs supports O_TMPFILE */
 			temp = ovl_do_tmpfile(ufs->workdir, S_IFREG | 0);
 			ufs->tmpfile = !IS_ERR(temp);
-			if (ufs->tmpfile)
+			if (ufs->tmpfile) {
+				/* Check if upper/work supports clone */
+				if (temp->d_inode && temp->d_inode->i_fop &&
+				    temp->d_inode->i_fop->clone_file_range)
+					ufs->cloneup = true;
 				dput(temp);
-			else
+			} else {
 				pr_warn("overlayfs: upper fs does not support tmpfile.\n");
+			}
 
 			/*
 			 * Check if upper/work fs supports trusted.overlay.*
@@ -953,6 +997,19 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	else if (ufs->upper_mnt->mnt_sb != ufs->same_sb)
 		ufs->same_sb = NULL;
 
+	if (!ufs->same_sb)
+		ufs->cloneup = false;
+
+	/*
+	 * Copy on read for consistent fd depends on clone support.
+	 * On ro mount fd is always consistent, but if overlay can be
+	 * later remounted rw, we need to copy on read anyway, so that
+	 * ro fd that was opened during ro mount will be consistent with
+	 * rw fd that is opened after remount rw.
+	 */
+	if (!ufs->cloneup || ovl_force_readonly(ufs))
+		ufs->config.consistent_fd = false;
+
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;
 	else
@@ -986,7 +1043,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	path_put(&workpath);
 	kfree(lowertmp);
 
-	oe->__upperdentry = upperpath.dentry;
+	if (upperpath.dentry) {
+		oe->__upperdentry = upperpath.dentry;
+		oe->impure = ovl_is_impuredir(upperpath.dentry);
+	}
 	for (i = 0; i < numlower; i++) {
 		oe->lowerstack[i].dentry = stack[i].dentry;
 		oe->lowerstack[i].mnt = ufs->lower_mnt[i];
@@ -994,6 +1054,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	kfree(stack);
 
 	root_dentry->d_fsdata = oe;
+	ovl_update_type(root_dentry, true);
 
 	realinode = d_inode(ovl_dentry_real(root_dentry));
 	ovl_inode_init(d_inode(root_dentry), realinode, !!upperpath.dentry);

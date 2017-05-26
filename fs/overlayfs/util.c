@@ -76,23 +76,46 @@ bool ovl_dentry_weird(struct dentry *dentry)
 enum ovl_path_type ovl_path_type(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
-	enum ovl_path_type type = 0;
+	enum ovl_path_type type = oe->__type;
 
+	/* Matches smp_wmb() in ovl_update_type() */
+	smp_rmb();
+	return type;
+}
+
+enum ovl_path_type ovl_update_type(struct dentry *dentry, bool is_dir)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+	enum ovl_path_type type = oe->__type;
+
+	/*
+	 * Update UPPER/MERGE flags and preserve the rest of the flags.
+	 * If ORIGIN was set during lookup (upper has overlay.origin),
+	 * we not clear the flag even if there is no lower now.
+	 */
+	type &= ~(__OVL_PATH_UPPER | __OVL_PATH_MERGE);
 	if (oe->__upperdentry) {
-		type = __OVL_PATH_UPPER;
-
+		type |= __OVL_PATH_UPPER;
 		/*
 		 * Non-dir dentry can hold lower dentry of its copy up origin.
 		 */
 		if (oe->numlower) {
 			type |= __OVL_PATH_ORIGIN;
-			if (d_is_dir(dentry))
+			if (is_dir)
 				type |= __OVL_PATH_MERGE;
 		}
+	} else if (oe->__roupperdentry) {
+		type |= __OVL_PATH_RO_UPPER;
 	} else {
 		if (oe->numlower > 1)
 			type |= __OVL_PATH_MERGE;
 	}
+	/*
+	 * Make sure type is consistent with __[ro]upperdentry before making it
+	 * visible to ovl_path_type().
+	 */
+	smp_wmb();
+	oe->__type = type;
 	return type;
 }
 
@@ -129,6 +152,13 @@ struct dentry *ovl_dentry_upper(struct dentry *dentry)
 	struct ovl_entry *oe = dentry->d_fsdata;
 
 	return ovl_upperdentry_dereference(oe);
+}
+
+struct dentry *ovl_dentry_ro_upper(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	return ovl_roupperdentry_dereference(oe);
 }
 
 static struct dentry *__ovl_dentry_lower(struct ovl_entry *oe)
@@ -208,6 +238,13 @@ bool ovl_redirect_dir(struct super_block *sb)
 	return ofs->config.redirect_dir && !ofs->noxattr;
 }
 
+bool ovl_consistent_fd(struct super_block *sb)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	return ofs->config.consistent_fd;
+}
+
 const char *ovl_dentry_get_redirect(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
@@ -223,18 +260,32 @@ void ovl_dentry_set_redirect(struct dentry *dentry, const char *redirect)
 	oe->redirect = redirect;
 }
 
+/*
+ * May be called up to twice in the lifetime of an overlay dentry -
+ * the first time when updating a ro upper dentry with a tempfile (nlink == 0)
+ * and the second time when updating a linked upper dentry (nlink > 0).
+ * Linked upper must have the same inode as the temp ro upper.
+ */
 void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
+	struct inode *inode = upperdentry->d_inode;
 
-	WARN_ON(!inode_is_locked(upperdentry->d_parent->d_inode));
 	WARN_ON(oe->__upperdentry);
+	if (WARN_ON(!inode))
+		return;
+	WARN_ON(inode->i_nlink &&
+		!inode_is_locked(upperdentry->d_parent->d_inode));
 	/*
 	 * Make sure upperdentry is consistent before making it visible to
-	 * ovl_upperdentry_dereference().
+	 * ovl_[ro]upperdentry_dereference()
 	 */
 	smp_wmb();
-	oe->__upperdentry = upperdentry;
+	if (inode->i_nlink)
+		oe->__upperdentry = upperdentry;
+	else
+		oe->__roupperdentry = upperdentry;
+	ovl_update_type(dentry, d_is_dir(dentry));
 }
 
 void ovl_inode_init(struct inode *inode, struct inode *realinode, bool is_upper)
@@ -291,7 +342,9 @@ int ovl_copy_up_start(struct dentry *dentry)
 	err = wait_event_interruptible_locked(ofs->copyup_wq, !oe->copying);
 	if (!err) {
 		if (oe->__upperdentry)
-			err = 1; /* Already copied up */
+			err = __OVL_PATH_UPPER; /* Already copied up */
+		else if (oe->__roupperdentry)
+			err = __OVL_PATH_RO_UPPER; /* Only O_TMPFILE */
 		else
 			oe->copying = true;
 	}
@@ -311,6 +364,21 @@ void ovl_copy_up_end(struct dentry *dentry)
 	spin_unlock(&ofs->copyup_wq.lock);
 }
 
+bool ovl_check_dir_xattr(struct dentry *dentry, const char *name)
+{
+	int res;
+	char val;
+
+	if (!d_is_dir(dentry))
+		return false;
+
+	res = vfs_getxattr(dentry, name, &val, 1);
+	if (res == 1 && val == 'y')
+		return true;
+
+	return false;
+}
+
 int ovl_check_setxattr(struct dentry *dentry, struct dentry *upperdentry,
 		       const char *name, const void *value, size_t size,
 		       int xerr)
@@ -328,6 +396,22 @@ int ovl_check_setxattr(struct dentry *dentry, struct dentry *upperdentry,
 		ofs->noxattr = true;
 		return xerr;
 	}
+
+	return err;
+}
+
+int ovl_set_impure(struct dentry *dentry, struct dentry *upperdentry)
+{
+	int err;
+
+	/*
+	 * Do not fail when upper doesn't support xattrs.
+	 * Upper inodes won't have origin nor redirect xattr anyway.
+	 */
+	err = ovl_check_setxattr(dentry, upperdentry, OVL_XATTR_IMPURE,
+				 "y", 1, 0);
+	if (!err)
+		ovl_dentry_set_impure(dentry);
 
 	return err;
 }

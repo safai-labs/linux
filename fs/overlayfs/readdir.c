@@ -275,6 +275,9 @@ static bool ovl_dir_is_real(struct dentry *dir)
 	struct path realpath;
 	enum ovl_path_type type = ovl_path_real(dir, &realpath);
 
+	if (ovl_is_snapshot_fs_type(dir->d_sb))
+		return true;
+
 	/*
 	 * Non-merge dir may contain whiteouts from a time it was a merge
 	 * upper, before lower dir was removed under it and possibly before

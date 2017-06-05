@@ -892,6 +892,7 @@ static int ovl_rename(struct inode *olddir, struct dentry *old,
 	bool old_opaque;
 	bool new_opaque;
 	bool cleanup_whiteout = false;
+	bool new_drop_nlink = false;
 	bool overwrite = !(flags & RENAME_EXCHANGE);
 	bool is_dir = d_is_dir(old);
 	bool new_is_dir = d_is_dir(new);
@@ -927,6 +928,8 @@ static int ovl_rename(struct inode *olddir, struct dentry *old,
 		err = ovl_copy_up(new);
 		if (err)
 			goto out_drop_write;
+	} else if (!new_is_dir && new->d_inode) {
+		new_drop_nlink = true;
 	}
 
 	old_cred = ovl_override_creds(old->d_sb);
@@ -1046,6 +1049,9 @@ static int ovl_rename(struct inode *olddir, struct dentry *old,
 
 	if (cleanup_whiteout)
 		ovl_cleanup(old_upperdir->d_inode, newdentry);
+
+	if (new_drop_nlink)
+		drop_nlink(new->d_inode);
 
 	ovl_dentry_version_inc(old->d_parent);
 	ovl_dentry_version_inc(new->d_parent);

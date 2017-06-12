@@ -679,13 +679,31 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	if (upperdentry || ctr) {
 		struct dentry *realdentry;
 		struct inode *realinode;
+		struct ovl_inode_info info = { };
 
 		realdentry = upperdentry ? upperdentry : stack[0].dentry;
 		realinode = d_inode(realdentry);
+		/*
+		 * When inodes index is enabled, we hash upper non-dir inodes
+		 * by the address of the copy up origin inode if origin inode
+		 * is indexed (positive index) and we hash non-upper non-dir
+		 * inodes by the address of the lower inode (negative index).
+		 *
+		 * When inodes index is disabled, or if origin is not indexed,
+		 * we hash non-dir upper inodes by the address of upper inode.
+		 */
+		if (upperdentry) {
+			BUG_ON(index && realinode != d_inode(index));
+			info.__upperinode = realinode;
+		}
+		if (index) {
+			BUG_ON(!ctr);
+			info.lowerinode = d_inode(stack[0].dentry);
+		}
 
 		err = -ENOMEM;
-		if (upperdentry && !d_is_dir(upperdentry)) {
-			inode = ovl_get_inode(dentry->d_sb, realinode);
+		if ((upperdentry || index) && !d.is_dir) {
+			inode = ovl_get_inode(dentry->d_sb, &info);
 		} else {
 			inode = ovl_new_inode(dentry->d_sb, realinode->i_mode,
 					      realinode->i_rdev);

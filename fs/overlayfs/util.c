@@ -303,13 +303,38 @@ struct inode *ovl_inode_real(struct inode *inode, bool *is_upper)
 	return realinode;
 }
 
-void ovl_inode_update(struct inode *inode, struct inode *upperinode)
+/*
+ * When inodes index is enabled, we hash all non-dir inodes by the address
+ * of the lower origin inode. We need to take care on concurrent copy up of
+ * different lower hardlinks, that only one alias can set the upper real inode.
+ * Copy up of an alias that lost the ovl_inode_update() race will get -EEXIST
+ * and needs to d_drop() the overlay dentry of that alias, so the next
+ * ovl_lookup() will initialize a new overlay inode for the broken hardlink.
+ */
+int ovl_inode_update(struct inode *inode, struct inode *upperinode)
 {
+	struct ovl_inode_info *oi = OVL_I_INFO(inode);
+	struct inode *realinode;
+	bool indexed = ovl_indexdir(inode->i_sb);
+
 	WARN_ON(!upperinode);
-	WARN_ON(!inode_unhashed(inode));
-	WRITE_ONCE(OVL_I_INFO(inode)->__upperinode, upperinode);
-	if (!S_ISDIR(upperinode->i_mode))
+
+	spin_lock(&inode->i_lock);
+	realinode = oi->__upperinode;
+	if (!realinode)
+		oi->__upperinode = upperinode;
+	spin_unlock(&inode->i_lock);
+
+	if (realinode && realinode != upperinode) {
+		WARN_ON(!indexed);
+		return -EEXIST;
+	}
+
+	/* When inodes index is enabled, inode is hashed before copy up */
+	if (!S_ISDIR(upperinode->i_mode) && !indexed)
 		ovl_insert_inode_hash(inode, upperinode);
+
+	return 0;
 }
 
 void ovl_dentry_version_inc(struct dentry *dentry)

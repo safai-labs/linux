@@ -694,7 +694,6 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 		}
 		if (!inode)
 			goto out_free_oe;
-		ovl_copyattr(realdentry->d_inode, inode);
 	}
 
 	revert_creds(old_cred);

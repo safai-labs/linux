@@ -158,8 +158,7 @@ static void ovl_instantiate(struct dentry *dentry, struct inode *inode,
 	ovl_dentry_version_inc(dentry->d_parent);
 	ovl_dentry_update(dentry, newdentry);
 	if (!hardlink) {
-		ovl_inode_update(inode, d_inode(newdentry));
-		ovl_copyattr(newdentry->d_inode, inode);
+		ovl_inode_init(inode, d_inode(newdentry), true);
 	} else {
 		WARN_ON(ovl_inode_real(inode, NULL) != d_inode(newdentry));
 		inc_nlink(inode);

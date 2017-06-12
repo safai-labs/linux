@@ -477,6 +477,7 @@ struct inode *ovl_get_inode(struct super_block *sb, struct inode *realinode)
 	if (inode && inode->i_state & I_NEW) {
 		ovl_fill_inode(inode, realinode->i_mode, realinode->i_rdev);
 		set_nlink(inode, realinode->i_nlink);
+		ovl_copyattr(realinode, inode);
 		unlock_new_inode(inode);
 	}
 

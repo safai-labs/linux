@@ -418,7 +418,11 @@ static int ovl_copy_up_locked(struct dentry *workdir, struct dentry *upperdir,
 
 	newdentry = dget(tmpfile ? upper : temp);
 	ovl_dentry_update(dentry, newdentry);
-	ovl_inode_update(d_inode(dentry), d_inode(newdentry));
+	err = ovl_inode_update(d_inode(dentry), d_inode(newdentry));
+	if (err) {
+		/* Broken hardlink - drop cache and return error */
+		d_drop(dentry);
+	}
 
 	/* Restore timestamps on parent (best effort) */
 	ovl_set_timestamps(upperdir, pstat);

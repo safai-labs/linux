@@ -213,7 +213,7 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry);
 void ovl_inode_init(struct inode *inode, struct inode *realinode,
 		    bool is_upper);
 struct inode *ovl_inode_real(struct inode *inode, bool *is_upper);
-void ovl_inode_update(struct inode *inode, struct inode *upperinode);
+int ovl_inode_update(struct inode *inode, struct inode *upperinode);
 void ovl_dentry_version_inc(struct dentry *dentry);
 u64 ovl_dentry_version_get(struct dentry *dentry);
 bool ovl_is_whiteout(struct dentry *dentry);
@@ -270,7 +270,10 @@ int ovl_update_time(struct inode *inode, struct timespec *ts, int flags);
 bool ovl_is_private_xattr(const char *name);
 
 struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev);
-struct inode *ovl_get_inode(struct super_block *sb, struct inode *realinode);
+struct ovl_inode_info;
+struct inode *ovl_get_inode(struct super_block *sb,
+			    struct ovl_inode_info *info);
+
 static inline void ovl_copyattr(struct inode *from, struct inode *to)
 {
 	to->i_uid = from->i_uid;

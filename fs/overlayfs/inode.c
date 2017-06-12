@@ -458,22 +458,59 @@ struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev)
 
 static int ovl_inode_test(struct inode *inode, void *data)
 {
-	return OVL_I_INFO(inode)->__upperinode == data;
+	struct ovl_inode_info *oi = OVL_I_INFO(inode);
+	struct ovl_inode_info *info = data;
+	bool indexed = ovl_indexdir(inode->i_sb);
+
+	if (indexed && info->lowerinode != oi->lowerinode)
+		return false;
+
+	if (info->__upperinode == oi->__upperinode)
+		return true;
+
+	/*
+	 * Return same overlay inode when looking up by lower real inode, but
+	 * an indexed overlay inode, that is hashed by the same lower origin
+	 * inode, has already been updated on copy up to a real upper inode.
+	 */
+	return indexed && !info->__upperinode;
 }
 
 static int ovl_inode_set(struct inode *inode, void *data)
 {
-	OVL_I_INFO(inode)->__upperinode = data;
+	struct ovl_inode_info *oi = OVL_I_INFO(inode);
+	struct ovl_inode_info *info = data;
+
+	oi->__upperinode = info->__upperinode;
+	oi->lowerinode = info->lowerinode;
+
 	return 0;
 }
 
-struct inode *ovl_get_inode(struct super_block *sb, struct inode *realinode)
-
+struct inode *ovl_get_inode(struct super_block *sb, struct ovl_inode_info *info)
 {
+	struct inode *realinode = info->__upperinode;
+	unsigned long hashval = (unsigned long) realinode;
 	struct inode *inode;
 
-	inode = iget5_locked(sb, (unsigned long) realinode,
-			     ovl_inode_test, ovl_inode_set, realinode);
+	/*
+	 * With inodes index feature enabled, overlay inodes hash key is the
+	 * address of the copy up origin lower inode if it is indexed.
+	 * When hashing a non-upper overlay inode, origin has to be set to
+	 * the real lower inode, which is the copy up origin inode to be.
+	 * Regardless of the inode we use as hash key, we always use the
+	 * uppermost real inode to initialize ovl_inode.
+	 */
+	if (info->lowerinode) {
+		WARN_ON(!ovl_indexdir(sb));
+		hashval = (unsigned long) info->lowerinode;
+		if (!realinode)
+			realinode = info->lowerinode;
+	} else if (WARN_ON(!realinode)) {
+		return NULL;
+	}
+
+	inode = iget5_locked(sb, hashval, ovl_inode_test, ovl_inode_set, info);
 	if (inode && inode->i_state & I_NEW) {
 		ovl_fill_inode(inode, realinode->i_mode, realinode->i_rdev);
 		set_nlink(inode, realinode->i_nlink);

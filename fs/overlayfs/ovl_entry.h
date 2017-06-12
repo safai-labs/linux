@@ -65,3 +65,15 @@ static inline struct dentry *ovl_upperdentry_dereference(struct ovl_entry *oe)
 {
 	return lockless_dereference(oe->__upperdentry);
 }
+
+struct ovl_inode {
+	/* keep this first */
+	struct inode vfs_inode;
+	/* synchronize copy up and more */
+	struct mutex oi_lock;
+};
+
+static inline struct ovl_inode *OVL_I(struct inode *inode)
+{
+	return (struct ovl_inode *) inode;
+}

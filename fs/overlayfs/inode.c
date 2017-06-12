@@ -13,6 +13,7 @@
 #include <linux/xattr.h>
 #include <linux/posix_acl.h>
 #include "overlayfs.h"
+#include "ovl_entry.h"
 
 int ovl_setattr(struct dentry *dentry, struct iattr *attr)
 {
@@ -457,12 +458,12 @@ struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev)
 
 static int ovl_inode_test(struct inode *inode, void *data)
 {
-	return ovl_inode_real(inode, NULL) == data;
+	return OVL_I_INFO(inode)->__upperinode == data;
 }
 
 static int ovl_inode_set(struct inode *inode, void *data)
 {
-	inode->i_private = (void *) (((unsigned long) data) | OVL_ISUPPER_MASK);
+	OVL_I_INFO(inode)->__upperinode = data;
 	return 0;
 }
 

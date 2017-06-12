@@ -269,16 +269,36 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 
 void ovl_inode_init(struct inode *inode, struct inode *realinode, bool is_upper)
 {
-	WRITE_ONCE(inode->i_private, (unsigned long) realinode |
-		   (is_upper ? OVL_ISUPPER_MASK : 0));
+	struct ovl_inode_info *oi = OVL_I_INFO(inode);
+
+	if (is_upper) {
+		oi->__upperinode = realinode;
+		oi->lowerinode = NULL;
+	} else {
+		oi->__upperinode = NULL;
+		oi->lowerinode = realinode;
+	}
+}
+
+struct inode *ovl_inode_real(struct inode *inode, bool *is_upper)
+{
+	struct ovl_inode_info *oi = OVL_I_INFO(inode);
+	struct inode *realinode;
+
+	realinode = READ_ONCE(oi->__upperinode);
+	if (is_upper)
+		*is_upper = !!realinode;
+	if (!realinode)
+		realinode = oi->lowerinode;
+
+	return realinode;
 }
 
 void ovl_inode_update(struct inode *inode, struct inode *upperinode)
 {
 	WARN_ON(!upperinode);
 	WARN_ON(!inode_unhashed(inode));
-	WRITE_ONCE(inode->i_private,
-		   (unsigned long) upperinode | OVL_ISUPPER_MASK);
+	WRITE_ONCE(OVL_I_INFO(inode)->__upperinode, upperinode);
 	if (!S_ISDIR(upperinode->i_mode))
 		__insert_inode_hash(inode, (unsigned long) upperinode);
 }

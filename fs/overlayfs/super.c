@@ -181,6 +181,7 @@ static struct inode *ovl_alloc_inode(struct super_block *sb)
 		return NULL;
 
 	mutex_init(&OVL_I(inode)->oi_lock);
+	memset(OVL_I_INFO(inode), 0, sizeof(struct ovl_inode_info));
 
 	return inode;
 }

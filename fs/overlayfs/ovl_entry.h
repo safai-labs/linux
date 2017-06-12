@@ -66,9 +66,16 @@ static inline struct dentry *ovl_upperdentry_dereference(struct ovl_entry *oe)
 	return lockless_dereference(oe->__upperdentry);
 }
 
+/* private information embedded in every overlayfs inode */
+struct ovl_inode_info {
+	struct inode *__upperinode;
+	struct inode *lowerinode;
+};
+
 struct ovl_inode {
 	/* keep this first */
 	struct inode vfs_inode;
+	struct ovl_inode_info info;
 	/* synchronize copy up and more */
 	struct mutex oi_lock;
 };
@@ -76,4 +83,9 @@ struct ovl_inode {
 static inline struct ovl_inode *OVL_I(struct inode *inode)
 {
 	return (struct ovl_inode *) inode;
+}
+
+static inline struct ovl_inode_info *OVL_I_INFO(struct inode *inode)
+{
+	return &OVL_I(inode)->info;
 }

@@ -35,7 +35,6 @@ struct ovl_fs {
 	const struct cred *creator_cred;
 	bool tmpfile;
 	bool noxattr;
-	wait_queue_head_t copyup_wq;
 	/* sb common to all layers */
 	struct super_block *same_sb;
 };
@@ -50,7 +49,6 @@ struct ovl_entry {
 		struct {
 			u64 version;
 			const char *redirect;
-			bool copying;
 		};
 		struct rcu_head rcu;
 	};

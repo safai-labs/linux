@@ -257,7 +257,7 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry)
 	struct ovl_entry *oe = dentry->d_fsdata;
 
 	WARN_ON(!inode_is_locked(upperdentry->d_parent->d_inode) &&
-		!oe->copying);
+		!mutex_is_locked(&OVL_I(d_inode(dentry))->oi_lock));
 	WARN_ON(oe->__upperdentry);
 	/*
 	 * Make sure upperdentry is consistent before making it visible to
@@ -368,32 +368,20 @@ struct file *ovl_path_open(struct path *path, int flags)
 
 int ovl_copy_up_start(struct dentry *dentry)
 {
-	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
-	struct ovl_entry *oe = dentry->d_fsdata;
 	int err;
 
-	spin_lock(&ofs->copyup_wq.lock);
-	err = wait_event_interruptible_locked(ofs->copyup_wq, !oe->copying);
-	if (!err) {
-		if (oe->__upperdentry)
-			err = 1; /* Already copied up */
-		else
-			oe->copying = true;
+	err = mutex_lock_interruptible(&OVL_I(d_inode(dentry))->oi_lock);
+	if (!err && ovl_dentry_upper(dentry)) {
+		err = 1; /* Already copied up */
+		mutex_unlock(&OVL_I(d_inode(dentry))->oi_lock);
 	}
-	spin_unlock(&ofs->copyup_wq.lock);
 
 	return err;
 }
 
 void ovl_copy_up_end(struct dentry *dentry)
 {
-	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
-	struct ovl_entry *oe = dentry->d_fsdata;
-
-	spin_lock(&ofs->copyup_wq.lock);
-	oe->copying = false;
-	wake_up_locked(&ofs->copyup_wq);
-	spin_unlock(&ofs->copyup_wq.lock);
+	mutex_unlock(&OVL_I(d_inode(dentry))->oi_lock);
 }
 
 bool ovl_check_dir_xattr(struct dentry *dentry, const char *name)

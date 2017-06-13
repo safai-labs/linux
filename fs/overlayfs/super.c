@@ -117,11 +117,43 @@ bug:
 	return dentry;
 }
 
+static int ovl_dentry_indexed_revalidate(struct dentry *dentry,
+					 unsigned int flags)
+{
+	enum ovl_path_type type = ovl_path_type(dentry);
+	bool is_upper;
+
+	if (!ovl_indexdir(dentry->d_sb) ||
+	    d_is_dir(dentry) || d_is_negative(dentry))
+		return 1;
+
+	/*
+	 * Invalidate lower hardlink after it has been indexed by copy up
+	 * of another lower alias. ovl_lookup will trigger copy up of this
+	 * path and link the upper path to the upper index inode.
+	 */
+	ovl_inode_real(d_inode(dentry), &is_upper);
+	if (is_upper && !OVL_TYPE_UPPER(type))
+		return 0;
+
+	return 1;
+}
+
+static const struct dentry_operations ovl_dentry_operations = {
+	.d_release = ovl_dentry_release,
+	.d_real = ovl_d_real,
+	.d_revalidate = ovl_dentry_indexed_revalidate,
+};
+
 static int ovl_dentry_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
 	unsigned int i;
-	int ret = 1;
+	int ret;
+
+	ret = ovl_dentry_indexed_revalidate(dentry, flags);
+	if (ret < 1)
+		return ret;
 
 	for (i = 0; i < oe->numlower; i++) {
 		struct dentry *d = oe->lowerstack[i].dentry;
@@ -157,11 +189,6 @@ static int ovl_dentry_weak_revalidate(struct dentry *dentry, unsigned int flags)
 	}
 	return ret;
 }
-
-static const struct dentry_operations ovl_dentry_operations = {
-	.d_release = ovl_dentry_release,
-	.d_real = ovl_d_real,
-};
 
 static const struct dentry_operations ovl_reval_dentry_operations = {
 	.d_release = ovl_dentry_release,

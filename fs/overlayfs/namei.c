@@ -656,7 +656,14 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 			goto out_put;
 
 		if (!upperdentry) {
-			/* TODO: handle lookup of lower indexed entries */
+			/*
+			 * At this point, if we find a positive index, we cannot
+			 * tell if the index entry has been created by a copy up
+			 * in progress, because we don't have the overlay inode
+			 * and we don't hold the overlay inode oi_lock. So we
+			 * will treat this entry as non-indexed lower and will
+			 * try to link it up before returning from lookup.
+			 */
 		} else if (index && d_inode(index)) {
 			/* Vertified indexed upper */
 			type |= __OVL_PATH_INDEX;
@@ -719,12 +726,21 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	oe->redirect = upperredirect;
 	oe->__upperdentry = upperdentry;
 	memcpy(oe->lowerstack, stack, sizeof(struct path) * ctr);
-	dput(index);
 	kfree(stack);
 	kfree(d.redirect);
 	dentry->d_fsdata = oe;
 	ovl_update_type(dentry, d.is_dir);
 	d_add(dentry, inode);
+
+	/* Link up indexed lower early for consistent overlay hardlinks */
+	if (index && d_inode(index) && !upperdentry) {
+		err = ovl_copy_up(dentry);
+		if (err) {
+			pr_warn_ratelimited("overlayfs: failed link up to index (%pd2, index=%pd2, err=%i)\n",
+					    dentry, index, err);
+		}
+	}
+	dput(index);
 
 	return NULL;
 

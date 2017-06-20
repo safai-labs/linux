@@ -18,6 +18,7 @@
 #include <linux/atomic.h>
 #include <linux/ratelimit.h>
 #include "overlayfs.h"
+#include "ovl_entry.h"
 
 static unsigned short ovl_redirect_max = 256;
 module_param_named(redirect_max, ovl_redirect_max, ushort, 0644);
@@ -585,6 +586,64 @@ static int ovl_symlink(struct inode *dir, struct dentry *dentry,
 	return ovl_create_object(dentry, S_IFLNK, 0, link);
 }
 
+/*
+ * Operations that change overlay inode and upper inode nlink need to be
+ * synchronized with copy up for persistent nlink accounting.
+ */
+static int ovl_nlink_start(struct dentry *dentry)
+{
+	enum ovl_path_type type = ovl_path_type(dentry);
+	int err;
+	const struct cred *old_cred;
+
+	/*
+	 * With inodes index is enabled, we store the union overlay nlink
+	 * in an xattr on the index inode. When whiting out lower hardlinks
+	 * we need to decrement the overlay persistent nlink, but before the
+	 * first copy up, we have no upper index inode to store the xattr.
+	 *
+	 * As a workaround, before whiteout/rename over of a lower hardlink,
+	 * copy up to create the upper index. Creating the upper index will
+	 * initialize the overlay nlink, so it could be dropped if unlink
+	 * or rename succeeds.
+	 *
+	 * TODO: implement metadata only index copy up when called with
+	 *       ovl_copy_up_flags(dentry, O_PATH).
+	 */
+	if (ovl_indexdir(dentry->d_sb) && !OVL_TYPE_UPPER(type) &&
+	    ovl_dentry_lower(dentry)->d_inode->i_nlink > 1) {
+		err = ovl_copy_up(dentry);
+		if (err)
+			return err;
+
+		type = ovl_path_type(dentry);
+	}
+
+	err = mutex_lock_interruptible(&OVL_I(d_inode(dentry))->oi_lock);
+	if (err)
+		return err;
+
+	if (!OVL_TYPE_INDEX(type) || !OVL_TYPE_UPPER(type))
+		return 0;
+
+	old_cred = ovl_override_creds(dentry->d_sb);
+	/*
+	 * The overlay inode nlink should be incremented/decremented IFF the
+	 * upper operation succeeds, along with nlink change of upper inode.
+	 * Therefore, before link/unlink/rename, we store the union nlink
+	 * value relative to the upper inode nlink in an upper inode xattr.
+	 */
+	ovl_set_nlink(d_inode(dentry), ovl_dentry_upper(dentry), true);
+	revert_creds(old_cred);
+
+	return 0;
+}
+
+static void ovl_nlink_end(struct dentry *dentry)
+{
+	mutex_unlock(&OVL_I(d_inode(dentry))->oi_lock);
+}
+
 static int ovl_link(struct dentry *old, struct inode *newdir,
 		    struct dentry *new)
 {
@@ -599,6 +658,10 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 	if (err)
 		goto out_drop_write;
 
+	err = ovl_nlink_start(old);
+	if (err)
+		goto out_drop_write;
+
 	inode = d_inode(old);
 	ihold(inode);
 
@@ -606,6 +669,7 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 	if (err)
 		iput(inode);
 
+	ovl_nlink_end(old);
 out_drop_write:
 	ovl_drop_write(old);
 out:
@@ -736,7 +800,6 @@ out:
 
 static int ovl_do_remove(struct dentry *dentry, bool is_dir)
 {
-	enum ovl_path_type type;
 	int err;
 	const struct cred *old_cred;
 
@@ -748,7 +811,9 @@ static int ovl_do_remove(struct dentry *dentry, bool is_dir)
 	if (err)
 		goto out_drop_write;
 
-	type = ovl_path_type(dentry);
+	err = ovl_nlink_start(dentry);
+	if (err)
+		goto out_drop_write;
 
 	old_cred = ovl_override_creds(dentry->d_sb);
 	if (!ovl_lower_positive(dentry))
@@ -762,6 +827,8 @@ static int ovl_do_remove(struct dentry *dentry, bool is_dir)
 		else
 			drop_nlink(dentry->d_inode);
 	}
+
+	ovl_nlink_end(dentry);
 out_drop_write:
 	ovl_drop_write(dentry);
 out:
@@ -929,6 +996,10 @@ static int ovl_rename(struct inode *olddir, struct dentry *old,
 		if (err)
 			goto out_drop_write;
 	} else if (!new_is_dir && new->d_inode) {
+		err = ovl_nlink_start(new);
+		if (err)
+			goto out_drop_write;
+
 		new_drop_nlink = true;
 	}
 
@@ -1064,6 +1135,11 @@ out_unlock:
 	unlock_rename(new_upperdir, old_upperdir);
 out_revert_creds:
 	revert_creds(old_cred);
+	/*
+	 * Release oi_lock after rename lock.
+	 */
+	if (new_drop_nlink)
+		ovl_nlink_end(new);
 out_drop_write:
 	ovl_drop_write(old);
 out:

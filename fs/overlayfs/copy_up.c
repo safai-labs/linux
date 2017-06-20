@@ -610,24 +610,21 @@ static int ovl_copy_up_indexdir_prepare(struct ovl_copy_up_ctx *ctx)
 			goto out_dput;
 		}
 
-		if (inode->i_nlink < 2) {
+		err = -ENOENT;
+		if (ctx->dentry->d_inode->i_nlink == 0) {
 			/*
 			 * An orphan index inode can be created by copying up
-			 * a lower hardlink alias and then unlinking it. From
-			 * overlayfs perspective, this inode may still live if
-			 * there are more lower hardlinks and it should contain
-			 * the data of the upper inode that was unlinked. So if
-			 * an orphan inode is found in the index dir and we
-			 * should reuse it on copy up of another lower alias.
-			 *
-			 * TODO: keep account of nlink incremented by copy up
-			 * and account of nlink decremented by lower cover up.
-			 * When copyup_nlink + coverup_nlink == origin_nlink
-			 * and index_nlink == 1, need to remove the index entry
-			 * because all overlay references to the index are gone.
+			 * all lower hardlinks and then unlinking all upper
+			 * hardlinks. The overlay inode may still be alive if
+			 * it is referenced from an open file descriptor, but
+			 * there should be no more copy ups that link to the
+			 * index inode.
+			 * Orphan index inodes should be cleaned up on mount
+			 * and when overlay inode nlink drops to zero.
 			 */
-			pr_warn_ratelimited("overlayfs: linking to orphan upper (%pd2, ino=%lu)\n",
-					    index, inode->i_ino);
+			pr_warn_ratelimited("overlayfs: not linking to orphan index (%pd2, nlink=%u)\n",
+					    index, inode->i_nlink);
+			goto out_dput;
 		}
 
 		/* Link to existing upper without copying lower */
@@ -643,6 +640,15 @@ static int ovl_copy_up_indexdir_prepare(struct ovl_copy_up_ctx *ctx)
 
 	ctx->created = true;
 out:
+	/*
+	 * The overlay inode nlink does not change on copy up whether the
+	 * operation succeeds or fails, but the upper inode nlink may change.
+	 * Therefore, before copy up, we store the union nlink value relative
+	 * to the lower inode nlink in an index inode xattr. We will store it
+	 * again relative to index inode nlink at copy up commit or cancel.
+	 */
+	ovl_set_nlink(d_inode(ctx->dentry), index, false);
+
 	ctx->upper = upper;
 	ctx->temp = index;
 	return err;
@@ -657,9 +663,44 @@ out_dput:
 	return err;
 }
 
+static int ovl_fsync_index(struct dentry *dentry, struct dentry *index)
+{
+	struct file *file;
+	struct path upperpath;
+	int err;
+
+	ovl_path_upper(dentry, &upperpath);
+	BUG_ON(upperpath.dentry != NULL);
+	upperpath.dentry = index;
+
+	file = ovl_path_open(&upperpath, O_LARGEFILE | O_WRONLY);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+
+	err = vfs_fsync(file, 0);
+
+	fput(file);
+	return err;
+}
+
 static int ovl_copy_up_indexdir_commit(struct ovl_copy_up_ctx *ctx)
 {
 	int err;
+
+	/*
+	 * fsync index before "link-up" to guaranty that nlink xattr is stored
+	 * on-disk. Non empty regular files are fsynced on ovl_copy_up_data().
+	 * This does not cover "link-up" of non-regular files.
+	 *
+	 * XXX: Is this really needed? I think that on a journalled file system
+	 * inode xattr change cannot be re-ordered with the same inode's nlink
+	 * change, because they are both metadata changes of that inode.
+	 */
+	if ((!ctx->created || !ctx->stat->size) && S_ISREG(ctx->stat->mode)) {
+		err = ovl_fsync_index(ctx->dentry, ctx->temp);
+		if (err)
+			goto out;
+	}
 
 	inode_lock_nested(d_inode(ctx->upperdir), I_MUTEX_PARENT);
 	/* link the sucker ;) */
@@ -672,18 +713,8 @@ static int ovl_copy_up_indexdir_commit(struct ovl_copy_up_ctx *ctx)
 	if (err)
 		goto out;
 
-	/*
-	 * Overlay inode nlink doesn't account for lower hardlinks that haven't
-	 * been copied up, so we need to update it on copy up. Otherwise, user
-	 * could decrement nlink below zero by unlinking copied up uppers.
-	 * On the first copy up, we set overlay inode nlink to upper inode nlink
-	 * and on following copy ups we increment it. In between, ovl_link()
-	 * could add more upper hardlinks and increment overlay nlink as well.
-	 */
-	if (ctx->created)
-		set_nlink(d_inode(ctx->dentry), d_inode(ctx->temp)->i_nlink);
-	else
-		inc_nlink(d_inode(ctx->dentry));
+	/* Store the union nlink value relative to index inode nlink */
+	ovl_set_nlink(d_inode(ctx->dentry), ctx->temp, true);
 
 	/* We can mark dentry is indexed before updating upperdentry */
 	ovl_dentry_set_indexed(ctx->dentry);
@@ -698,6 +729,9 @@ static void ovl_copy_up_indexdir_cancel(struct ovl_copy_up_ctx *ctx)
 
 	if (WARN_ON(!inode))
 		return;
+
+	/* Store the union nlink value relative to index inode nlink */
+	ovl_set_nlink(d_inode(ctx->dentry), ctx->temp, true);
 
 	/* Cleanup prepared index entry only if we created it */
 	if (!ctx->created)

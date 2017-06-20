@@ -710,7 +710,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 
 		err = -ENOMEM;
 		if ((upperdentry || index) && !d.is_dir) {
-			inode = ovl_get_inode(dentry->d_sb, &info);
+			inode = ovl_get_inode(dentry->d_sb, &info, index);
 		} else {
 			inode = ovl_new_inode(dentry->d_sb, realinode->i_mode,
 					      realinode->i_rdev);

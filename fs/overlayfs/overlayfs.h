@@ -31,6 +31,7 @@ enum ovl_path_type {
 #define OVL_XATTR_REDIRECT OVL_XATTR_PREFIX "redirect"
 #define OVL_XATTR_ORIGIN OVL_XATTR_PREFIX "origin"
 #define OVL_XATTR_IMPURE OVL_XATTR_PREFIX "impure"
+#define OVL_XATTR_NLINK OVL_XATTR_PREFIX "nlink"
 
 /*
  * The tuple (fh,uuid) is a universal unique identifier for a copy up origin,
@@ -270,10 +271,11 @@ int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags);
 int ovl_update_time(struct inode *inode, struct timespec *ts, int flags);
 bool ovl_is_private_xattr(const char *name);
 
+int ovl_set_nlink(struct inode *inode, struct dentry *index, bool add_upper);
 struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev);
 struct ovl_inode_info;
-struct inode *ovl_get_inode(struct super_block *sb,
-			    struct ovl_inode_info *info);
+struct inode *ovl_get_inode(struct super_block *sb, struct ovl_inode_info *info,
+			    struct dentry *index);
 
 static inline void ovl_copyattr(struct inode *from, struct inode *to)
 {

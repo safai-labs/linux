@@ -12,6 +12,7 @@
 #include <linux/cred.h>
 #include <linux/xattr.h>
 #include <linux/posix_acl.h>
+#include <linux/ratelimit.h>
 #include "overlayfs.h"
 #include "ovl_entry.h"
 
@@ -130,6 +131,15 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 	 */
 	if (is_dir && OVL_TYPE_MERGE(type))
 		stat->nlink = 1;
+
+	/*
+	 * Return the overlay inode nlinks for indexed upper inodes.
+	 * Overlay inode nlink counts the union of the upper hardlinks
+	 * and non-covered lower hardlinks. It does not include the upper
+	 * index hardlink.
+	 */
+	if (!is_dir && OVL_TYPE_UPPER(type) && OVL_TYPE_INDEX(type))
+		stat->nlink = dentry->d_inode->i_nlink;
 
 out:
 	revert_creds(old_cred);
@@ -445,6 +455,93 @@ static void ovl_fill_inode(struct inode *inode, umode_t mode, dev_t rdev)
 	}
 }
 
+/*
+ * With inodes index enabled, an overlay inode nlink counts the union of upper
+ * hardlinks and non-covered lower hardlinks. During the lifetime of a non-pure
+ * upper inode, the following nlink modifying operations can happen:
+ *
+ * 1. Lower hardlink copy up
+ * 2. Upper hardlink created, unlinked or renamed over
+ * 3. Lower hardlink whiteout or renamed over
+ *
+ * For the first, copy up case, the union nlink does not change, whether the
+ * operation succeeds or fails, but the upper inode nlink may change.
+ * Therefore, before copy up, we store the union nlink value relative to the
+ * lower inode nlink in the index inode xattr trusted.overlay.nlink.
+ *
+ * For the second, upper hardlink case, the union nlink should be incremented
+ * or decremented IFF the operation succeeds, aligned with nlink change of the
+ * upper inode. Therefore, before link/unlink/rename, we store the union nlink
+ * value relative to the upper inode nlink in the index inode.
+ *
+ * For the last, lower cover up case, we simplify things by preceding the
+ * whiteout or cover up with copy up. This makes sure that there is an index
+ * upper inode where the nlink xattr can be stored before the copied up upper
+ * entry is unlink.
+ */
+#define OVL_NLINK_ADD_UPPER	(1 << 0)
+
+/* On-disk format for indexed nlink */
+struct ovl_nlink {
+	__be32 nlink_add;
+	u8 flags;
+} __packed;
+
+/* Called must hold OVL_I(inode)->oi_lock */
+int ovl_set_nlink(struct inode *inode, struct dentry *index, bool add_upper)
+{
+	struct ovl_inode_info *oi = OVL_I_INFO(inode);
+	struct ovl_nlink onlink;
+	unsigned int nlink_base;
+
+	if (add_upper) {
+		/* oi->__upperinode may be NULL after failed copy up */
+		nlink_base = index->d_inode->i_nlink;
+		onlink.flags = OVL_NLINK_ADD_UPPER;
+	} else {
+		nlink_base = oi->lowerinode->i_nlink;
+		onlink.flags = 0;
+	}
+	onlink.nlink_add = cpu_to_be32(inode->i_nlink - nlink_base);
+
+	return ovl_do_setxattr(index, OVL_XATTR_NLINK,
+			       &onlink, sizeof(onlink), 0);
+}
+
+static unsigned int ovl_get_nlink(struct ovl_inode_info *info,
+				  struct dentry *index, unsigned int real_nlink)
+{
+	struct ovl_nlink onlink;
+	__s32 nlink_add = 0;
+	int res;
+
+	if (!index || !index->d_inode)
+		return real_nlink;
+
+	res = vfs_getxattr(index, OVL_XATTR_NLINK, &onlink, sizeof(onlink));
+	if (res < sizeof(onlink))
+		goto fail;
+
+	if (onlink.flags & OVL_NLINK_ADD_UPPER) {
+		/* info->__upperinode may be NULL for indexed lower */
+		nlink_add = index->d_inode->i_nlink;
+	} else {
+		nlink_add = info->lowerinode->i_nlink;
+	}
+
+	nlink_add += (__s32)be32_to_cpu(onlink.nlink_add);
+	if (nlink_add < 0)
+		goto fail;
+
+	return nlink_add;
+
+fail:
+	pr_warn_ratelimited("overlayfs: failed to get index nlink (%pd2, ino=%lu, nlink=%u, nlink_add=%d, res=%i)\n",
+			    index, index->d_inode->i_ino,
+			    index->d_inode->i_nlink, nlink_add, res);
+	return real_nlink;
+}
+
 struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev)
 {
 	struct inode *inode;
@@ -487,7 +584,8 @@ static int ovl_inode_set(struct inode *inode, void *data)
 	return 0;
 }
 
-struct inode *ovl_get_inode(struct super_block *sb, struct ovl_inode_info *info)
+struct inode *ovl_get_inode(struct super_block *sb, struct ovl_inode_info *info,
+			    struct dentry *index)
 {
 	struct inode *realinode = info->__upperinode;
 	unsigned long hashval = (unsigned long) realinode;
@@ -513,7 +611,8 @@ struct inode *ovl_get_inode(struct super_block *sb, struct ovl_inode_info *info)
 	inode = iget5_locked(sb, hashval, ovl_inode_test, ovl_inode_set, info);
 	if (inode && inode->i_state & I_NEW) {
 		ovl_fill_inode(inode, realinode->i_mode, realinode->i_rdev);
-		set_nlink(inode, realinode->i_nlink);
+		set_nlink(inode, ovl_get_nlink(OVL_I_INFO(inode), index,
+					       realinode->i_nlink));
 		ovl_copyattr(realinode, inode);
 		unlock_new_inode(inode);
 	}

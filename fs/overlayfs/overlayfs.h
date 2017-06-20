@@ -16,6 +16,7 @@ enum ovl_path_type {
 	__OVL_PATH_ORIGIN	= (1 << 2),
 	__OVL_PATH_OPAQUE	= (1 << 3),
 	__OVL_PATH_IMPURE	= (1 << 4),
+	__OVL_PATH_INDEX	= (1 << 5),
 };
 
 #define OVL_TYPE_UPPER(type)	((type) & __OVL_PATH_UPPER)
@@ -23,6 +24,7 @@ enum ovl_path_type {
 #define OVL_TYPE_ORIGIN(type)	((type) & __OVL_PATH_ORIGIN)
 #define OVL_TYPE_OPAQUE(type)	((type) & __OVL_PATH_OPAQUE)
 #define OVL_TYPE_IMPURE(type)	((type) & __OVL_PATH_IMPURE)
+#define OVL_TYPE_INDEX(type)	((type) & __OVL_PATH_INDEX)
 
 #define OVL_XATTR_PREFIX XATTR_TRUSTED_PREFIX "overlay."
 #define OVL_XATTR_OPAQUE OVL_XATTR_PREFIX "opaque"
@@ -244,6 +246,8 @@ static inline bool ovl_is_impuredir(struct dentry *dentry)
 /* namei.c */
 int ovl_verify_origin(struct dentry *dentry, struct vfsmount *mnt,
 		      struct dentry *origin, bool is_upper, bool set);
+int ovl_lookup_index(struct dentry *dentry, struct dentry *upper,
+		     struct dentry *lower, struct dentry **indexp);
 int ovl_path_next(int idx, struct dentry *dentry, struct path *path);
 struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags);
 bool ovl_lower_positive(struct dentry *dentry);

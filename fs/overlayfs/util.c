@@ -230,6 +230,15 @@ static void ovl_dentry_set_impure(struct dentry *dentry)
 	spin_unlock(&dentry->d_lock);
 }
 
+void ovl_dentry_set_indexed(struct dentry *dentry)
+{
+	struct ovl_entry *oe = dentry->d_fsdata;
+
+	spin_lock(&dentry->d_lock);
+	oe->__type |= __OVL_PATH_INDEX;
+	spin_unlock(&dentry->d_lock);
+}
+
 bool ovl_redirect_dir(struct super_block *sb)
 {
 	struct ovl_fs *ofs = sb->s_fs_info;

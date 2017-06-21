@@ -84,6 +84,65 @@ static struct dentry *ovl_whiteout(struct dentry *workdir,
 	return whiteout;
 }
 
+/* Called must hold OVL_I(inode)->oi_lock */
+static int ovl_cleanup_index(struct dentry *dentry)
+{
+	struct inode *dir = ovl_indexdir(dentry->d_sb)->d_inode;
+	struct dentry *lower;
+	struct dentry *index = NULL;
+	struct inode *inode;
+	int err;
+
+	/*
+	 * dentry may already be unhashed, but it still holds a reference to
+	 * the lower/upper dentries from before an unlink operation.
+	 */
+	lower = ovl_dentry_lower(dentry);
+	err = -ESTALE;
+	if (WARN_ON(!lower))
+		goto fail;
+
+	err = ovl_lookup_index(dentry, ovl_dentry_upper(dentry), lower, &index);
+	if (err)
+		goto fail;
+
+	err = -ENOENT;
+	if (WARN_ON(!index || !index->d_inode))
+		goto fail;
+
+	inode = d_inode(index);
+	err = -EEXIST;
+	if (inode->i_nlink != 1) {
+		pr_warn_ratelimited("overlayfs: cleanup linked index (%pd2, ino=%lu, nlink=%u)\n",
+				    index, inode->i_ino, inode->i_nlink);
+		/*
+		 * We either have a bug with persistent union nlink or a lower
+		 * hardlink was added while overlay is mounted. Adding a lower
+		 * hardlink and then unlinking all overlay hardlinks would drop
+		 * overlay nlink to zero before all upper inodes are unlinked.
+		 * As a safety measure, when that situation is detected, set
+		 * the overlay nlink to the index inode nlink minus one for the
+		 * index entry itself.
+		 */
+		set_nlink(d_inode(dentry), inode->i_nlink - 1);
+		ovl_set_nlink(d_inode(dentry), index, true);
+		goto fail;
+	}
+
+	inode_lock_nested(dir, I_MUTEX_PARENT);
+	/* TODO: whiteout instead of cleanup to block future open by handle */
+	err = ovl_cleanup(dir, index);
+	inode_unlock(dir);
+
+out:
+	dput(index);
+	return err;
+
+fail:
+	pr_err("overlayfs: cleanup index of '%pd2' failed (%i)\n", dentry, err);
+	goto out;
+}
+
 int ovl_create_real(struct inode *dir, struct dentry *newdentry,
 		    struct cattr *attr, struct dentry *hardlink, bool debug)
 {
@@ -641,6 +700,17 @@ static int ovl_nlink_start(struct dentry *dentry)
 
 static void ovl_nlink_end(struct dentry *dentry)
 {
+	enum ovl_path_type type = ovl_path_type(dentry);
+
+	/* Unlink the index inode on last overlay inode unlink */
+	if (OVL_TYPE_INDEX(type) && d_inode(dentry)->i_nlink == 0) {
+		const struct cred *old_cred;
+
+		old_cred = ovl_override_creds(dentry->d_sb);
+		ovl_cleanup_index(dentry);
+		revert_creds(old_cred);
+	}
+
 	mutex_unlock(&OVL_I(d_inode(dentry))->oi_lock);
 }
 
@@ -1137,6 +1207,8 @@ out_revert_creds:
 	revert_creds(old_cred);
 	/*
 	 * Release oi_lock after rename lock.
+	 * Orphan index cleanup may need to aquire index dir mutex, which is
+	 * the same lockdep class/fstype as the upper dir rename lock.
 	 */
 	if (new_drop_nlink)
 		ovl_nlink_end(new);

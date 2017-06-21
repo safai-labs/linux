@@ -271,9 +271,11 @@ int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags);
 int ovl_update_time(struct inode *inode, struct timespec *ts, int flags);
 bool ovl_is_private_xattr(const char *name);
 
-int ovl_set_nlink(struct inode *inode, struct dentry *index, bool add_upper);
-struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev);
 struct ovl_inode_info;
+int ovl_set_nlink(struct inode *inode, struct dentry *index, bool add_upper);
+unsigned int ovl_get_nlink(struct ovl_inode_info *info, struct dentry *index,
+			   unsigned int real_nlink);
+struct inode *ovl_new_inode(struct super_block *sb, umode_t mode, dev_t rdev);
 struct inode *ovl_get_inode(struct super_block *sb, struct ovl_inode_info *info,
 			    struct dentry *index);
 

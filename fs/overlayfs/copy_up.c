@@ -622,9 +622,24 @@ static int ovl_copy_up_indexdir_prepare(struct ovl_copy_up_ctx *ctx)
 			 * Orphan index inodes should be cleaned up on mount
 			 * and when overlay inode nlink drops to zero.
 			 */
-			pr_warn_ratelimited("overlayfs: not linking to orphan index (%pd2, nlink=%u)\n",
-					    index, inode->i_nlink);
-			goto out_dput;
+			pr_warn_ratelimited("overlayfs: link-up orphan index (%pd2, ino=%lu, nlink=%u)\n",
+					    index, inode->i_ino,
+					    inode->i_nlink);
+
+			if (inode->i_nlink == 1)
+				goto out_dput;
+
+			/*
+			 * If index is has nlink > 1, then we either have a bug
+			 * with persistent union nlink or a lower hardlink was
+			 * added while overlay is mounted. Adding a lower
+			 * hardlink and then unlinking all overlay hardlinks
+			 * would drop overlay nlink to zero before all upper
+			 * inodes are unlinked. As a safety measure, when that
+			 * situation is detected, set the overlay nlink to the
+			 * index inode nlink minus one for the index entry.
+			 */
+			set_nlink(d_inode(ctx->dentry), inode->i_nlink - 1);
 		}
 
 		/* Link to existing upper without copying lower */

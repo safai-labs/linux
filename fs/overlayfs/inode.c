@@ -508,8 +508,8 @@ int ovl_set_nlink(struct inode *inode, struct dentry *index, bool add_upper)
 			       &onlink, sizeof(onlink), 0);
 }
 
-static unsigned int ovl_get_nlink(struct ovl_inode_info *info,
-				  struct dentry *index, unsigned int real_nlink)
+unsigned int ovl_get_nlink(struct ovl_inode_info *info, struct dentry *index,
+			   unsigned int real_nlink)
 {
 	struct ovl_nlink onlink;
 	__s32 nlink_add = 0;

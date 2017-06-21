@@ -393,6 +393,7 @@ int ovl_verify_index(struct dentry *index, struct path *lowerstack,
 	struct path origin = { };
 	struct path *stack = &origin;
 	unsigned int ctr = 0;
+	struct ovl_inode_info info = { };
 	int err;
 
 	if (!d_inode(index))
@@ -425,6 +426,11 @@ int ovl_verify_index(struct dentry *index, struct path *lowerstack,
 		err = -ESTALE;
 	if (err)
 		goto fail;
+
+	/* Check if index is orphan and don't warn before cleaning it */
+	info.lowerinode = d_inode(origin.dentry);
+	if (ovl_get_nlink(&info, index, 0) == 0)
+		err = -ENOENT;
 
 	dput(origin.dentry);
 out:

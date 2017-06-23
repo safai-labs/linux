@@ -8,6 +8,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/mount.h>
 #include <linux/slab.h>
 #include <linux/cred.h>
 #include <linux/xattr.h>
@@ -15,6 +16,22 @@
 #include <linux/ratelimit.h>
 #include "overlayfs.h"
 #include "ovl_entry.h"
+
+static dev_t ovl_get_pseudo_dev(struct dentry *dentry, dev_t dev)
+{
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
+	int i;
+
+	if (ofs->upper_mnt && ofs->upper_mnt->mnt_sb->s_dev == dev)
+		return dev;
+
+	for (i = 0; i < ofs->numlower; i++) {
+		if (ofs->lower_mnt[i].real_dev == dev)
+			return ofs->lower_mnt[i].pseudo_dev;
+	}
+
+	return dev;
+}
 
 int ovl_setattr(struct dentry *dentry, struct iattr *attr)
 {
@@ -122,6 +139,8 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 		 */
 		stat->dev = dentry->d_sb->s_dev;
 		stat->ino = dentry->d_inode->i_ino;
+	} else {
+		stat->dev = ovl_get_pseudo_dev(dentry, stat->dev);
 	}
 
 	/*

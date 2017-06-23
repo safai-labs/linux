@@ -17,11 +17,17 @@ struct ovl_config {
 	bool index;
 };
 
+struct ovl_lower_mnt {
+	struct vfsmount *mnt;
+	dev_t real_dev;
+	dev_t pseudo_dev;
+};
+
 /* private information held for overlayfs's superblock */
 struct ovl_fs {
 	struct vfsmount *upper_mnt;
 	unsigned numlower;
-	struct vfsmount **lower_mnt;
+	struct ovl_lower_mnt *lower_mnt;
 	/* workbasedir is the path at workdir= mount option */
 	struct dentry *workbasedir;
 	/* workdir is the 'work' directory under workbasedir */

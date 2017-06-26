@@ -17,6 +17,19 @@
 #include "overlayfs.h"
 #include "ovl_entry.h"
 
+void ovl_unescape(char *s)
+{
+	char *d = s;
+
+	for (;; s++, d++) {
+		if (*s == '\\')
+			s++;
+		*d = *s;
+		if (!*s)
+			break;
+	}
+}
+
 int ovl_want_write(struct dentry *dentry)
 {
 	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
@@ -111,7 +124,7 @@ void ovl_update_type(struct dentry *dentry, bool is_dir)
 			if (is_dir)
 				type |= __OVL_PATH_MERGE;
 		}
-	} else if (!is_dir && oe->__roupperdentry) {
+	} else if (ovl_dentry_ro_upper(dentry)) {
 		type |= __OVL_PATH_RO_UPPER;
 	} else {
 		if (oe->numlower > 1)
@@ -165,7 +178,7 @@ struct dentry *ovl_dentry_ro_upper(struct dentry *dentry)
 {
 	struct ovl_entry *oe = dentry->d_fsdata;
 
-	if (d_is_dir(dentry))
+	if (d_is_dir(dentry) || ovl_is_snapshot_fs_type(dentry->d_sb))
 		return NULL;
 
 	return ovl_roupperdentry_dereference(oe);
@@ -304,7 +317,7 @@ void ovl_dentry_update(struct dentry *dentry, struct dentry *upperdentry,
 		WARN_ON(oe->__roupperdentry);
 		oe->__roupperdentry = upperdentry;
 	} else {
-		WARN_ON(!d_is_dir(dentry) && oe->__roupperdentry &&
+		WARN_ON(ovl_dentry_ro_upper(dentry) &&
 			oe->__roupperdentry->d_inode != inode);
 		oe->__upperdentry = upperdentry;
 	}

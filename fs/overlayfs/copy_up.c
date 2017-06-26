@@ -196,6 +196,16 @@ out_fput:
 	return error;
 }
 
+static int ovl_set_size(struct dentry *upperdentry, struct kstat *stat)
+{
+	struct iattr attr = {
+		.ia_valid = ATTR_SIZE,
+		.ia_size = stat->size,
+	};
+
+	return notify_change(upperdentry, &attr, NULL);
+}
+
 static int ovl_set_timestamps(struct dentry *upperdentry, struct kstat *stat)
 {
 	struct iattr attr = {
@@ -319,6 +329,7 @@ static int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 static int ovl_copy_up_inode(struct dentry *dentry, struct dentry *temp,
 			     struct path *lowerpath, struct kstat *stat)
 {
+	bool sparse = false;
 	int err;
 
 	if (S_ISREG(stat->mode)) {
@@ -328,9 +339,14 @@ static int ovl_copy_up_inode(struct dentry *dentry, struct dentry *temp,
 		BUG_ON(upperpath.dentry != NULL);
 		upperpath.dentry = temp;
 
-		err = ovl_copy_up_data(lowerpath, &upperpath, stat->size);
-		if (err)
-			return err;
+		if (stat->size && stat->blocks) {
+			err = ovl_copy_up_data(lowerpath, &upperpath,
+					       stat->size);
+			if (err)
+				return err;
+		} else if (stat->size) {
+			sparse = true;
+		}
 	}
 
 	err = ovl_copy_xattr(lowerpath->dentry, temp);
@@ -338,7 +354,10 @@ static int ovl_copy_up_inode(struct dentry *dentry, struct dentry *temp,
 		return err;
 
 	inode_lock(temp->d_inode);
-	err = ovl_set_attr(temp, stat);
+	if (sparse)
+		err = ovl_set_size(temp, stat);
+	if (!err)
+		err = ovl_set_attr(temp, stat);
 	inode_unlock(temp->d_inode);
 	if (err)
 		return err;
@@ -941,6 +960,7 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup)
 {
 	int err = 0;
 	const struct cred *old_cred = ovl_override_creds(dentry->d_sb);
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
 
 	while (!err) {
 		struct dentry *next;
@@ -981,6 +1001,13 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup)
 			WARN_ON(!S_ISREG(stat.mode));
 			stat.nlink = 0;
 		}
+		/*
+		 * With consistent fd feature, if clone-up is not supported,
+		 * we copy up only the inode metadata. Lower and upper inode
+		 * pages are expected to be copied on write lazily.
+		 */
+		if (ofs->config.consistent_fd && !ofs->cloneup)
+			stat.blocks = 0;
 
 		if (!err)
 			err = ovl_copy_up_one(parent, next, &lowerpath, &stat,

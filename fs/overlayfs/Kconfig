@@ -61,3 +61,11 @@ config OVERLAY_FS_CONSISTENT_FD
           The feature will not be turned on for an overlay mount unless all
           the layers are on the same underlying filesystem and this filesystem
           supports clone.
+
+config OVERLAY_FS_SNAPSHOT
+	bool "Overlayfs snapshot support (Experimental)"
+	depends on OVERLAY_FS
+
+	help
+	  This enables experimental support for overlayfs snapshot.
+	  If unsure, say N

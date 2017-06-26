@@ -351,20 +351,21 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	struct super_block *sb = dentry->d_sb;
 	struct ovl_fs *ufs = sb->s_fs_info;
 
-	seq_show_option(m, "lowerdir", ufs->config.lowerdir);
-	if (ufs->config.upperdir) {
+	if (ufs->config.lowerdir)
+		seq_show_option(m, "lowerdir", ufs->config.lowerdir);
+	if (ufs->config.upperdir)
 		seq_show_option(m, "upperdir", ufs->config.upperdir);
+	if (ufs->config.workdir)
 		seq_show_option(m, "workdir", ufs->config.workdir);
-	}
 	if (ufs->config.default_permissions)
 		seq_puts(m, ",default_permissions");
 	if (ufs->config.redirect_dir != ovl_redirect_dir_def)
 		seq_printf(m, ",redirect_dir=%s",
 			   ufs->config.redirect_dir ? "on" : "off");
-	if (ufs->config.index != ovl_index_def)
+	if (ufs->config.lowerdir && ufs->config.index != ovl_index_def)
 		seq_printf(m, ",index=%s",
 			   ufs->config.index ? "on" : "off");
-	if (!ovl_force_readonly(ufs) &&
+	if (!ovl_force_readonly(ufs) && ufs->config.lowerdir &&
 	    ufs->config.consistent_fd != ovl_consistent_fd_def)
 		seq_printf(m, ",consistent_fd=%s",
 			   ufs->config.consistent_fd ? "on" : "off");
@@ -375,7 +376,13 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct ovl_fs *ufs = sb->s_fs_info;
 
-	if (!(*flags & MS_RDONLY) && ovl_force_readonly(ufs))
+	if (*flags & MS_RDONLY)
+		return 0;
+
+	if (!ufs->numlower)
+		return 0;
+
+	if (ovl_force_readonly(ufs))
 		return -EROFS;
 
 	return 0;
@@ -784,7 +791,7 @@ ovl_posix_acl_xattr_set(const struct xattr_handler *handler,
 			return PTR_ERR(acl);
 	}
 	err = -EOPNOTSUPP;
-	if (!IS_POSIXACL(d_inode(workdir)))
+	if (workdir && !IS_POSIXACL(d_inode(workdir)))
 		goto out_acl_release;
 	if (!realinode->i_op->set_acl)
 		goto out_acl_release;
@@ -901,9 +908,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	struct ovl_entry *oe;
 	struct ovl_fs *ufs;
 	struct path *stack = NULL;
-	char *lowertmp;
+	char *lowertmp = NULL;
 	char *lower;
-	unsigned int numlower;
+	unsigned int numlower = 0;
 	unsigned int stacklen = 0;
 	unsigned int i;
 	bool remote = false;
@@ -923,16 +930,31 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_config;
 
 	err = -EINVAL;
-	if (!ufs->config.lowerdir) {
+	if (!ovl_is_snapshot_fs_type(sb) && !ufs->config.lowerdir) {
 		if (!silent)
 			pr_err("overlayfs: missing 'lowerdir'\n");
 		goto out_free_config;
 	}
 
+	if (ovl_is_snapshot_fs_type(sb)) {
+		if (!ufs->config.upperdir) {
+			if (!silent)
+				pr_err("overlayfs: fs type 'snapshot' requires 'upperdir'\n");
+			goto out_free_config;
+		}
+
+		if (ufs->config.lowerdir) {
+			if (!silent)
+				pr_err("overlayfs: fs type 'snapshot' requires no 'lowerdir'\n");
+			goto out_free_config;
+		}
+	}
+
 	sb->s_stack_depth = 0;
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
+
 	if (ufs->config.upperdir) {
-		if (!ufs->config.workdir) {
+		if (!ovl_is_snapshot_fs_type(sb) && !ufs->config.workdir) {
 			pr_err("overlayfs: missing 'workdir'\n");
 			goto out_free_config;
 		}
@@ -958,6 +980,10 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_put_upperpath;
 		}
 
+		sb->s_stack_depth = upperpath.mnt->mnt_sb->s_stack_depth;
+	}
+
+	if (ufs->config.workdir) {
 		err = ovl_mount_dir(ufs->config.workdir, &workpath);
 		if (err)
 			goto out_unlock_upperdentry;
@@ -979,15 +1005,18 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		}
 
 		ufs->workbasedir = workpath.dentry;
-		sb->s_stack_depth = upperpath.mnt->mnt_sb->s_stack_depth;
 	}
-	err = -ENOMEM;
-	lowertmp = kstrdup(ufs->config.lowerdir, GFP_KERNEL);
-	if (!lowertmp)
-		goto out_unlock_workdentry;
+
+	if (ufs->config.lowerdir) {
+		err = -ENOMEM;
+		lowertmp = kstrdup(ufs->config.lowerdir, GFP_KERNEL);
+		if (!lowertmp)
+			goto out_unlock_workdentry;
+
+		stacklen = ovl_split_lowerdirs(lowertmp);
+	}
 
 	err = -EINVAL;
-	stacklen = ovl_split_lowerdirs(lowertmp);
 	if (stacklen > OVL_MAX_STACK) {
 		pr_err("overlayfs: too many lower directories, limit is %d\n",
 		       OVL_MAX_STACK);
@@ -997,11 +1026,12 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_lowertmp;
 	}
 
-	err = -ENOMEM;
-	stack = kcalloc(stacklen, sizeof(struct path), GFP_KERNEL);
-	if (!stack)
-		goto out_free_lowertmp;
-
+	if (stacklen > 0) {
+		err = -ENOMEM;
+		stack = kcalloc(stacklen, sizeof(struct path), GFP_KERNEL);
+		if (!stack)
+			goto out_free_lowertmp;
+	}
 	err = -EINVAL;
 	lower = lowertmp;
 	for (numlower = 0; numlower < stacklen; numlower++) {
@@ -1032,7 +1062,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		ufs->upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 
 		sb->s_time_gran = ufs->upper_mnt->mnt_sb->s_time_gran;
+	}
 
+	if (ufs->config.workdir) {
 		ufs->workdir = ovl_workdir_create(sb, ufs, workpath.dentry,
 						  OVL_WORKDIR_NAME, false);
 		err = PTR_ERR(ufs->workdir);
@@ -1095,11 +1127,17 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		}
 	}
 
-	err = -ENOMEM;
-	ufs->lower_mnt = kcalloc(numlower, sizeof(struct ovl_lower_mnt),
-				GFP_KERNEL);
-	if (ufs->lower_mnt == NULL)
-		goto out_put_workdir;
+	if (numlower > 0) {
+		err = -ENOMEM;
+		ufs->lower_mnt = kcalloc(numlower, sizeof(struct ovl_lower_mnt),
+					 GFP_KERNEL);
+		if (ufs->lower_mnt == NULL)
+			goto out_put_workdir;
+	} else {
+		ufs->same_sb = ufs->upper_mnt->mnt_sb;
+		ufs->config.index = false;
+	}
+
 	for (i = 0; i < numlower; i++) {
 		struct vfsmount *mnt;
 		dev_t dev;
@@ -1117,6 +1155,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			free_anon_bdev(dev);
 			goto out_put_lower_mnt;
 		}
+
 		/*
 		 * Make lower_mnt R/O.  That way fchmod/fchown on lower file
 		 * will fail instead of modifying lower fs.
@@ -1295,8 +1334,8 @@ out:
 	return err;
 }
 
-static struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
-				const char *dev_name, void *raw_data)
+struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
+			 const char *dev_name, void *raw_data)
 {
 	return mount_nodev(fs_type, flags, raw_data, ovl_fill_super);
 }
@@ -1331,11 +1370,15 @@ static int __init ovl_init(void)
 	if (err)
 		kmem_cache_destroy(ovl_inode_cachep);
 
+	/* This module may also serve mount -t snapshot */
+	ovl_snapshot_fs_register();
+
 	return err;
 }
 
 static void __exit ovl_exit(void)
 {
+	ovl_snapshot_fs_unregister();
 	unregister_filesystem(&ovl_fs_type);
 
 	/*

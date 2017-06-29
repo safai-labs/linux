@@ -24,6 +24,7 @@ struct ovl_cache_entry {
 	struct list_head l_node;
 	struct rb_node node;
 	struct ovl_cache_entry *next_maybe_whiteout;
+	int idx;
 	bool is_whiteout;
 	char name[];
 };
@@ -43,6 +44,7 @@ struct ovl_readdir_data {
 	struct list_head middle;
 	struct ovl_cache_entry *first_maybe_whiteout;
 	int count;
+	int idx;
 	int err;
 	bool d_type_supported;
 };
@@ -99,6 +101,7 @@ static struct ovl_cache_entry *ovl_cache_entry_new(struct ovl_readdir_data *rdd,
 	p->type = d_type;
 	p->ino = ino;
 	p->is_whiteout = false;
+	p->idx = rdd->idx;
 
 	if (d_type == DT_CHR) {
 		p->next_maybe_whiteout = rdd->first_maybe_whiteout;
@@ -256,21 +259,42 @@ static inline int ovl_dir_read(struct path *realpath,
 	return err;
 }
 
+/* Can we iterate real dir directly? */
+static bool ovl_dir_is_real(struct dentry *dir)
+{
+	struct path realpath;
+	enum ovl_path_type type = ovl_path_real(dir, &realpath);
+
+	if (OVL_TYPE_MERGE(type))
+		return false;
+
+	/*
+	 * Non-merge dir may contain whiteouts from a time it was a merge
+	 * upper, before lower dir was removed under it and possibly before
+	 * it was rotated from upper to lower layer.
+	 */
+	return !ovl_check_origin_xattr(realpath.dentry);
+}
+
 static void ovl_dir_reset(struct file *file)
 {
 	struct ovl_dir_file *od = file->private_data;
 	struct ovl_dir_cache *cache = od->cache;
 	struct dentry *dentry = file->f_path.dentry;
-	enum ovl_path_type type = ovl_path_type(dentry);
+	bool is_real;
 
 	if (cache && ovl_dentry_version_get(dentry) != cache->version) {
 		ovl_cache_put(od, dentry);
 		od->cache = NULL;
 		od->cursor = NULL;
 	}
-	WARN_ON(!od->is_real && !OVL_TYPE_MERGE(type));
-	if (od->is_real && OVL_TYPE_MERGE(type))
+	is_real = ovl_dir_is_real(dentry);
+	if (od->is_real != is_real) {
+		/* is_real can only become false when dir is copied up */
+		if (WARN_ON(is_real))
+			return;
 		od->is_real = false;
+	}
 }
 
 static int ovl_dir_read_merged(struct dentry *dentry, struct list_head *list)
@@ -287,7 +311,7 @@ static int ovl_dir_read_merged(struct dentry *dentry, struct list_head *list)
 	int idx, next;
 
 	for (idx = 0; idx != -1; idx = next) {
-		next = ovl_path_next(idx, dentry, &realpath);
+		next = ovl_path_next(idx, dentry, &realpath, &rdd.idx);
 
 		if (next != -1) {
 			err = ovl_dir_read(&realpath, &rdd);
@@ -502,7 +526,7 @@ static int ovl_dir_open(struct inode *inode, struct file *file)
 		return PTR_ERR(realfile);
 	}
 	od->realfile = realfile;
-	od->is_real = !OVL_TYPE_MERGE(type);
+	od->is_real = ovl_dir_is_real(file->f_path.dentry);
 	od->is_upper = OVL_TYPE_UPPER(type);
 	file->private_data = od;
 
@@ -522,6 +546,7 @@ int ovl_check_empty_dir(struct dentry *dentry, struct list_head *list)
 {
 	int err;
 	struct ovl_cache_entry *p;
+	struct ovl_cache_entry *n;
 
 	err = ovl_dir_read_merged(dentry, list);
 	if (err)
@@ -529,18 +554,29 @@ int ovl_check_empty_dir(struct dentry *dentry, struct list_head *list)
 
 	err = 0;
 
-	list_for_each_entry(p, list, l_node) {
-		if (p->is_whiteout)
-			continue;
+	list_for_each_entry_safe(p, n, list, l_node) {
+		/*
+		 * Select whiteouts in upperdir, they should
+		 * be cleared when deleting this directory.
+		 */
+		if (p->is_whiteout) {
+			if (p->idx == 0)
+				continue;
+			goto del_entry;
+		}
 
 		if (p->name[0] == '.') {
 			if (p->len == 1)
-				continue;
+				goto del_entry;
 			if (p->len == 2 && p->name[1] == '.')
-				continue;
+				goto del_entry;
 		}
 		err = -ENOTEMPTY;
 		break;
+
+del_entry:
+		list_del(&p->l_node);
+		kfree(p);
 	}
 
 	return err;
@@ -554,7 +590,7 @@ void ovl_cleanup_whiteouts(struct dentry *upper, struct list_head *list)
 	list_for_each_entry(p, list, l_node) {
 		struct dentry *dentry;
 
-		if (!p->is_whiteout)
+		if (!p->is_whiteout || p->idx != 0)
 			continue;
 
 		dentry = lookup_one_len(p->name, upper, p->len);

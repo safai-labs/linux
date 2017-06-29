@@ -216,7 +216,7 @@ static void ovl_instantiate(struct dentry *dentry, struct inode *inode,
 			    struct dentry *newdentry, bool hardlink)
 {
 	ovl_dentry_version_inc(dentry->d_parent);
-	ovl_dentry_update(dentry, newdentry);
+	ovl_dentry_update(dentry, newdentry, false);
 	if (!hardlink) {
 		ovl_inode_init(inode, d_inode(newdentry), true);
 	} else {

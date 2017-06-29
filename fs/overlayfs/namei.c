@@ -567,6 +567,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	struct path *stack = NULL;
 	struct dentry *upperdir, *upperdentry = NULL;
 	struct dentry *index = NULL;
+	struct ovl_inode_info info = { };
 	unsigned int ctr = 0;
 	struct inode *inode = NULL;
 	enum ovl_path_type type = 0;
@@ -735,7 +736,6 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	if (upperdentry || ctr) {
 		struct dentry *realdentry;
 		struct inode *realinode;
-		struct ovl_inode_info info = { };
 
 		realdentry = upperdentry ? upperdentry : stack[0].dentry;
 		realinode = d_inode(realdentry);
@@ -782,7 +782,9 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	d_add(dentry, inode);
 
 	/* Link up indexed lower early for consistent overlay hardlinks */
-	if (index && d_inode(index) && !upperdentry) {
+	if (index && d_inode(index) && !upperdentry &&
+	    (d_inode(index)->i_nlink > 1 ||
+	     ovl_get_nlink(&info, index, 0) != 0)) {
 		err = ovl_copy_up(dentry);
 		if (err) {
 			pr_warn_ratelimited("overlayfs: failed link up to index (%pd2, index=%pd2, err=%i)\n",

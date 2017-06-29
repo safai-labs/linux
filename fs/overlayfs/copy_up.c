@@ -196,6 +196,16 @@ out_fput:
 	return error;
 }
 
+static int ovl_set_size(struct dentry *upperdentry, struct kstat *stat)
+{
+	struct iattr attr = {
+		.ia_valid = ATTR_SIZE,
+		.ia_size = stat->size,
+	};
+
+	return notify_change(upperdentry, &attr, NULL);
+}
+
 static int ovl_set_timestamps(struct dentry *upperdentry, struct kstat *stat)
 {
 	struct iattr attr = {
@@ -319,6 +329,7 @@ static int ovl_set_origin(struct dentry *dentry, struct dentry *lower,
 static int ovl_copy_up_inode(struct dentry *dentry, struct dentry *temp,
 			     struct path *lowerpath, struct kstat *stat)
 {
+	bool sparse = false;
 	int err;
 
 	if (S_ISREG(stat->mode)) {
@@ -328,9 +339,14 @@ static int ovl_copy_up_inode(struct dentry *dentry, struct dentry *temp,
 		BUG_ON(upperpath.dentry != NULL);
 		upperpath.dentry = temp;
 
-		err = ovl_copy_up_data(lowerpath, &upperpath, stat->size);
-		if (err)
-			return err;
+		if (stat->size && stat->blocks) {
+			err = ovl_copy_up_data(lowerpath, &upperpath,
+					       stat->size);
+			if (err)
+				return err;
+		} else if (stat->size) {
+			sparse = true;
+		}
 	}
 
 	err = ovl_copy_xattr(lowerpath->dentry, temp);
@@ -338,7 +354,10 @@ static int ovl_copy_up_inode(struct dentry *dentry, struct dentry *temp,
 		return err;
 
 	inode_lock(temp->d_inode);
-	err = ovl_set_attr(temp, stat);
+	if (sparse)
+		err = ovl_set_size(temp, stat);
+	if (!err)
+		err = ovl_set_attr(temp, stat);
 	inode_unlock(temp->d_inode);
 	if (err)
 		return err;
@@ -413,7 +432,6 @@ static int ovl_copy_up_workdir_prepare(struct ovl_copy_up_ctx *ctx)
 		.rdev = ctx->stat->rdev,
 		.link = ctx->link,
 	};
-
 
 	upper = lookup_one_len(ctx->dentry->d_name.name, ctx->upperdir,
 			       ctx->dentry->d_name.len);
@@ -561,7 +579,7 @@ static int ovl_copy_up_indexdir_aquire(struct ovl_copy_up_ctx *ctx)
  */
 static int ovl_copy_up_indexdir_prepare(struct ovl_copy_up_ctx *ctx)
 {
-	struct dentry *upper;
+	struct dentry *upper = NULL;
 	struct dentry *index = NULL;
 	struct inode *inode;
 	int err;
@@ -572,10 +590,13 @@ static int ovl_copy_up_indexdir_prepare(struct ovl_copy_up_ctx *ctx)
 		.link = ctx->link,
 	};
 
-	upper = lookup_one_len_unlocked(ctx->dentry->d_name.name, ctx->upperdir,
-					ctx->dentry->d_name.len);
-	if (IS_ERR(upper))
-		return PTR_ERR(upper);
+	if (ctx->upperdir) {
+		upper = lookup_one_len_unlocked(ctx->dentry->d_name.name,
+						ctx->upperdir,
+						ctx->dentry->d_name.len);
+		if (IS_ERR(upper))
+			return PTR_ERR(upper);
+	}
 
 	err = ovl_lookup_index(ctx->dentry, NULL, ctx->lowerpath->dentry,
 			       &index);
@@ -662,7 +683,8 @@ out:
 	 * to the lower inode nlink in an index inode xattr. We will store it
 	 * again relative to index inode nlink at copy up commit or cancel.
 	 */
-	ovl_set_nlink(d_inode(ctx->dentry), index, false);
+	if (ctx->stat->nlink)
+		ovl_set_nlink(d_inode(ctx->dentry), index, false);
 
 	ctx->upper = upper;
 	ctx->temp = index;
@@ -746,7 +768,8 @@ static void ovl_copy_up_indexdir_cancel(struct ovl_copy_up_ctx *ctx)
 		return;
 
 	/* Store the union nlink value relative to index inode nlink */
-	ovl_set_nlink(d_inode(ctx->dentry), ctx->temp, true);
+	if (ctx->stat->nlink)
+		ovl_set_nlink(d_inode(ctx->dentry), ctx->temp, true);
 
 	/* Cleanup prepared index entry only if we created it */
 	if (!ctx->created)
@@ -777,6 +800,7 @@ static int ovl_copy_up_locked(struct ovl_copy_up_ctx *ctx,
 			      const struct ovl_copy_up_ops *ops)
 {
 	struct dentry *dentry = ctx->dentry;
+	struct dentry *newdentry;
 	const struct cred *old_creds = NULL;
 	struct cred *new_creds = NULL;
 	int err;
@@ -806,12 +830,23 @@ static int ovl_copy_up_locked(struct ovl_copy_up_ctx *ctx,
 			goto out_cancel;
 	}
 
-	err = ops->commit(ctx);
-	if (err)
-		goto out_cancel;
+	if (ctx->stat->nlink) {
+		err = ops->commit(ctx);
+		if (err)
+			goto out_cancel;
 
-	ovl_dentry_update(dentry, dget(ctx->upper));
-	err = ovl_inode_update(d_inode(dentry), d_inode(ctx->upper));
+		newdentry = dget(ctx->upper);
+	} else {
+		err = -EEXIST;
+		if (ctx->temp->d_inode->i_nlink != 1)
+			goto out_cancel;
+
+		/* Update with index dentry on r/o copy up */
+		newdentry = dget(ctx->temp);
+	}
+
+	ovl_dentry_update(dentry, newdentry, !ctx->stat->nlink);
+	err = ovl_inode_update(d_inode(dentry), d_inode(newdentry));
 	if (err) {
 		/* Broken hardlink - drop cache and return error */
 		d_drop(dentry);
@@ -837,7 +872,8 @@ out_cancel:
  * the file will have already been copied up anyway.
  */
 static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
-			   struct path *lowerpath, struct kstat *stat)
+			   struct path *lowerpath, struct kstat *stat,
+			   bool rocopyup)
 {
 	DEFINE_DELAYED_CALL(done);
 	int err;
@@ -855,23 +891,32 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	};
 	const struct ovl_copy_up_ops *ops;
 
+	if (WARN_ON(rocopyup && !indexed))
+		return 0;
+
 	if (WARN_ON(!ctx.tempdir))
 		return -EROFS;
 
 	ovl_do_check_copy_up(lowerdentry);
 
-	ovl_path_upper(parent, &parentpath);
-	ctx.upperdir = parentpath.dentry;
+	if (parent) {
+		ovl_path_upper(parent, &parentpath);
+		ctx.upperdir = parentpath.dentry;
 
-	/* Mark parent "impure" because it may now contain non-pure upper */
-	err = ovl_set_impure(parent, ctx.upperdir);
-	if (err)
-		return err;
+		/*
+		 * Mark parent "impure" because it may now contain non-pure
+		 * upper.
+		 */
+		err = ovl_set_impure(parent, ctx.upperdir);
+		if (err)
+			return err;
 
-	err = vfs_getattr(&parentpath, &ctx.pstat,
-			  STATX_ATIME | STATX_MTIME, AT_STATX_SYNC_AS_STAT);
-	if (err)
-		return err;
+		err = vfs_getattr(&parentpath, &ctx.pstat,
+				  STATX_ATIME | STATX_MTIME,
+				  AT_STATX_SYNC_AS_STAT);
+		if (err)
+			return err;
+	}
 
 	if (S_ISLNK(stat->mode)) {
 		ctx.link = vfs_get_link(lowerdentry, &done);
@@ -895,34 +940,42 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 			err = 0;
 		goto out_done;
 	}
+	if (rocopyup && ovl_dentry_ro_upper(dentry)) {
+		/* Raced with another r/o copy up? */
+		err = 0;
+		goto out_unlock;
+	}
 
 	err = ovl_copy_up_locked(&ctx, ops);
-	ops->release(&ctx);
 
+out_unlock:
+	ops->release(&ctx);
 out_done:
 	do_delayed_call(&done);
 
 	return err;
 }
 
-int ovl_copy_up_flags(struct dentry *dentry, int flags)
+int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup)
 {
 	int err = 0;
 	const struct cred *old_cred = ovl_override_creds(dentry->d_sb);
+	struct ovl_fs *ofs = dentry->d_sb->s_fs_info;
 
 	while (!err) {
 		struct dentry *next;
-		struct dentry *parent;
+		struct dentry *parent = NULL;
 		struct path lowerpath;
 		struct kstat stat;
 		enum ovl_path_type type = ovl_path_type(dentry);
 
-		if (OVL_TYPE_UPPER(type))
+		if (OVL_TYPE_UPPER(type) ||
+		    (rocopyup && OVL_TYPE_RO_UPPER(type)))
 			break;
 
 		next = dget(dentry);
 		/* find the topmost dentry not yet copied up */
-		for (;;) {
+		for (; !rocopyup;) {
 			parent = dget_parent(next);
 
 			type = ovl_path_type(parent);
@@ -936,11 +989,29 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags)
 		ovl_path_lower(next, &lowerpath);
 		err = vfs_getattr(&lowerpath, &stat,
 				  STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
-		/* maybe truncate regular file. this has no effect on dirs */
-		if (flags & O_TRUNC)
+		/*
+		 * maybe truncate regular file and maybe copy up as orphan
+		 * index for read-only open. this has no effect on dirs.
+		 */
+		if (stat.nlink == 0) {
+			err = -ENOENT;
+		} else if (flags & O_TRUNC) {
 			stat.size = 0;
+		} else if (rocopyup) {
+			WARN_ON(!S_ISREG(stat.mode));
+			stat.nlink = 0;
+		}
+		/*
+		 * With consistent fd feature, if clone-up is not supported,
+		 * we copy up only the inode metadata. Lower and upper inode
+		 * pages are expected to be copied on write lazily.
+		 */
+		if (ofs->config.consistent_fd && !ofs->cloneup)
+			stat.blocks = 0;
+
 		if (!err)
-			err = ovl_copy_up_one(parent, next, &lowerpath, &stat);
+			err = ovl_copy_up_one(parent, next, &lowerpath, &stat,
+					      rocopyup);
 
 		dput(parent);
 		dput(next);
@@ -952,5 +1023,5 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags)
 
 int ovl_copy_up(struct dentry *dentry)
 {
-	return ovl_copy_up_flags(dentry, 0);
+	return ovl_copy_up_flags(dentry, 0, false);
 }

@@ -102,13 +102,9 @@ static int ovl_snapshot_dentry_is_valid(struct dentry *snapdentry,
 	if (!snapmnt && !snapdentry)
 		return 0;
 
-	/*
-	 * Could be an uninitialized snapdentry after snapshot take,
-	 * but it can also be that the snapshot dentry is nested inside an
-	 * already whited out directory, so we assume its the former.
-	 */
+	/* An uninitialized snapdentry after snapshot take */
 	if (!snapdentry)
-		return 0;
+		return -ENOENT;
 
 	/*
 	 * snapmnt is NULL and snapdentry is non-NULL
@@ -171,6 +167,16 @@ struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
 	if (err)
 		return ERR_PTR(err);
 
+	/*
+	 * If snapentry is root, but dentry is not, that indicates that
+	 * snapentry is nested inside an already whited out directory,
+	 * so need to do nothing about it.
+	 */
+	if (snappath.dentry && IS_ROOT(snappath.dentry) && !IS_ROOT(dentry)) {
+		path_put(&snappath);
+		return NULL;
+	}
+
 	mntput(snappath.mnt);
 	return snappath.dentry;
 }
@@ -194,8 +200,20 @@ int ovl_snapshot_lookup(struct dentry *parent, struct ovl_lookup_data *d,
 	if (unlikely(err))
 		return err;
 
-	if (!snappath.dentry || !d_can_lookup(snappath.dentry))
+	/*
+	 * !snapparent means no active snapshot overlay.
+	 * When snapparent is negative or non-dir or when snapparent
+	 * is nested under a negative or non-dir snapdentry, point the
+	 * snapdentry to the snapshot overlay root. This is needed to
+	 * indicate this special case and to access snapshot overlay sb.
+	 */
+	if (!snappath.dentry) {
 		goto out;
+	} else if (!d_can_lookup(snappath.dentry) ||
+		   (IS_ROOT(snappath.dentry) && !IS_ROOT(parent))) {
+		snapdentry = dget(snappath.mnt->mnt_root);
+		goto out;
+	}
 
 	err = ovl_lookup_layer(snappath.dentry, d, &snapdentry);
 

@@ -104,7 +104,8 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 			 * of an indexed hardlinked origin. The index validates
 			 * that the upper hardlink is not broken.
 			 */
-			if (is_dir || ovl_test_flag(OVL_INDEX, d_inode(dentry)))
+			if (is_dir || lowerstat.nlink == 1 ||
+			    ovl_test_flag(OVL_INDEX, d_inode(dentry)))
 				stat->ino = lowerstat.ino;
 		}
 		stat->dev = dentry->d_sb->s_dev;

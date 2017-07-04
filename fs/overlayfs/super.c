@@ -456,12 +456,15 @@ static struct dentry *ovl_workdir_create(struct super_block *sb,
 	struct dentry *work;
 	int err;
 	bool retried = false;
-
-	inode_lock_nested(dir, I_MUTEX_PARENT);
+	bool locked = false;
 
 	err = mnt_want_write(mnt);
 	if (err)
 		goto out_err;
+
+	inode_lock_nested(dir, I_MUTEX_PARENT);
+	locked = true;
+
 retry:
 	work = lookup_one_len(name, dentry, strlen(name));
 
@@ -523,8 +526,9 @@ retry:
 		goto out_err;
 	}
 out_unlock:
-	inode_unlock(dir);
 	mnt_drop_write(mnt);
+	if (locked)
+		inode_unlock(dir);
 
 	return work;
 

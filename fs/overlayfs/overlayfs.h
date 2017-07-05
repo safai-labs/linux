@@ -263,6 +263,9 @@ static inline bool ovl_is_impuredir(struct dentry *dentry)
 
 
 /* namei.c */
+struct ovl_lookup_data;
+int ovl_lookup_layer(struct dentry *base, struct ovl_lookup_data *d,
+		     struct dentry **ret);
 int ovl_verify_origin(struct dentry *dentry, struct vfsmount *mnt,
 		      struct dentry *origin, bool is_upper, bool set);
 int ovl_verify_index(struct dentry *index, struct path *lowerstack,
@@ -356,6 +359,8 @@ int ovl_snapshot_dir(const char *name, struct path *path,
 		     struct ovl_fs *ofs, struct super_block *sb);
 struct vfsmount *ovl_snapshot_mount(struct path *path, struct ovl_fs *ufs);
 struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
+int ovl_snapshot_lookup(struct dentry *parent, struct ovl_lookup_data *d,
+			struct dentry **ret);
 int ovl_snapshot_want_write(struct dentry *dentry);
 void ovl_snapshot_drop_write(struct dentry *dentry);
 

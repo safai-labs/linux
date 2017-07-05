@@ -51,6 +51,7 @@ static void ovl_dentry_release(struct dentry *dentry)
 	if (oe) {
 		unsigned int i;
 
+		dput(oe->__snapdentry);
 		for (i = 0; i < oe->numlower; i++)
 			dput(oe->lowerstack[i].dentry);
 		kfree_rcu(oe, rcu);
@@ -224,12 +225,14 @@ static void ovl_put_super(struct super_block *sb)
 	if (ufs->upper_mnt)
 		ovl_inuse_unlock(ufs->upper_mnt->mnt_root);
 	mntput(ufs->upper_mnt);
+	mntput(ufs->snapshot_mnt);
 	for (i = 0; i < ufs->numlower; i++) {
 		mntput(ufs->lower_mnt[i].mnt);
 		free_anon_bdev(ufs->lower_mnt[i].pseudo_dev);
 	}
 	kfree(ufs->lower_mnt);
 
+	kfree(ufs->config.snapshot);
 	kfree(ufs->config.lowerdir);
 	kfree(ufs->config.upperdir);
 	kfree(ufs->config.workdir);
@@ -311,6 +314,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 
 	if (ufs->config.lowerdir)
 		seq_show_option(m, "lowerdir", ufs->config.lowerdir);
+	if (ufs->config.snapshot)
+		seq_show_option(m, "snapshot", ufs->config.snapshot);
 	if (ufs->config.upperdir)
 		seq_show_option(m, "upperdir", ufs->config.upperdir);
 	if (ufs->config.workdir)
@@ -360,6 +365,7 @@ static const struct super_operations ovl_super_operations = {
 };
 
 enum {
+	OPT_SNAPSHOT,
 	OPT_LOWERDIR,
 	OPT_UPPERDIR,
 	OPT_WORKDIR,
@@ -374,6 +380,7 @@ enum {
 };
 
 static const match_table_t ovl_tokens = {
+	{OPT_SNAPSHOT,			"snapshot=%s"},
 	{OPT_LOWERDIR,			"lowerdir=%s"},
 	{OPT_UPPERDIR,			"upperdir=%s"},
 	{OPT_WORKDIR,			"workdir=%s"},
@@ -472,6 +479,14 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->consistent_fd = false;
 			break;
 
+#ifdef CONFIG_OVERLAY_FS_SNAPSHOT
+		case OPT_SNAPSHOT:
+			kfree(config->snapshot);
+			config->snapshot = match_strdup(&args[0]);
+			if (!config->snapshot)
+				return -ENOMEM;
+			break;
+#endif
 		default:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
@@ -588,19 +603,6 @@ out_err:
 	goto out_unlock;
 }
 
-static void ovl_unescape(char *s)
-{
-	char *d = s;
-
-	for (;; s++, d++) {
-		if (*s == '\\')
-			s++;
-		*d = *s;
-		if (!*s)
-			break;
-	}
-}
-
 static int ovl_mount_dir_noesc(const char *name, struct path *path)
 {
 	int err = -EINVAL;
@@ -666,8 +668,8 @@ static int ovl_check_namelen(struct path *path, struct ovl_fs *ofs,
 	return err;
 }
 
-static int ovl_lower_dir(const char *name, struct path *path,
-			 struct ovl_fs *ofs, int *stack_depth, bool *remote)
+int ovl_lower_dir(const char *name, struct path *path,
+		  struct ovl_fs *ofs, int *stack_depth, bool *remote)
 {
 	int err;
 
@@ -870,6 +872,7 @@ static const struct xattr_handler *ovl_xattr_handlers[] = {
 static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct path upperpath = { };
+	struct path snappath = { };
 	struct path workpath = { };
 	struct dentry *root_dentry;
 	struct ovl_entry *oe;
@@ -949,6 +952,18 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		}
 
 		sb->s_stack_depth = upperpath.mnt->mnt_sb->s_stack_depth;
+	}
+
+	if (ufs->config.snapshot) {
+		if (!ovl_is_snapshot_fs_type(sb)) {
+			pr_err("overlayfs: option 'snapshot' requires fs type 'snapshot'\n");
+			return -EINVAL;
+		}
+
+		err = ovl_snapshot_dir(ufs->config.snapshot, &snappath,
+				       ufs, sb);
+		if (err)
+			goto out_put_upperpath;
 	}
 
 	if (ufs->config.workdir) {
@@ -1032,6 +1047,15 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		ufs->upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 
 		sb->s_time_gran = ufs->upper_mnt->mnt_sb->s_time_gran;
+	}
+
+	if (ufs->config.snapshot) {
+		struct vfsmount *snapmnt = ovl_snapshot_mount(&snappath, ufs);
+
+		if (IS_ERR(snapmnt))
+			goto out_put_upper_mnt;
+
+		ufs->snapshot_mnt = snapmnt;
 	}
 
 	if (ufs->config.workdir) {
@@ -1226,6 +1250,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_free_oe;
 
 	mntput(upperpath.mnt);
+	mntput(snappath.mnt);
 	for (i = 0; i < numlower; i++)
 		mntput(stack[i].mnt);
 	mntput(workpath.mnt);
@@ -1236,6 +1261,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		if (ovl_is_impuredir(upperpath.dentry))
 			ovl_set_flag(OVL_IMPURE, d_inode(root_dentry));
 	}
+	oe->__snapdentry = snappath.dentry;
 	for (i = 0; i < numlower; i++) {
 		oe->lowerstack[i].dentry = stack[i].dentry;
 		oe->lowerstack[i].mnt = ufs->lower_mnt[i].mnt;
@@ -1266,7 +1292,9 @@ out_put_lower_mnt:
 	kfree(ufs->lower_mnt);
 out_put_workdir:
 	dput(ufs->workdir);
+out_put_upper_mnt:
 	mntput(ufs->upper_mnt);
+	mntput(ufs->snapshot_mnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)
 		path_put(&stack[i]);
@@ -1281,6 +1309,7 @@ out_unlock_upperdentry:
 	ovl_inuse_unlock(upperpath.dentry);
 out_put_upperpath:
 	path_put(&upperpath);
+	path_put(&snappath);
 out_free_config:
 	kfree(ufs->config.lowerdir);
 	kfree(ufs->config.upperdir);

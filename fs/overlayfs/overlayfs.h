@@ -198,6 +198,7 @@ static inline struct dentry *ovl_do_tmpfile(struct dentry *dentry, umode_t mode)
 }
 
 /* util.c */
+void ovl_unescape(char *s);
 int ovl_want_write(struct dentry *dentry);
 void ovl_drop_write(struct dentry *dentry);
 struct dentry *ovl_workdir(struct dentry *dentry);
@@ -337,6 +338,9 @@ int ovl_set_attr(struct dentry *upper, struct kstat *stat);
 struct ovl_fh *ovl_encode_fh(struct dentry *lower, bool is_upper);
 
 /* super.c */
+struct ovl_fs;
+int ovl_lower_dir(const char *name, struct path *path,
+		  struct ovl_fs *ofs, int *stack_depth, bool *remote);
 struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
 			 const char *dev_name, void *raw_data);
 
@@ -345,6 +349,11 @@ struct dentry *ovl_mount(struct file_system_type *fs_type, int flags,
 extern struct file_system_type ovl_snapshot_fs_type;
 int ovl_snapshot_fs_register(void);
 void ovl_snapshot_fs_unregister(void);
+int ovl_snapshot_dir(const char *name, struct path *path,
+		     struct ovl_fs *ofs, struct super_block *sb);
+struct vfsmount *ovl_snapshot_mount(struct path *path, struct ovl_fs *ufs);
+struct dentry *ovl_snapshot_dentry(struct dentry *dentry);
+
 static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 {
 	return sb->s_type == &ovl_snapshot_fs_type;
@@ -353,8 +362,25 @@ static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 #else
 static inline int ovl_snapshot_fs_register(void) { return 0; }
 static inline void ovl_snapshot_fs_unregister(void) { }
+static inline int ovl_snapshot_dir(const char *name, struct path *path,
+				   struct ovl_fs *ofs, struct super_block *sb)
+{
+	return -EINVAL;
+}
+
+static inline struct vfsmount *ovl_snapshot_mount(struct path *path,
+						  struct ovl_fs *ufs)
+{
+	return NULL;
+}
+
 static inline bool ovl_is_snapshot_fs_type(struct super_block *sb)
 {
 	return false;
+}
+
+static inline struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
+{
+	return NULL;
 }
 #endif

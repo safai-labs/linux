@@ -383,4 +383,11 @@ static inline struct dentry *ovl_snapshot_dentry(struct dentry *dentry)
 {
 	return NULL;
 }
+
+static inline int ovl_snapshot_lookup(struct dentry *parent,
+				      struct ovl_lookup_data *d,
+				      struct dentry **ret)
+{
+	return 0;
+}
 #endif

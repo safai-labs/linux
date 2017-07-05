@@ -353,7 +353,7 @@ int ovl_check_setxattr(struct dentry *dentry, struct dentry *upperdentry,
 	return err;
 }
 
-int ovl_set_impure(struct dentry *dentry, struct dentry *upperdentry)
+int ovl_set_impure(struct dentry *dentry)
 {
 	int err;
 
@@ -364,8 +364,8 @@ int ovl_set_impure(struct dentry *dentry, struct dentry *upperdentry)
 	 * Do not fail when upper doesn't support xattrs.
 	 * Upper inodes won't have origin nor redirect xattr anyway.
 	 */
-	err = ovl_check_setxattr(dentry, upperdentry, OVL_XATTR_IMPURE,
-				 "y", 1, 0);
+	err = ovl_check_setxattr(dentry, ovl_dentry_upper(dentry),
+				 OVL_XATTR_IMPURE, "y", 1, 0);
 	if (!err)
 		ovl_set_flag(OVL_IMPURE, d_inode(dentry));
 

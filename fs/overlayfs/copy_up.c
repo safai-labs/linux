@@ -338,7 +338,7 @@ static int ovl_link_up(struct ovl_copy_up_ctx *c)
 	struct inode *udir = d_inode(upperdir);
 
 	/* Mark parent "impure" because it may now contain non-pure upper */
-	err = ovl_set_impure(c->parent, upperdir);
+	err = ovl_set_impure(c->parent);
 	if (err)
 		return err;
 
@@ -551,7 +551,7 @@ static int ovl_do_copy_up(struct ovl_copy_up_ctx *c)
 		 * Mark parent "impure" because it may now contain non-pure
 		 * upper
 		 */
-		err = ovl_set_impure(c->parent, c->destdir);
+		err = ovl_set_impure(c->parent);
 		if (err)
 			return err;
 	}

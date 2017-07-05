@@ -92,7 +92,8 @@ int ovl_create_real(struct inode *dir, struct dentry *newdentry,
 		return -ESTALE;
 
 	if (hardlink) {
-		err = ovl_do_link(hardlink, dir, newdentry, debug);
+		err = ovl_do_link(ovl_dentry_upper(hardlink), dir, newdentry,
+				  debug);
 	} else {
 		switch (attr->mode & S_IFMT) {
 		case S_IFREG:
@@ -492,6 +493,17 @@ static int ovl_create_or_link(struct dentry *dentry, struct inode *inode,
 		return err;
 
 	old_cred = ovl_override_creds(dentry->d_sb);
+
+	/*
+	 * When linking a file with copy up origin into a new parent, mark the
+	 * new parent dir "impure".
+	 */
+	if (hardlink && ovl_type_origin(hardlink)) {
+		err = ovl_set_impure(dentry->d_parent);
+		if (err)
+			goto out_revert_creds;
+	}
+
 	err = -ENOMEM;
 	override_cred = prepare_creds();
 	if (override_cred) {
@@ -609,7 +621,7 @@ static int ovl_link(struct dentry *old, struct inode *newdir,
 	inode = d_inode(old);
 	ihold(inode);
 
-	err = ovl_create_or_link(new, inode, NULL, ovl_dentry_upper(old));
+	err = ovl_create_or_link(new, inode, NULL, old);
 	if (err)
 		iput(inode);
 
@@ -987,12 +999,12 @@ static int ovl_rename(struct inode *olddir, struct dentry *old,
 		 * lookup the origin inodes of the entries to fill d_ino.
 		 */
 		if (ovl_type_origin(old)) {
-			err = ovl_set_impure(new->d_parent, new_upperdir);
+			err = ovl_set_impure(new->d_parent);
 			if (err)
 				goto out_revert_creds;
 		}
 		if (!overwrite && ovl_type_origin(new)) {
-			err = ovl_set_impure(old->d_parent, old_upperdir);
+			err = ovl_set_impure(old->d_parent);
 			if (err)
 				goto out_revert_creds;
 		}

@@ -225,7 +225,7 @@ bool ovl_check_dir_xattr(struct dentry *dentry, const char *name);
 int ovl_check_setxattr(struct dentry *dentry, struct dentry *upperdentry,
 		       const char *name, const void *value, size_t size,
 		       int xerr);
-int ovl_set_impure(struct dentry *dentry, struct dentry *upperdentry);
+int ovl_set_impure(struct dentry *dentry);
 void ovl_set_flag(unsigned long flag, struct inode *inode);
 bool ovl_test_flag(unsigned long flag, struct inode *inode);
 bool ovl_inuse_trylock(struct dentry *dentry);

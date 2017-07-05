@@ -15,6 +15,7 @@ struct ovl_config {
 	bool default_permissions;
 	bool redirect_dir;
 	bool index;
+	bool consistent_fd;
 };
 
 struct ovl_lower_mnt {
@@ -42,6 +43,7 @@ struct ovl_fs {
 	bool tmpfile;
 	bool noxattr;
 	bool cloneup;
+	bool rocopyup;	/* copy up on open for read */
 	/* sb common to all layers */
 	struct super_block *same_sb;
 };

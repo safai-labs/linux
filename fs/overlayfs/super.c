@@ -225,7 +225,7 @@ static void ovl_put_super(struct super_block *sb)
 	if (ufs->upper_mnt)
 		ovl_inuse_unlock(ufs->upper_mnt->mnt_root);
 	mntput(ufs->upper_mnt);
-	mntput(ufs->snapshot_mnt);
+	mntput(ufs->__snapmnt);
 	for (i = 0; i < ufs->numlower; i++) {
 		mntput(ufs->lower_mnt[i].mnt);
 		free_anon_bdev(ufs->lower_mnt[i].pseudo_dev);
@@ -1055,7 +1055,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		if (IS_ERR(snapmnt))
 			goto out_put_upper_mnt;
 
-		ufs->snapshot_mnt = snapmnt;
+		ufs->__snapmnt = snapmnt;
 	}
 
 	if (ufs->config.workdir) {
@@ -1296,7 +1296,7 @@ out_put_workdir:
 	dput(ufs->workdir);
 out_put_upper_mnt:
 	mntput(ufs->upper_mnt);
-	mntput(ufs->snapshot_mnt);
+	mntput(ufs->__snapmnt);
 out_put_lowerpath:
 	for (i = 0; i < numlower; i++)
 		path_put(&stack[i]);
@@ -1313,6 +1313,7 @@ out_put_upperpath:
 	path_put(&upperpath);
 	path_put(&snappath);
 out_free_config:
+	kfree(ufs->config.snapshot);
 	kfree(ufs->config.lowerdir);
 	kfree(ufs->config.upperdir);
 	kfree(ufs->config.workdir);

@@ -553,10 +553,8 @@ static int ovl_do_copy_up(struct ovl_copy_up_ctx *c)
 	struct ovl_fs *ofs = c->dentry->d_sb->s_fs_info;
 	bool indexed = false;
 
-	/* Index all regular files if consistent fd is enabled */
-	if (ovl_indexdir(c->dentry->d_sb) && !S_ISDIR(c->stat.mode) &&
-	    ((ovl_consistent_fd(c->dentry->d_sb) && S_ISREG(c->stat.mode)) ||
-	     c->stat.nlink > 1))
+	/* Index all non-directories for NFS export */
+	if (ovl_indexdir(c->dentry->d_sb) && !S_ISDIR(c->stat.mode))
 		indexed = true;
 
 	if (WARN_ON(!c->parent && !indexed))

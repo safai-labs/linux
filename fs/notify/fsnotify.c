@@ -152,11 +152,16 @@ int __fsnotify_parent(const struct path *path, struct dentry *dentry, __u32 mask
 	if (!dentry)
 		dentry = path->dentry;
 
-	if (!(dentry->d_flags & DCACHE_FSNOTIFY_PARENT_WATCHED))
+	if (dentry->d_flags & DCACHE_FSNOTIFY_PARENT_WATCHED) {
+		parent = dget_parent(dentry);
+	} else if (unlikely(fsnotify_sb_root_watches_descendants(dentry)) &&
+		   !(mask & FS_ISDIR)) {
+		/* Parent is not watching, but root inode is watching */
+		parent = dget(dentry->d_sb->s_root);
+	} else {
 		return 0;
-
-	parent = dget_parent(dentry);
-	p_inode = parent->d_inode;
+	}
+	p_inode = d_inode(parent);
 
 	if (unlikely(!fsnotify_inode_watches_children(p_inode)))
 		__fsnotify_update_child_dentry_flags(p_inode);
@@ -169,7 +174,7 @@ int __fsnotify_parent(const struct path *path, struct dentry *dentry, __u32 mask
 			ret = fsnotify(p_inode, mask, path, FSNOTIFY_EVENT_PATH,
 				       dentry->d_name.name, 0);
 		else
-			ret = fsnotify(p_inode, mask, dentry->d_inode, FSNOTIFY_EVENT_INODE,
+			ret = fsnotify(p_inode, mask, dentry, FSNOTIFY_EVENT_DENTRY,
 				       dentry->d_name.name, 0);
 	}
 
@@ -241,12 +246,14 @@ static int send_to_group(struct inode *to_tell,
 
 /*
  * This is the main call to fsnotify.  The VFS calls into hook specific functions
- * in linux/fsnotify.h.  Those functions then in turn call here.  Here will call
+ * in linux/fsnotify.h.  Those functions call the helpers fsnotify(),
+ * fsnotify_root(), fsnotify_parent() and they in turn call here. Here will call
  * out to all of the registered fsnotify_group.  Those groups can then use the
  * notification event in whatever means they feel necessary.
  */
-int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
-	     const unsigned char *file_name, u32 cookie)
+static int __fsnotify(struct inode *to_tell, __u32 mask,
+		      const void *data, int data_is,
+		      const unsigned char *file_name, u32 cookie)
 {
 	struct hlist_node *inode_node = NULL, *vfsmount_node = NULL;
 	struct fsnotify_mark *inode_mark = NULL, *vfsmount_mark = NULL;
@@ -256,7 +263,7 @@ int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
 	struct mount *mnt;
 	int ret = 0;
 	/* global tests shouldn't care about events on child only the specific event */
-	__u32 test_mask = (mask & ~FS_EVENT_ON_CHILD);
+	__u32 test_mask = (mask & ~FS_EVENT_ON_DESCENDANT);
 
 	if (data_is == FSNOTIFY_EVENT_PATH)
 		mnt = real_mount(((const struct path *)data)->mnt);
@@ -367,6 +374,54 @@ out:
 
 	return ret;
 }
+
+/* Notify this dentry's sb root about descendant inode events. */
+static int fsnotify_root(const struct dentry *dentry, __u32 mask,
+			 const void *data, int data_is,
+			 const unsigned char *file_name, u32 cookie)
+{
+	struct inode *r_inode = d_inode(dentry->d_sb->s_root);
+
+	if (likely(!fsnotify_inode_watches_sb(r_inode)) ||
+	    !(r_inode->i_fsnotify_mask & mask))
+		return 0;
+
+	/* we are notifying root so come up with the new mask which
+	 * specifies these are events which came from sb. */
+	mask |= FS_EVENT_ON_SB;
+
+	return __fsnotify(r_inode, mask, data, data_is, file_name, cookie);
+}
+
+/* Notify this inode and maybe the sb root inode. */
+int fsnotify(struct inode *to_tell, __u32 mask, const void *data, int data_is,
+	     const unsigned char *file_name, u32 cookie)
+{
+	const struct dentry *dentry = NULL;
+	int ret = 0;
+
+	BUG_ON(mask & FS_EVENT_ON_SB);
+
+	if (data_is == FSNOTIFY_EVENT_PATH)
+		dentry = ((const struct path *)data)->dentry;
+	else if (data_is == FSNOTIFY_EVENT_DENTRY)
+		dentry = data;
+
+	if (dentry) {
+		/* First, notify root inode if it cares */
+		ret = fsnotify_root(dentry, mask, data, data_is,
+				    file_name, cookie);
+		if (ret)
+			return ret;
+
+		/* Do not report to root sb watch an event twice */
+		if (unlikely(fsnotify_inode_watches_sb(to_tell)))
+			return 0;
+	}
+
+	/* Then, notify this inode */
+	return __fsnotify(to_tell, mask, data, data_is, file_name, cookie);
+}
 EXPORT_SYMBOL_GPL(fsnotify);
 
 extern struct kmem_cache *fsnotify_mark_connector_cachep;
@@ -375,7 +430,7 @@ static __init int fsnotify_init(void)
 {
 	int ret;
 
-	BUG_ON(hweight32(ALL_FSNOTIFY_EVENTS) != 23);
+	BUG_ON(hweight32(ALL_FSNOTIFY_EVENTS) != 24);
 
 	ret = init_srcu_struct(&fsnotify_mark_srcu);
 	if (ret)

@@ -55,12 +55,24 @@
  * dnotify and inotify. */
 #define FS_EVENT_ON_CHILD	0x08000000
 
+/* This root inode cares about things that happen to inodes on same super block.
+ * Can only be set for fanotify.
+ * Overloads IN_ONLYDIR inotify open only flag */
+#define FS_EVENT_ON_SB		0x01000000
+
+#define FS_EVENT_ON_DESCENDANT	(FS_EVENT_ON_CHILD | FS_EVENT_ON_SB)
+
 /* This is a list of all events that may get sent to a parernt based on fs event
  * happening to inodes inside that directory */
 #define FS_EVENTS_POSS_ON_CHILD   (FS_ACCESS | FS_MODIFY | FS_ATTRIB |\
 				   FS_CLOSE_WRITE | FS_CLOSE_NOWRITE | FS_OPEN |\
 				   FS_MOVED_FROM | FS_MOVED_TO | FS_CREATE |\
 				   FS_DELETE | FS_OPEN_PERM | FS_ACCESS_PERM)
+
+/* This is a list of all events that may get sent to the root inode based on fs
+ * event happening to inodes on the same super block */
+#define FS_EVENTS_POSS_ON_SB   (FS_EVENTS_POSS_ON_CHILD |\
+				FS_DELETE_SELF | FS_MOVE_SELF)
 
 #define FS_MOVE			(FS_MOVED_FROM | FS_MOVED_TO)
 
@@ -71,9 +83,10 @@
 			     FS_MOVED_FROM | FS_MOVED_TO | FS_CREATE | \
 			     FS_DELETE | FS_DELETE_SELF | FS_MOVE_SELF | \
 			     FS_UNMOUNT | FS_Q_OVERFLOW | FS_IN_IGNORED | \
-			     FS_OPEN_PERM | FS_ACCESS_PERM | FS_EXCL_UNLINK | \
-			     FS_ISDIR | FS_IN_ONESHOT | FS_DN_RENAME | \
-			     FS_DN_MULTISHOT | FS_EVENT_ON_CHILD)
+			     FS_OPEN_PERM | FS_ACCESS_PERM | \
+			     FS_EXCL_UNLINK | FS_ISDIR | FS_IN_ONESHOT | \
+			     FS_DN_RENAME | FS_DN_MULTISHOT | \
+			     FS_EVENT_ON_CHILD | FS_EVENT_ON_SB)
 
 struct fsnotify_group;
 struct fsnotify_event;
@@ -187,7 +200,8 @@ struct fsnotify_group {
 			struct list_head access_list;
 			wait_queue_head_t access_waitq;
 #endif /* CONFIG_FANOTIFY_ACCESS_PERMISSIONS */
-			int f_flags;
+			int flags;           /* flags from fanotify_init() */
+			int f_flags; /* event_f_flags from fanotify_init() */
 			unsigned int max_marks;
 			struct user_struct *user;
 		} fanotify_data;
@@ -195,10 +209,11 @@ struct fsnotify_group {
 	};
 };
 
-/* when calling fsnotify tell it if the data is a path or inode */
+/* when calling fsnotify tell it if the data is a path or inode or dentry */
 #define FSNOTIFY_EVENT_NONE	0
 #define FSNOTIFY_EVENT_PATH	1
 #define FSNOTIFY_EVENT_INODE	2
+#define FSNOTIFY_EVENT_DENTRY	3
 
 /*
  * Inode / vfsmount point to this structure which tracks all marks attached to
@@ -213,10 +228,8 @@ struct fsnotify_mark_connector {
 #define FSNOTIFY_OBJ_ALL_TYPES		(FSNOTIFY_OBJ_TYPE_INODE | \
 					 FSNOTIFY_OBJ_TYPE_VFSMOUNT)
 	unsigned int flags;	/* Type of object [lock] */
-	union {	/* Object pointer [lock] */
-		struct inode *inode;
-		struct vfsmount *mnt;
-	};
+	struct inode *inode;
+	struct vfsmount *mnt;
 	union {
 		struct hlist_head list;
 		/* Used listing heads to free after srcu period expires */
@@ -277,6 +290,16 @@ extern void __fsnotify_inode_delete(struct inode *inode);
 extern void __fsnotify_vfsmount_delete(struct vfsmount *mnt);
 extern u32 fsnotify_get_cookie(void);
 
+static inline int fsnotify_inode_watches_sb(struct inode *inode)
+{
+	/* FS_EVENT_ON_SB is set if the sb root inode may care */
+	if (!(inode->i_fsnotify_mask & FS_EVENT_ON_SB))
+		return 0;
+	/* this root inode might care about sb events, does it care about the
+	 * specific set of events that can happen on a distant child? */
+	return inode->i_fsnotify_mask & FS_EVENTS_POSS_ON_SB;
+}
+
 static inline int fsnotify_inode_watches_children(struct inode *inode)
 {
 	/* FS_EVENT_ON_CHILD is set if the inode may care */
@@ -285,6 +308,19 @@ static inline int fsnotify_inode_watches_children(struct inode *inode)
 	/* this inode might care about child events, does it care about the
 	 * specific set of events that can happen on a child? */
 	return inode->i_fsnotify_mask & FS_EVENTS_POSS_ON_CHILD;
+}
+
+static inline int fsnotify_sb_root_watches_descendants(struct dentry *dentry)
+{
+	struct inode *root = dentry->d_sb->s_root->d_inode;
+
+	/* All FS_EVENT_ON_DESCENDANTS flags are set if root inode may care */
+	if ((root->i_fsnotify_mask & FS_EVENT_ON_DESCENDANT) !=
+	     FS_EVENT_ON_DESCENDANT)
+		return 0;
+	/* root inode might care about distant child events, does it care about
+	 * the specific set of events that can happen on a child? */
+	return root->i_fsnotify_mask & FS_EVENTS_POSS_ON_CHILD;
 }
 
 /*

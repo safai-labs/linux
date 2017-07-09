@@ -45,6 +45,20 @@ struct kmem_cache *fanotify_mark_cache __read_mostly;
 struct kmem_cache *fanotify_event_cachep __read_mostly;
 struct kmem_cache *fanotify_perm_event_cachep __read_mostly;
 
+static int round_event_data_len(struct fanotify_file_event_info *event)
+{
+	int data_len = 0;
+
+	if (!event->name_len && !event->fh.handle_bytes)
+		return 0;
+
+	if (event->name_len)
+		data_len += event->name_len + 1;
+	if (event->fh.handle_bytes)
+		data_len +=  sizeof(event->fh) + event->fh.handle_bytes;
+	return roundup(data_len, FAN_EVENT_METADATA_LEN);
+}
+
 /*
  * Get an fsnotify notification event if one exists and is small
  * enough to fit in "count". Return an error pointer if the count
@@ -55,14 +69,23 @@ struct kmem_cache *fanotify_perm_event_cachep __read_mostly;
 static struct fsnotify_event *get_one_event(struct fsnotify_group *group,
 					    size_t count)
 {
-	assert_spin_locked(&group->notification_lock);
+	size_t event_size = FAN_EVENT_METADATA_LEN;
+	struct fsnotify_event *event;
 
-	pr_debug("%s: group=%p count=%zd\n", __func__, group, count);
+	assert_spin_locked(&group->notification_lock);
 
 	if (fsnotify_notify_queue_is_empty(group))
 		return NULL;
 
-	if (FAN_EVENT_METADATA_LEN > count)
+	event = fsnotify_peek_first_event(group);
+
+	pr_debug("%s: group=%p event=%p count=%zd\n", __func__,
+		 group, event, count);
+
+	if (FANOTIFY_IS_FE(event))
+		event_size += round_event_data_len(FANOTIFY_FE(event));
+
+	if (event_size > count)
 		return ERR_PTR(-EINVAL);
 
 	/* held the notification_lock the whole time, so this is the
@@ -89,12 +112,17 @@ static int create_fd(struct fsnotify_group *group,
 	 */
 	/* it's possible this event was an overflow event.  in that case dentry and mnt
 	 * are NULL;  That's fine, just don't call dentry open */
-	if (event->path.dentry && event->path.mnt)
+	if (event->path.dentry && event->path.mnt) {
+		pr_debug("%s: mnt=%p, dentry=%p parent=%p d_flags=%x\n",
+				__func__, event->path.mnt, event->path.dentry,
+				event->path.dentry->d_parent,
+				event->path.dentry->d_flags);
 		new_file = dentry_open(&event->path,
 				       group->fanotify_data.f_flags | FMODE_NONOTIFY,
 				       current_cred());
-	else
+	} else {
 		new_file = ERR_PTR(-EOVERFLOW);
+	}
 	if (IS_ERR(new_file)) {
 		/*
 		 * we still send an event even if we can't open the file.  this
@@ -119,9 +147,14 @@ static int fill_event_metadata(struct fsnotify_group *group,
 {
 	int ret = 0;
 	struct fanotify_event_info *event;
+	__u32 user_mask = FAN_ALL_OUTGOING_EVENTS;
 
 	pr_debug("%s: group=%p metadata=%p event=%p\n", __func__,
 		 group, metadata, fsn_event);
+
+	/* FAN_ONDIR is important for dentry events */
+	if (group->fanotify_data.flags & FAN_EVENT_INFO_PARENT)
+		user_mask |= FAN_ONDIR;
 
 	*file = NULL;
 	event = container_of(fsn_event, struct fanotify_event_info, fse);
@@ -129,7 +162,7 @@ static int fill_event_metadata(struct fsnotify_group *group,
 	metadata->metadata_len = FAN_EVENT_METADATA_LEN;
 	metadata->vers = FANOTIFY_METADATA_VERSION;
 	metadata->reserved = 0;
-	metadata->mask = fsn_event->mask & FAN_ALL_OUTGOING_EVENTS;
+	metadata->mask = fsn_event->mask & user_mask;
 	metadata->pid = pid_vnr(event->tgid);
 	if (unlikely(fsn_event->mask & FAN_Q_OVERFLOW))
 		metadata->fd = FAN_NOFD;
@@ -206,8 +239,10 @@ static ssize_t copy_event_to_user(struct fsnotify_group *group,
 				  char __user *buf)
 {
 	struct fanotify_event_metadata fanotify_event_metadata;
+	struct fanotify_file_event_info *ffe = NULL;
 	struct file *f;
 	int fd, ret;
+	size_t pad_data_len = 0;
 
 	pr_debug("%s: group=%p event=%p\n", __func__, group, event);
 
@@ -215,14 +250,53 @@ static ssize_t copy_event_to_user(struct fsnotify_group *group,
 	if (ret < 0)
 		return ret;
 
+	if (FANOTIFY_IS_FE(event) &&
+	    (group->fanotify_data.flags &
+	     (FAN_EVENT_INFO_NAME | FAN_EVENT_INFO_FH))) {
+		ffe = FANOTIFY_FE(event);
+		pad_data_len = round_event_data_len(ffe);
+		fanotify_event_metadata.event_len += pad_data_len;
+	}
+
 	fd = fanotify_event_metadata.fd;
 	ret = -EFAULT;
 	if (copy_to_user(buf, &fanotify_event_metadata,
-			 fanotify_event_metadata.event_len))
+			 FAN_EVENT_METADATA_LEN))
 		goto out_close_fd;
 
+	buf += FAN_EVENT_METADATA_LEN;
+
+	/*
+	 * send the filename and pad to a multiple of FAN_EVENT_METADATA_LEN
+	 * with zeros.
+	 */
+	ret = -EFAULT;
+	if (ffe && pad_data_len) {
+		if (ffe->fh.handle_bytes) {
+			int fh_len = sizeof(ffe->fh) + ffe->fh.handle_bytes;
+
+			/* copy the file handle (bytes,type,fid) */
+			if (copy_to_user(buf, &ffe->fh, fh_len))
+				goto out_close_fd;
+			buf += fh_len;
+			pad_data_len -= fh_len;
+		}
+
+		if (ffe->name_len) {
+			/* copy the filename */
+			if (copy_to_user(buf, ffe->name, ffe->name_len))
+				goto out_close_fd;
+			buf += ffe->name_len;
+			pad_data_len -= ffe->name_len;
+		}
+
+		/* fill userspace with 0's */
+		if (clear_user(buf, pad_data_len))
+			goto out_close_fd;
+	}
+
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (event->mask & FAN_ALL_PERM_EVENTS)
+	if (FANOTIFY_IS_PE(event))
 		FANOTIFY_PE(event)->fd = fd;
 #endif
 
@@ -309,7 +383,7 @@ static ssize_t fanotify_read(struct file *file, char __user *buf,
 		 * Permission events get queued to wait for response.  Other
 		 * events can be destroyed now.
 		 */
-		if (!(kevent->mask & FAN_ALL_PERM_EVENTS)) {
+		if (!FANOTIFY_IS_PE(kevent)) {
 			fsnotify_destroy_event(group, kevent);
 		} else {
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
@@ -399,7 +473,7 @@ static int fanotify_release(struct inode *ignored, struct file *file)
 	 */
 	while (!fsnotify_notify_queue_is_empty(group)) {
 		fsn_event = fsnotify_remove_first_event(group);
-		if (!(fsn_event->mask & FAN_ALL_PERM_EVENTS)) {
+		if (!FANOTIFY_IS_PE(fsn_event)) {
 			spin_unlock(&group->notification_lock);
 			fsnotify_destroy_event(group, fsn_event);
 			spin_lock(&group->notification_lock);
@@ -671,6 +745,7 @@ static int fanotify_add_vfsmount_mark(struct fsnotify_group *group,
 }
 
 static int fanotify_add_inode_mark(struct fsnotify_group *group,
+				   struct vfsmount *mnt,
 				   struct inode *inode, __u32 mask,
 				   unsigned int flags)
 {
@@ -692,7 +767,7 @@ static int fanotify_add_inode_mark(struct fsnotify_group *group,
 	mutex_lock(&group->mark_mutex);
 	fsn_mark = fsnotify_find_mark(&inode->i_fsnotify_marks, group);
 	if (!fsn_mark) {
-		fsn_mark = fanotify_add_new_mark(group, inode, NULL);
+		fsn_mark = fanotify_add_new_mark(group, inode, mnt);
 		if (IS_ERR(fsn_mark)) {
 			mutex_unlock(&group->mark_mutex);
 			return PTR_ERR(fsn_mark);
@@ -715,7 +790,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	struct user_struct *user;
 	struct fanotify_event_info *oevent;
 
-	pr_debug("%s: flags=%d event_f_flags=%d\n",
+	pr_debug("%s: flags=%x event_f_flags=%x\n",
 		__func__, flags, event_f_flags);
 
 	if (!capable(CAP_SYS_ADMIN))
@@ -725,6 +800,14 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 		return -EINVAL;
 
 	if (event_f_flags & ~FANOTIFY_INIT_ALL_EVENT_F_BITS)
+		return -EINVAL;
+
+	/*
+	 * New event format info bits can only be set for the default
+	 * notification class
+	 */
+	if ((flags & FAN_ALL_EVENT_INFO_BITS) &&
+	    (flags & FAN_ALL_CLASS_BITS) != FAN_CLASS_NOTIF)
 		return -EINVAL;
 
 	switch (event_f_flags & O_ACCMODE) {
@@ -758,7 +841,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	group->fanotify_data.user = user;
 	atomic_inc(&user->fanotify_listeners);
 
-	oevent = fanotify_alloc_event(NULL, FS_Q_OVERFLOW, NULL);
+	oevent = fanotify_alloc_event(group, NULL, FS_Q_OVERFLOW, NULL, NULL);
 	if (unlikely(!oevent)) {
 		fd = -ENOMEM;
 		goto out_destroy_group;
@@ -809,6 +892,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	if (fd < 0)
 		goto out_destroy_group;
 
+	group->fanotify_data.flags = flags;
 	return fd;
 
 out_destroy_group:
@@ -856,9 +940,9 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 	}
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (mask & ~(FAN_ALL_EVENTS | FAN_ALL_PERM_EVENTS | FAN_EVENT_ON_CHILD))
+	if (mask & ~(FAN_ALL_EVENTS | FAN_ALL_PERM_EVENTS | FAN_EVENT_ON_DESCENDANT))
 #else
-	if (mask & ~(FAN_ALL_EVENTS | FAN_EVENT_ON_CHILD))
+	if (mask & ~(FAN_ALL_EVENTS | FAN_EVENT_ON_DESCENDANT))
 #endif
 		return -EINVAL;
 
@@ -881,6 +965,12 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 	    group->priority == FS_PRIO_0)
 		goto fput_and_out;
 
+	/* Super block root watch is not a mount watch */
+	ret = -EINVAL;
+	if ((mask & FAN_EVENT_ON_SB) &&
+	    (flags & FAN_MARK_MOUNT))
+		goto fput_and_out;
+
 	if (flags & FAN_MARK_FLUSH) {
 		ret = 0;
 		if (flags & FAN_MARK_MOUNT)
@@ -895,10 +985,32 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 		goto fput_and_out;
 
 	/* inode held in place by reference to path; group by fget on fd */
-	if (!(flags & FAN_MARK_MOUNT))
+	if (mask & FAN_EVENT_ON_SB)
+		inode = path.dentry->d_sb->s_root->d_inode;
+	else if (!(flags & FAN_MARK_MOUNT))
 		inode = path.dentry->d_inode;
-	else
+
+	/*
+	 * Store the mount point from which the watch was added also for
+	 * inode marks. This mount point may be used to report dentry events,
+	 * even if the events happened on another mount point.
+	 */
+	if ((flags & FAN_MARK_MOUNT) ||
+	    (mask & FAN_EVENT_ON_SB) ||
+	    group->fanotify_data.flags & FAN_EVENT_INFO_PARENT)
 		mnt = path.mnt;
+
+	/*
+	 * New dentry events may pass parent directory's path on event fd,
+	 * which may break old programs that request FAN_ALL_EVENTS.
+	 * Ignore dentry events unless user explicitly set the new
+	 * FAN_EVENT_INFO_PARENT flag to fanotify_init().
+	 * Mount watch cannot get dentry events, because the mount point
+	 * from which those events were created is unavailable inforamtion.
+	 */
+	if ((flags & FAN_MARK_MOUNT) ||
+	    !(group->fanotify_data.flags & FAN_EVENT_INFO_PARENT))
+		mask &= ~FAN_DENTRY_EVENTS;
 
 	/* create/update an inode mark */
 	switch (flags & (FAN_MARK_ADD | FAN_MARK_REMOVE)) {
@@ -906,7 +1018,7 @@ SYSCALL_DEFINE5(fanotify_mark, int, fanotify_fd, unsigned int, flags,
 		if (flags & FAN_MARK_MOUNT)
 			ret = fanotify_add_vfsmount_mark(group, mnt, mask, flags);
 		else
-			ret = fanotify_add_inode_mark(group, inode, mask, flags);
+			ret = fanotify_add_inode_mark(group, mnt, inode, mask, flags);
 		break;
 	case FAN_MARK_REMOVE:
 		if (flags & FAN_MARK_MOUNT)

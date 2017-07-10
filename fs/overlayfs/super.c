@@ -1181,6 +1181,9 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	root_dentry->d_fsdata = oe;
 
+	/* Hash root directory inode for NFS export */
+	if (sb->s_export_op)
+		ovl_inode_update(d_inode(root_dentry), upperpath.dentry);
 	ovl_inode_init(d_inode(root_dentry), upperpath.dentry,
 		       ovl_dentry_lower(root_dentry));
 

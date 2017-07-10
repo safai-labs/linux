@@ -524,7 +524,9 @@ unsigned int ovl_get_nlink(struct dentry *lowerdentry,
 	char buf[13];
 	int err;
 
-	if (!lowerdentry || !upperdentry || d_inode(lowerdentry)->i_nlink == 1)
+	if (!lowerdentry || !upperdentry ||
+	    d_inode(lowerdentry)->i_nlink == 1 ||
+	    S_ISDIR(d_inode(upperdentry)->i_mode))
 		return fallback;
 
 	err = vfs_getxattr(upperdentry, OVL_XATTR_NLINK, &buf, sizeof(buf) - 1);
@@ -607,8 +609,10 @@ struct inode *ovl_get_inode(struct dentry *dentry, struct dentry *upperdentry)
 	if (!realinode)
 		realinode = d_inode(lowerdentry);
 
-	if (!S_ISDIR(realinode->i_mode) &&
-	    (upperdentry || (lowerdentry && ovl_indexdir(dentry->d_sb)))) {
+	/* Hash all inodes for NFS export and non-dir for hardlink support */
+	if (dentry->d_sb->s_export_op ||
+	    (!S_ISDIR(realinode->i_mode) &&
+	     (upperdentry || (lowerdentry && ovl_indexdir(dentry->d_sb))))) {
 		struct inode *key = d_inode(lowerdentry ?: upperdentry);
 		unsigned int nlink;
 

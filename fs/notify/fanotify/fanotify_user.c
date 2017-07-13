@@ -163,9 +163,10 @@ static int fill_event_metadata(struct fsnotify_group *group,
 	metadata->reserved = 0;
 	metadata->mask = fsn_event->mask & user_mask;
 	metadata->pid = pid_vnr(event->tgid);
-	if (unlikely(fsn_event->mask & FAN_Q_OVERFLOW))
+	if (unlikely(fsn_event->mask & FAN_Q_OVERFLOW) ||
+		!event->path.mnt || !event->path.dentry) {
 		metadata->fd = FAN_NOFD;
-	else {
+	} else {
 		metadata->fd = create_fd(group, event, file);
 		if (metadata->fd < 0)
 			ret = metadata->fd;

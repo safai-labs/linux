@@ -108,11 +108,11 @@ static bool fanotify_should_send_event(struct fsnotify_mark *inode_mark,
 		 mnt, event_mask, data, data_type);
 
 	if (data_type == FSNOTIFY_EVENT_PATH) {
-		if (!mnt)
-			mnt = ((struct path *)data)->mnt;
-		else if (mnt != ((struct path *)data)->mnt)
+		*path = *(struct path *)data;
+		if (mnt && mnt != path->mnt)
 			return false;
-		dentry = ((struct path *)data)->dentry;
+		dentry = path->dentry;
+		mnt = path->mnt;
 	} else if (data_type == FSNOTIFY_EVENT_DENTRY) {
 		dentry = (struct dentry *)data;
 	} else
@@ -167,8 +167,6 @@ static bool fanotify_should_send_event(struct fsnotify_mark *inode_mark,
 	    d_ancestor(mnt->mnt_root, dentry) == NULL)
 		return false;
 
-	path->dentry = dentry;
-	path->mnt = mnt;
 	return true;
 }
 
@@ -256,7 +254,7 @@ struct fanotify_event_info *fanotify_alloc_event(struct fsnotify_group *group,
 init: __maybe_unused
 	fsnotify_init_event(&event->fse, inode, mask);
 	event->tgid = get_pid(task_tgid(current));
-	if (path) {
+	if (path && event->path.mnt && event->path.dentry) {
 		event->path = *path;
 		path_get(&event->path);
 		pr_debug("%s: mnt=%p, dentry=%p parent=%p d_flags=%x\n",
@@ -280,7 +278,7 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 	int ret = 0;
 	struct fanotify_event_info *event;
 	struct fsnotify_event *fsn_event;
-	struct path path;
+	struct path path = { };
 
 	BUILD_BUG_ON(FAN_ACCESS != FS_ACCESS);
 	BUILD_BUG_ON(FAN_MODIFY != FS_MODIFY);

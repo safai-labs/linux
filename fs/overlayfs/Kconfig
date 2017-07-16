@@ -43,3 +43,21 @@ config OVERLAY_FS_INDEX
 	  outcomes.  However, mounting the same overlay with an old kernel
 	  read-write and then mounting it again with a new kernel, will have
 	  unexpected results.
+
+config OVERLAY_FS_CONSISTENT_FD
+	bool "Overlayfs: turn on consistent fd feature by default"
+	depends on OVERLAY_FS
+	help
+	  Overlayfs copies up a file when the file is opened for write.  Writes
+          to the returned file descriptor are not visible to file descriptors
+          that were opened for read prior to copy up.
+
+          If this config option is enabled then overlay filesystems will default
+          to copy up a file that is opened for read to avoid this inconsistency.
+          In this case, it is still possible to turn off consistent fd globally
+          with the "consistent_fd=off" module option or on a filesystem instance
+          basis with the "consistent_fd=off" mount option.
+
+          The feature will not be turned on for an overlay mount unless all
+          the layers are on the same underlying filesystem and this filesystem
+          supports clone.

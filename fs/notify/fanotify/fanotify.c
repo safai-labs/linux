@@ -16,14 +16,30 @@ static bool should_merge(struct fsnotify_event *old_fsn,
 			 struct fsnotify_event *new_fsn)
 {
 	struct fanotify_event_info *old, *new;
+	struct fanotify_file_event_info *old_ffe = NULL;
+	struct fanotify_file_event_info *new_ffe = NULL;
 
 	pr_debug("%s: old=%p new=%p\n", __func__, old_fsn, new_fsn);
 	old = FANOTIFY_E(old_fsn);
 	new = FANOTIFY_E(new_fsn);
+	if (old_fsn->mask & FAN_FILENAME_EVENTS)
+		old_ffe = FANOTIFY_FE(old_fsn);
+	if (new_fsn->mask & FAN_FILENAME_EVENTS)
+		new_ffe = FANOTIFY_FE(new_fsn);
 
-	if (old_fsn->inode == new_fsn->inode && old->tgid == new->tgid &&
-	    old->path.mnt == new->path.mnt &&
-	    old->path.dentry == new->path.dentry)
+	if (old_fsn->inode != new_fsn->inode || old->tgid != new->tgid ||
+	    old->path.mnt != new->path.mnt ||
+	    old->path.dentry != new->path.dentry ||
+	    !old_ffe != !new_ffe)
+		return false;
+
+	if (!old_ffe)
+		return true;
+
+	/* Check if 2 filename events (on same parent) should be merged */
+	if (old_ffe->name_len == new_ffe->name_len &&
+	    (!old_ffe->name_len ||
+	     !strncmp(old_ffe->name, new_ffe->name, old_ffe->name_len)))
 		return true;
 	return false;
 }
@@ -41,7 +57,7 @@ static int fanotify_merge(struct list_head *list, struct fsnotify_event *event)
 	 * the event structure we have created in fanotify_handle_event() is the
 	 * one we should check for permission response.
 	 */
-	if (event->mask & FAN_ALL_PERM_EVENTS)
+	if (FANOTIFY_IS_PE(event))
 		return 0;
 #endif
 
@@ -102,18 +118,26 @@ static bool fanotify_should_send_event(struct fsnotify_mark *inode_mark,
 {
 	__u32 marks_mask, marks_ignored_mask;
 	const struct path *path = data;
+	struct vfsmount *mark_mnt = inode_mark ? inode_mark->connector->mnt : NULL;
+	struct dentry *dentry = path->dentry;
 
-	pr_debug("%s: inode_mark=%p vfsmnt_mark=%p mask=%x data=%p"
+	pr_debug("%s: inode_mark=%p vfsmnt_mark=%p mark_mnt=%p mask=%x"
 		 " data_type=%d\n", __func__, inode_mark, vfsmnt_mark,
-		 event_mask, data, data_type);
+		 mark_mnt, event_mask, data_type);
 
 	/* if we don't have enough info to send an event to userspace say no */
-	if (data_type != FSNOTIFY_EVENT_PATH)
+	if (data_type != FSNOTIFY_EVENT_PATH &&
+	    data_type != FSNOTIFY_EVENT_DENTRY)
+		return false;
+
+	pr_debug("%s: dentry=%p inode=%p d_flags=%x\n", __func__,
+		 dentry, dentry->d_inode, dentry->d_flags);
+
+	if (WARN_ON(d_is_negative(dentry) || d_really_is_negative(dentry)))
 		return false;
 
 	/* sorry, fanotify only gives a damn about files and dirs */
-	if (!d_is_reg(path->dentry) &&
-	    !d_can_lookup(path->dentry))
+	if (!d_is_reg(dentry) && !d_can_lookup(dentry))
 		return false;
 
 	if (inode_mark && vfsmnt_mark) {
@@ -136,19 +160,29 @@ static bool fanotify_should_send_event(struct fsnotify_mark *inode_mark,
 		BUG();
 	}
 
-	if (d_is_dir(path->dentry) &&
+	if (d_is_dir(dentry) &&
 	    !(marks_mask & FS_ISDIR & ~marks_ignored_mask))
 		return false;
 
-	if (event_mask & FAN_ALL_OUTGOING_EVENTS & marks_mask &
-				 ~marks_ignored_mask)
-		return true;
+	if (!(event_mask & FAN_ALL_OUTGOING_EVENTS & marks_mask &
+	      ~marks_ignored_mask))
+		return false;
 
-	return false;
+	/*
+	 * Only interesetd in dentry events visible from the mount
+	 * from which the root watch was added
+	 */
+	if (mark_mnt && mark_mnt->mnt_root != dentry &&
+	    d_ancestor(mark_mnt->mnt_root, dentry) == NULL)
+		return false;
+
+	return true;
 }
 
-struct fanotify_event_info *fanotify_alloc_event(struct inode *inode, u32 mask,
-						 const struct path *path)
+struct fanotify_event_info *fanotify_alloc_event(struct fsnotify_group *group,
+						 struct inode *inode, u32 mask,
+						 const struct path *path,
+						 const char *file_name)
 {
 	struct fanotify_event_info *event;
 
@@ -165,6 +199,71 @@ struct fanotify_event_info *fanotify_alloc_event(struct inode *inode, u32 mask,
 		goto init;
 	}
 #endif
+
+	/*
+	 * For filename events (create,delete,move), path points to the
+	 * directory and name holds the entry name, so allocate a variable
+	 * length fanotify_file_event_info struct.
+	 *
+	 * When non permission events are reported on super block root watch,
+	 * they may need to carry extra file information. So alway allocate
+	 * fanotify_file_event_info struct for those events, even if data len
+	 * end up being 0.
+	 * This makes it easier to know when an event struct should be cast
+	 * to FANOTIFY_FE(), e.g. in fanotify_free_event().
+	 */
+	if (mask & (FAN_FILENAME_EVENTS | FAN_EVENT_ON_SB)) {
+		struct fanotify_file_event_info *ffe;
+		int alloc_len = sizeof(*ffe);
+		int name_len = 0;
+
+		/*
+		 * We need to report the file name either for filename events
+		 * (create,delete,move) or for events that happen on non
+		 * directory inodes when reporting file ids to root sb inode
+		 * and only if user has requested to get filename info.
+		 */
+		if (file_name &&
+		    ((mask & FAN_FILENAME_EVENTS) ||
+		     !d_is_dir(path->dentry)) &&
+		    (group->fanotify_data.flags & FAN_EVENT_INFO_NAME)) {
+			name_len = strlen(file_name);
+			alloc_len += name_len + 1;
+		}
+
+		ffe = kmalloc(alloc_len, GFP_KERNEL);
+		if (!ffe)
+			return NULL;
+		event = &ffe->fae;
+		ffe->name_len = name_len;
+		if (name_len)
+			strcpy(ffe->name, file_name);
+
+		ffe->fh.handle_type = FILEID_INVALID;
+		ffe->fh.handle_bytes = 0;
+		if ((mask & FAN_EVENT_ON_SB) &&
+		    (group->fanotify_data.flags & FAN_EVENT_INFO_FH)) {
+			/*
+			 * Encode only parent inode for filename events
+			 * and events on directories. Encode both parent
+			 * and child inodes for other events.
+			 * ffe->fid is big enough to encode xfs type 0x82:
+			 * 64bit parent+child inodes and 32bit generations
+			 */
+			int handle_dwords = sizeof(ffe->fid) >> 2;
+			int type = exportfs_encode_fh(path->dentry,
+					(struct fid *)&ffe->fid,
+					&handle_dwords,
+					!(mask & FAN_FILENAME_EVENTS));
+
+			if (type > 0 && type < FILEID_INVALID) {
+				ffe->fh.handle_type = type;
+				ffe->fh.handle_bytes = handle_dwords << 2;
+			}
+		}
+		goto init;
+	}
+
 	event = kmem_cache_alloc(fanotify_event_cachep, GFP_KERNEL);
 	if (!event)
 		return NULL;
@@ -174,6 +273,10 @@ init: __maybe_unused
 	if (path) {
 		event->path = *path;
 		path_get(&event->path);
+		pr_debug("%s: mnt=%p, dentry=%p parent=%p d_flags=%x\n",
+				__func__, event->path.mnt, event->path.dentry,
+				event->path.dentry->d_parent,
+				event->path.dentry->d_flags);
 	} else {
 		event->path.mnt = NULL;
 		event->path.dentry = NULL;
@@ -184,7 +287,7 @@ init: __maybe_unused
 static int fanotify_handle_event(struct fsnotify_group *group,
 				 struct inode *inode,
 				 struct fsnotify_mark *inode_mark,
-				 struct fsnotify_mark *fanotify_mark,
+				 struct fsnotify_mark *vfsmnt_mark,
 				 u32 mask, const void *data, int data_type,
 				 const unsigned char *file_name, u32 cookie,
 				 struct fsnotify_iter_info *iter_info)
@@ -192,26 +295,49 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 	int ret = 0;
 	struct fanotify_event_info *event;
 	struct fsnotify_event *fsn_event;
+	struct path path;
 
 	BUILD_BUG_ON(FAN_ACCESS != FS_ACCESS);
 	BUILD_BUG_ON(FAN_MODIFY != FS_MODIFY);
+	BUILD_BUG_ON(FAN_ATTRIB != FS_ATTRIB);
 	BUILD_BUG_ON(FAN_CLOSE_NOWRITE != FS_CLOSE_NOWRITE);
 	BUILD_BUG_ON(FAN_CLOSE_WRITE != FS_CLOSE_WRITE);
 	BUILD_BUG_ON(FAN_OPEN != FS_OPEN);
+	BUILD_BUG_ON(FAN_MOVED_TO != FS_MOVED_TO);
+	BUILD_BUG_ON(FAN_MOVED_FROM != FS_MOVED_FROM);
+	BUILD_BUG_ON(FAN_CREATE != FS_CREATE);
+	BUILD_BUG_ON(FAN_DELETE != FS_DELETE);
+	BUILD_BUG_ON(FAN_DELETE_SELF != FS_DELETE_SELF);
+	BUILD_BUG_ON(FAN_MOVE_SELF != FS_MOVE_SELF);
 	BUILD_BUG_ON(FAN_EVENT_ON_CHILD != FS_EVENT_ON_CHILD);
+	BUILD_BUG_ON(FAN_EVENT_ON_SB != FS_EVENT_ON_SB);
 	BUILD_BUG_ON(FAN_Q_OVERFLOW != FS_Q_OVERFLOW);
 	BUILD_BUG_ON(FAN_OPEN_PERM != FS_OPEN_PERM);
 	BUILD_BUG_ON(FAN_ACCESS_PERM != FS_ACCESS_PERM);
 	BUILD_BUG_ON(FAN_ONDIR != FS_ISDIR);
 
-	if (!fanotify_should_send_event(inode_mark, fanotify_mark, mask, data,
+	if (data_type == FSNOTIFY_EVENT_PATH) {
+		path = *(struct path *)data;
+	} else if (data_type == FSNOTIFY_EVENT_DENTRY) {
+		path.dentry = (struct dentry *)data;
+		path.mnt = (inode_mark ? inode_mark->connector->mnt : NULL);
+	} else {
+		path.mnt = NULL;
+		path.dentry = NULL;
+	}
+
+	if (!fanotify_should_send_event(inode_mark, vfsmnt_mark, mask, &path,
 					data_type))
 		return 0;
 
 	pr_debug("%s: group=%p inode=%p mask=%x\n", __func__, group, inode,
 		 mask);
 
-	event = fanotify_alloc_event(inode, mask, data);
+	/* Do not pass file_name info if not explicitly requested by user */
+	if (!(group->fanotify_data.flags & FAN_EVENT_INFO_NAME))
+		file_name = NULL;
+
+	event = fanotify_alloc_event(group, inode, mask, &path, file_name);
 	if (unlikely(!event))
 		return -ENOMEM;
 
@@ -227,7 +353,7 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 	}
 
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (mask & FAN_ALL_PERM_EVENTS) {
+	if (FANOTIFY_IS_PE(fsn_event)) {
 		ret = fanotify_get_response(group, FANOTIFY_PE(fsn_event),
 					    iter_info);
 		fsnotify_destroy_event(group, fsn_event);
@@ -253,12 +379,17 @@ static void fanotify_free_event(struct fsnotify_event *fsn_event)
 	path_put(&event->path);
 	put_pid(event->tgid);
 #ifdef CONFIG_FANOTIFY_ACCESS_PERMISSIONS
-	if (fsn_event->mask & FAN_ALL_PERM_EVENTS) {
+	if (FANOTIFY_IS_PE(fsn_event)) {
 		kmem_cache_free(fanotify_perm_event_cachep,
 				FANOTIFY_PE(fsn_event));
 		return;
 	}
 #endif
+	if (FANOTIFY_IS_FE(fsn_event)) {
+		kfree(FANOTIFY_FE(fsn_event));
+		return;
+	}
+
 	kmem_cache_free(fanotify_event_cachep, event);
 }
 

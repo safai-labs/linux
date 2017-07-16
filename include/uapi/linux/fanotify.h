@@ -6,9 +6,17 @@
 /* the following events that user-space can register for */
 #define FAN_ACCESS		0x00000001	/* File was accessed */
 #define FAN_MODIFY		0x00000002	/* File was modified */
+#define FAN_ATTRIB		0x00000004	/* Metadata changed */
 #define FAN_CLOSE_WRITE		0x00000008	/* Writtable file closed */
 #define FAN_CLOSE_NOWRITE	0x00000010	/* Unwrittable file closed */
 #define FAN_OPEN		0x00000020	/* File was opened */
+#define FAN_MOVED_FROM		0x00000040	/* File was moved from X */
+#define FAN_MOVED_TO		0x00000080	/* File was moved to Y */
+#define FAN_CREATE		0x00000100	/* Subfile was created */
+#define FAN_DELETE		0x00000200	/* Subfile was deleted */
+#define FAN_DELETE_SELF		0x00000400	/* Self was deleted */
+#define FAN_MOVE_SELF		0x00000800	/* Self was moved */
+
 
 #define FAN_Q_OVERFLOW		0x00004000	/* Event queued overflowed */
 
@@ -17,10 +25,14 @@
 
 #define FAN_ONDIR		0x40000000	/* event occurred against dir */
 
+#define FAN_EVENT_ON_SB		0x01000000	/* interested in all sb inodes */
 #define FAN_EVENT_ON_CHILD	0x08000000	/* interested in child events */
+
+#define FAN_EVENT_ON_DESCENDANT	(FAN_EVENT_ON_CHILD | FAN_EVENT_ON_SB)
 
 /* helper events */
 #define FAN_CLOSE		(FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE) /* close */
+#define FAN_MOVE		(FAN_MOVED_FROM | FAN_MOVED_TO) /* moves */
 
 /* flags used for fanotify_init() */
 #define FAN_CLOEXEC		0x00000001
@@ -36,9 +48,18 @@
 #define FAN_UNLIMITED_QUEUE	0x00000010
 #define FAN_UNLIMITED_MARKS	0x00000020
 
+/* These bits determine the format of the reported events */
+#define FAN_EVENT_INFO_PARENT	0x00000100	/* Event fd maybe of parent */
+#define FAN_EVENT_INFO_NAME	0x00000200	/* Event data has filename */
+#define FAN_EVENT_INFO_FH	0x00000400	/* Event data has filehandle */
+#define FAN_ALL_EVENT_INFO_BITS (FAN_EVENT_INFO_PARENT | \
+				 FAN_EVENT_INFO_NAME | \
+				 FAN_EVENT_INFO_FH)
+
 #define FAN_ALL_INIT_FLAGS	(FAN_CLOEXEC | FAN_NONBLOCK | \
-				 FAN_ALL_CLASS_BITS | FAN_UNLIMITED_QUEUE |\
-				 FAN_UNLIMITED_MARKS)
+				 FAN_ALL_CLASS_BITS | \
+				 FAN_ALL_EVENT_INFO_BITS | \
+				 FAN_UNLIMITED_QUEUE | FAN_UNLIMITED_MARKS)
 
 /* flags used for fanotify_modify_mark() */
 #define FAN_MARK_ADD		0x00000001
@@ -64,16 +85,29 @@
  * the future and not break backward compatibility.  Apps will get only the
  * events that they originally wanted.  Be sure to add new events here!
  */
-#define FAN_ALL_EVENTS (FAN_ACCESS |\
-			FAN_MODIFY |\
-			FAN_CLOSE |\
-			FAN_OPEN)
+
+/* Events reported with data type FSNOTIFY_EVENT_PATH */
+#define FAN_PATH_EVENTS (FAN_ACCESS |\
+			 FAN_MODIFY |\
+			 FAN_CLOSE |\
+			 FAN_OPEN)
+
+/* Events reported with data type FSNOTIFY_EVENT_DENTRY */
+#define FAN_DENTRY_EVENTS (FAN_ATTRIB |\
+			   FAN_MOVE | FAN_MOVE_SELF |\
+			   FAN_CREATE | FAN_DELETE)
+
+#define FAN_ALL_EVENTS (FAN_PATH_EVENTS | FAN_DENTRY_EVENTS)
 
 /*
  * All events which require a permission response from userspace
  */
 #define FAN_ALL_PERM_EVENTS (FAN_OPEN_PERM |\
 			     FAN_ACCESS_PERM)
+
+/* Events on directory requiring to pass filename */
+#define FAN_FILENAME_EVENTS (FAN_MOVED_FROM | FAN_MOVED_TO |\
+			     FAN_CREATE | FAN_DELETE)
 
 #define FAN_ALL_OUTGOING_EVENTS	(FAN_ALL_EVENTS |\
 				 FAN_ALL_PERM_EVENTS |\

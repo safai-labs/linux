@@ -181,6 +181,7 @@ static struct inode *fsnotify_detach_connector_from_object(
 		rcu_assign_pointer(inode->i_fsnotify_marks, NULL);
 		inode->i_fsnotify_mask = 0;
 		conn->inode = NULL;
+		conn->mnt = NULL;
 		conn->flags &= ~FSNOTIFY_OBJ_TYPE_INODE;
 	} else if (conn->flags & FSNOTIFY_OBJ_TYPE_VFSMOUNT) {
 		rcu_assign_pointer(real_mount(conn->mnt)->mnt_fsnotify_marks,
@@ -447,9 +448,17 @@ static int fsnotify_attach_connector_to_object(
 	if (inode) {
 		conn->flags = FSNOTIFY_OBJ_TYPE_INODE;
 		conn->inode = igrab(inode);
+		/* Store the mount point from which the inode watch was added */
+		if (mnt) {
+			conn->mnt = mnt;
+			conn->flags |= FSNOTIFY_OBJ_TYPE_VFSMOUNT;
+		} else {
+			conn->mnt = NULL;
+		}
 	} else {
 		conn->flags = FSNOTIFY_OBJ_TYPE_VFSMOUNT;
 		conn->mnt = mnt;
+		conn->inode = NULL;
 	}
 	/*
 	 * cmpxchg() provides the barrier so that readers of *connp can see
@@ -565,6 +574,11 @@ out_err:
  * Attach an initialized mark to a given group and fs object.
  * These marks may be used for the fsnotify backend to determine which
  * event types should be delivered to which group.
+ *
+ * Either @inode or @mnt MUST be non NULL.
+ * @inode may be NULL implying this is a mount watch.
+ * @inode and @mnt both non NULL imply this is an inode watch
+ * and @mnt is the mount point from which the watch was added.
  */
 int fsnotify_add_mark_locked(struct fsnotify_mark *mark, struct inode *inode,
 			     struct vfsmount *mnt, int allow_dups)
@@ -572,7 +586,6 @@ int fsnotify_add_mark_locked(struct fsnotify_mark *mark, struct inode *inode,
 	struct fsnotify_group *group = mark->group;
 	int ret = 0;
 
-	BUG_ON(inode && mnt);
 	BUG_ON(!inode && !mnt);
 	BUG_ON(!mutex_is_locked(&group->mark_mutex));
 
@@ -588,6 +601,7 @@ int fsnotify_add_mark_locked(struct fsnotify_mark *mark, struct inode *inode,
 	list_add(&mark->g_list, &group->marks_list);
 	atomic_inc(&group->num_marks);
 	fsnotify_get_mark(mark); /* for g_list */
+
 	spin_unlock(&mark->lock);
 
 	ret = fsnotify_add_mark_list(mark, inode, mnt, allow_dups);

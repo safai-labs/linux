@@ -23,6 +23,7 @@
 #define FAN_OPEN_PERM		0x00010000	/* File open in perm check */
 #define FAN_ACCESS_PERM		0x00020000	/* File accessed in perm check */
 
+#define FAN_RENAME		0x10000000	/* file renamed */
 #define FAN_ONDIR		0x40000000	/* event occurred against dir */
 
 #define FAN_EVENT_ON_SB		0x01000000	/* interested in all sb inodes */
@@ -94,7 +95,7 @@
 
 /* Events reported with data type FSNOTIFY_EVENT_DENTRY */
 #define FAN_DENTRY_EVENTS (FAN_ATTRIB |\
-			   FAN_MOVE | FAN_MOVE_SELF |\
+			   FAN_MOVE | FAN_MOVE_SELF | FAN_RENAME |\
 			   FAN_CREATE | FAN_DELETE)
 
 #define FAN_ALL_EVENTS (FAN_PATH_EVENTS | FAN_DENTRY_EVENTS)
@@ -106,7 +107,7 @@
 			     FAN_ACCESS_PERM)
 
 /* Events on directory requiring to pass filename */
-#define FAN_FILENAME_EVENTS (FAN_MOVED_FROM | FAN_MOVED_TO |\
+#define FAN_FILENAME_EVENTS (FAN_MOVE | FAN_RENAME |\
 			     FAN_CREATE | FAN_DELETE)
 
 #define FAN_ALL_OUTGOING_EVENTS	(FAN_ALL_EVENTS |\

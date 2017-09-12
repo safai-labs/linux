@@ -106,8 +106,10 @@ static inline void fsnotify_move(struct dentry *old_dir,
 	__u32 new_dir_mask = FS_MOVED_TO;
 	const unsigned char *new_name = moved->d_name.name;
 
-	if (d_inode(old_dir) == d_inode(new_dir))
+	if (d_inode(old_dir) == d_inode(new_dir)) {
 		old_dir_mask |= FS_DN_RENAME;
+		new_dir_mask |= FS_DN_RENAME;
+	}
 
 	if (isdir) {
 		old_dir_mask |= FS_ISDIR;

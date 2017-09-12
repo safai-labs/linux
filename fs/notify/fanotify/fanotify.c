@@ -305,6 +305,7 @@ static int fanotify_handle_event(struct fsnotify_group *group,
 	BUILD_BUG_ON(FAN_OPEN_PERM != FS_OPEN_PERM);
 	BUILD_BUG_ON(FAN_ACCESS_PERM != FS_ACCESS_PERM);
 	BUILD_BUG_ON(FAN_ONDIR != FS_ISDIR);
+	BUILD_BUG_ON(FAN_RENAME != FS_DN_RENAME);
 
 	if (data_type == FSNOTIFY_EVENT_PATH)
 		path = *(struct path *)data;

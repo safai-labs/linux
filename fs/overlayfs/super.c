@@ -445,12 +445,21 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 		}
 	}
 
-	/* Workdir is useless in non-upper mount */
-	if (!config->upperdir && config->workdir) {
-		pr_info("overlayfs: option \"workdir=%s\" is useless in a non-upper mount, ignore\n",
-			config->workdir);
-		kfree(config->workdir);
-		config->workdir = NULL;
+	if (!config->upperdir) {
+		/* Workdir is useless in non-upper mount */
+		if (config->workdir) {
+			pr_info("overlayfs: option \"workdir=%s\" is useless in a non-upper mount, ignore\n",
+				config->workdir);
+			kfree(config->workdir);
+			config->workdir = NULL;
+		}
+
+		if (config->redirect_dir != ovl_redirect_dir_def ||
+		    config->index != ovl_index_def) {
+			pr_info("overlayfs: options \"redirect_dir\" and \"index\" are useless in a non-upper mount, ignore\n");
+			config->redirect_dir = ovl_redirect_dir_def;
+			config->index = ovl_index_def;
+		}
 	}
 
 	return 0;
@@ -1013,6 +1022,11 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			if (err) {
 				ufs->noxattr = true;
 				pr_warn("overlayfs: upper fs does not support xattr.\n");
+				if (ufs->config.index || ufs->config.redirect_dir) {
+					pr_warn("overlayfs: falling back to redirect_dir=off, index=off.\n");
+					ufs->config.index = false;
+					ufs->config.redirect_dir = false;
+				}
 			} else {
 				vfs_removexattr(ufs->workdir, OVL_XATTR_OPAQUE);
 			}

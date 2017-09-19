@@ -312,6 +312,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 	if (ufs->config.index != ovl_index_def)
 		seq_printf(m, ",index=%s",
 			   ufs->config.index ? "on" : "off");
+	if (ufs->config.verify_dir)
+		seq_puts(m, ",verify_dir");
 	return 0;
 }
 
@@ -347,6 +349,7 @@ enum {
 	OPT_REDIRECT_DIR_OFF,
 	OPT_INDEX_ON,
 	OPT_INDEX_OFF,
+	OPT_VERIFY_DIR,
 	OPT_ERR,
 };
 
@@ -359,6 +362,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_REDIRECT_DIR_OFF,		"redirect_dir=off"},
 	{OPT_INDEX_ON,			"index=on"},
 	{OPT_INDEX_OFF,			"index=off"},
+	{OPT_VERIFY_DIR,		"verify_dir"},
 	{OPT_ERR,			NULL}
 };
 
@@ -439,6 +443,10 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->index = false;
 			break;
 
+		case OPT_VERIFY_DIR:
+			config->verify_dir = true;
+			break;
+
 		default:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
@@ -455,10 +463,11 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 		}
 
 		if (config->redirect_dir != ovl_redirect_dir_def ||
-		    config->index != ovl_index_def) {
-			pr_info("overlayfs: options \"redirect_dir\" and \"index\" are useless in a non-upper mount, ignore\n");
+		    config->verify_dir || config->index != ovl_index_def) {
+			pr_info("overlayfs: options \"redirect_dir\", \"verify_dir\" and \"index\" are useless in a non-upper mount, ignore\n");
 			config->redirect_dir = ovl_redirect_dir_def;
 			config->index = ovl_index_def;
+			config->verify_dir = false;
 		}
 	}
 
@@ -661,12 +670,20 @@ static int ovl_lower_dir(const char *name, struct path *path,
 		*remote = true;
 
 	/*
-	 * The inodes index feature needs to encode and decode file
-	 * handles, so it requires that all layers support them.
+	 * The features inodes index and verify_dir need to decode lower
+	 * file handles, so they require that all lower layers support them.
 	 */
-	if (ofs->config.index && !ovl_can_decode_fh(path->dentry->d_sb)) {
-		ofs->config.index = false;
-		pr_warn("overlayfs: fs on '%s' does not support file handles, falling back to index=off.\n", name);
+	if (!ovl_can_decode_fh(path->dentry->d_sb)) {
+		if (ofs->config.verify_dir) {
+			err = -EOPNOTSUPP;
+			pr_err("overlayfs: fs on '%s' does not support file handles, option \"verify_dir\" not supported.\n", name);
+			goto out_put;
+		}
+
+		if (ofs->config.index) {
+			ofs->config.index = false;
+			pr_warn("overlayfs: fs on '%s' does not support file handles, falling back to index=off.\n", name);
+		}
 	}
 
 	return 0;
@@ -1022,10 +1039,13 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			if (err) {
 				ufs->noxattr = true;
 				pr_warn("overlayfs: upper fs does not support xattr.\n");
-				if (ufs->config.index || ufs->config.redirect_dir) {
-					pr_warn("overlayfs: falling back to redirect_dir=off, index=off.\n");
+				if (ufs->config.index ||
+				    ufs->config.redirect_dir ||
+				    ufs->config.verify_dir) {
+					pr_warn("overlayfs: falling back to redirect_dir=off, verify_dir=off, index=off.\n");
 					ufs->config.index = false;
 					ufs->config.redirect_dir = false;
+					ufs->config.verify_dir = false;
 				}
 			} else {
 				vfs_removexattr(ufs->workdir, OVL_XATTR_OPAQUE);
@@ -1075,14 +1095,6 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		ufs->same_sb = NULL;
 
 	if (!(ovl_force_readonly(ufs)) && ufs->config.index) {
-		/* Verify lower root is upper root origin */
-		err = ovl_verify_origin(upperpath.dentry, ufs->lower_mnt[0],
-					stack[0].dentry, false, true);
-		if (err) {
-			pr_err("overlayfs: failed to verify upper root origin\n");
-			goto out_put_lower_mnt;
-		}
-
 		ufs->indexdir = ovl_workdir_create(sb, ufs, workpath.dentry,
 						   OVL_INDEXDIR_NAME, true);
 		if (ufs->indexdir) {
@@ -1107,6 +1119,16 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	/* Show index=off/on in /proc/mounts for any of the reasons above */
 	if (!ufs->indexdir)
 		ufs->config.index = false;
+
+	if (ufs->config.verify_dir || ufs->indexdir) {
+		/* Verify lower root is upper root origin */
+		err = ovl_verify_origin(upperpath.dentry, ufs->lower_mnt[0],
+					stack[0].dentry, false, true);
+		if (err) {
+			pr_err("overlayfs: failed to verify upper root origin\n");
+			goto out_put_indexdir;
+		}
+	}
 
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;

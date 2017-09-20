@@ -532,11 +532,8 @@ static int ovl_do_copy_up(struct ovl_copy_up_ctx *c)
 {
 	int err;
 	struct ovl_fs *ofs = c->dentry->d_sb->s_fs_info;
-	bool indexed = false;
-
-	if (ovl_indexdir(c->dentry->d_sb) && !S_ISDIR(c->stat.mode) &&
-	    c->stat.nlink > 1)
-		indexed = true;
+	bool indexed = ovl_indexed(c->dentry->d_sb, &c->stat) &&
+			!S_ISDIR(c->stat.mode);
 
 	if (S_ISDIR(c->stat.mode) || c->stat.nlink == 1 || indexed)
 		c->origin = true;

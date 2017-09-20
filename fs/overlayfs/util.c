@@ -64,6 +64,24 @@ struct dentry *ovl_indexdir(struct super_block *sb)
 	return ofs->indexdir;
 }
 
+bool ovl_indexed(struct super_block *sb, struct kstat *stat)
+{
+	struct ovl_fs *ofs = sb->s_fs_info;
+
+	if (!ofs->config.index || !ofs->indexdir)
+		return false;
+
+	if (ofs->config.index == OVL_INDEX_ALL)
+		return true;
+
+	/* Index only lower hardlinks on copy up */
+	if ((ofs->config.index == OVL_INDEX_NLINK) &&
+	    !S_ISDIR(stat->mode) && stat->nlink > 1)
+		return true;
+
+	return false;
+}
+
 struct ovl_entry *ovl_alloc_entry(unsigned int numlower)
 {
 	size_t size = offsetof(struct ovl_entry, lowerstack[numlower]);

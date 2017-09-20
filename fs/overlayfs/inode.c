@@ -317,23 +317,32 @@ struct posix_acl *ovl_get_acl(struct inode *inode, int type)
 	return acl;
 }
 
+/*
+ * Depending on open flags and overlay dentry type, determines if file needs
+ * to be copied up on open.  If *rocopyup is true, then file needs to be
+ * copied up to unlinked tmpfiles on open for read.  If this file has already
+ * been copied up to unlinked tmpfile or if this is an open for write, then
+ * *rocopyup will be set to false.
+ */
 static bool ovl_open_need_copy_up(struct dentry *dentry, int flags,
-				  bool rocopyup)
+				  bool *rocopyup)
 {
 	if (ovl_dentry_upper(dentry) &&
 	    ovl_dentry_has_upper_alias(dentry))
 		return false;
 
-	if (special_file(d_inode(dentry)->i_mode))
+	if (WARN_ON(!d_is_reg(dentry)))
 		return false;
 
-	/* Copy up on open for read for consistent fd */
-	if (rocopyup)
-		return true;
+	/* Need copy up to orphan index on open for read? */
+	if (ovl_dentry_upper(dentry))
+		*rocopyup = false;
 
 	if (!(OPEN_FMODE(flags) & FMODE_WRITE) && !(flags & O_TRUNC))
-		return false;
+		return *rocopyup;
 
+	/* Open for write - need properly linked copy up */
+	*rocopyup = false;
 	return true;
 }
 
@@ -342,10 +351,10 @@ int ovl_open_maybe_copy_up(struct dentry *dentry, unsigned int file_flags,
 {
 	int err = 0;
 
-	if (ovl_open_need_copy_up(dentry, file_flags, rocopyup)) {
+	if (ovl_open_need_copy_up(dentry, file_flags, &rocopyup)) {
 		err = ovl_want_write(dentry);
 		if (!err) {
-			err = ovl_copy_up_flags(dentry, file_flags);
+			err = ovl_copy_up_flags(dentry, file_flags, rocopyup);
 			ovl_drop_write(dentry);
 		}
 	}

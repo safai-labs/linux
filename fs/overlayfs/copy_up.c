@@ -535,6 +535,9 @@ static int ovl_do_copy_up(struct ovl_copy_up_ctx *c)
 	bool indexed = ovl_indexed(c->dentry->d_sb, &c->stat) &&
 			!S_ISDIR(c->stat.mode);
 
+	if (WARN_ON(!c->parent && !indexed))
+		return -EIO;
+
 	if (S_ISDIR(c->stat.mode) || c->stat.nlink == 1 || indexed)
 		c->origin = true;
 
@@ -606,14 +609,16 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	if (err)
 		return err;
 
-	ovl_path_upper(parent, &parentpath);
-	ctx.destdir = parentpath.dentry;
-	ctx.destname = dentry->d_name;
+	if (parent) {
+		ovl_path_upper(parent, &parentpath);
+		ctx.destdir = parentpath.dentry;
+		ctx.destname = dentry->d_name;
 
-	err = vfs_getattr(&parentpath, &ctx.pstat,
-			  STATX_ATIME | STATX_MTIME, AT_STATX_SYNC_AS_STAT);
-	if (err)
-		return err;
+		err = vfs_getattr(&parentpath, &ctx.pstat,
+				  STATX_ATIME | STATX_MTIME, AT_STATX_SYNC_AS_STAT);
+		if (err)
+			return err;
+	}
 
 	/* maybe truncate regular file. this has no effect on dirs */
 	if (flags & O_TRUNC)
@@ -634,7 +639,7 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	} else {
 		if (!ovl_dentry_upper(dentry))
 			err = ovl_do_copy_up(&ctx);
-		if (!err && !ovl_dentry_has_upper_alias(dentry))
+		if (!err && parent && !ovl_dentry_has_upper_alias(dentry))
 			err = ovl_link_up(&ctx);
 		ovl_copy_up_end(dentry);
 	}
@@ -643,14 +648,14 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 	return err;
 }
 
-int ovl_copy_up_flags(struct dentry *dentry, int flags)
+int ovl_copy_up_flags(struct dentry *dentry, int flags, bool rocopyup)
 {
 	int err = 0;
 	const struct cred *old_cred = ovl_override_creds(dentry->d_sb);
 
 	while (!err) {
 		struct dentry *next;
-		struct dentry *parent;
+		struct dentry *parent = NULL;
 
 		/*
 		 * Check if copy-up has happened as well as for upper alias (in
@@ -666,12 +671,12 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags)
 		 *      with rename.
 		 */
 		if (ovl_dentry_upper(dentry) &&
-		    ovl_dentry_has_upper_alias(dentry))
+		    (ovl_dentry_has_upper_alias(dentry) || rocopyup))
 			break;
 
 		next = dget(dentry);
 		/* find the topmost dentry not yet copied up */
-		for (;;) {
+		for (; !rocopyup;) {
 			parent = dget_parent(next);
 
 			if (ovl_dentry_upper(parent))
@@ -693,5 +698,5 @@ int ovl_copy_up_flags(struct dentry *dentry, int flags)
 
 int ovl_copy_up(struct dentry *dentry)
 {
-	return ovl_copy_up_flags(dentry, 0);
+	return ovl_copy_up_flags(dentry, 0, false);
 }

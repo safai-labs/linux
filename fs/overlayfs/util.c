@@ -79,6 +79,10 @@ bool ovl_indexed(struct super_block *sb, struct kstat *stat)
 	    !S_ISDIR(stat->mode) && stat->nlink > 1)
 		return true;
 
+	/* Index all regular files if consistent fd is enabled */
+	if (ofs->config.consistent_fd && S_ISREG(stat->mode))
+		return true;
+
 	return false;
 }
 

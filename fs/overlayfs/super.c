@@ -73,7 +73,11 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 				 unsigned int open_flags, unsigned int flags)
 {
 	struct dentry *real;
+	bool rocopyup = !inode && ovl_consistent_fd(dentry->d_sb);
 	int err;
+
+	if (WARN_ON(open_flags && inode))
+		return dentry;
 
 	if (flags & D_REAL_UPPER)
 		return ovl_dentry_upper(dentry);
@@ -84,8 +88,8 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 		goto bug;
 	}
 
-	if (open_flags) {
-		err = ovl_open_maybe_copy_up(dentry, open_flags);
+	if (open_flags || rocopyup) {
+		err = ovl_open_maybe_copy_up(dentry, open_flags, rocopyup);
 		if (err)
 			return ERR_PTR(err);
 	}
@@ -315,6 +319,8 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 			   (ufs->config.index ? "on" : "off"));
 	if (ufs->config.verify_dir)
 		seq_puts(m, ",verify_dir");
+	if (ufs->config.consistent_fd)
+		seq_puts(m, ",consistent_fd");
 	return 0;
 }
 
@@ -352,6 +358,7 @@ enum {
 	OPT_INDEX_OFF,
 	OPT_INDEX_ALL,
 	OPT_VERIFY_DIR,
+	OPT_CONSISTENT_FD,
 	OPT_ERR,
 };
 
@@ -366,6 +373,7 @@ static const match_table_t ovl_tokens = {
 	{OPT_INDEX_OFF,			"index=off"},
 	{OPT_INDEX_ALL,			"index=all"},
 	{OPT_VERIFY_DIR,		"verify_dir"},
+	{OPT_CONSISTENT_FD,		"consistent_fd"},
 	{OPT_ERR,			NULL}
 };
 
@@ -454,6 +462,10 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->verify_dir = true;
 			break;
 
+		case OPT_CONSISTENT_FD:
+			config->consistent_fd = true;
+			break;
+
 		default:
 			pr_err("overlayfs: unrecognized mount option \"%s\" or missing value\n", p);
 			return -EINVAL;
@@ -470,11 +482,13 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 		}
 
 		if (config->redirect_dir != ovl_redirect_dir_def ||
-		    config->verify_dir || config->index != ovl_index_def) {
+		    config->index != ovl_index_def ||
+		    config->verify_dir || config->consistent_fd) {
 			pr_info("overlayfs: options \"redirect_dir\", \"verify_dir\" and \"index\" are useless in a non-upper mount, ignore\n");
 			config->redirect_dir = ovl_redirect_dir_def;
 			config->index = ovl_index_def;
 			config->verify_dir = false;
+			config->consistent_fd = false;
 		}
 	}
 
@@ -1144,6 +1158,17 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 			goto out_put_indexdir;
 		}
 	}
+
+	/*
+	 * Copy on read for consistent fd depends on underlying fs clone
+	 * support and on index dir, which depends on !ovl_force_readonly.
+	 * On ro mount, fd is always consistent, but if overlay can be
+	 * later remounted rw, we need to copy on read anyway, so that
+	 * ro fd that was opened during ro mount will be consistent with
+	 * rw fd that is opened after remount rw.
+	 */
+	if (!ufs->cloneup || !ufs->indexdir)
+		ufs->config.consistent_fd = false;
 
 	if (remote)
 		sb->s_d_op = &ovl_reval_dentry_operations;

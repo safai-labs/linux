@@ -518,7 +518,17 @@ static struct dentry *ovl_lookup_index(struct dentry *dentry,
 	struct dentry *index;
 	struct inode *inode;
 	struct qstr name;
+	bool is_dir = d_is_dir(origin);
 	int err;
+
+	/*
+	 * Currently, we only trust dir index if we verified that lower dir
+	 * matches origin.
+	 * TODO: update origin and index in case lower dir has changed and
+	 *       store non zero generation number xattr for NFS export.
+	 */
+	if (is_dir && !ovl_verify_dir(dentry->d_sb))
+		return NULL;
 
 	err = ovl_get_index_name(origin, &name);
 	if (err)
@@ -536,7 +546,7 @@ static struct dentry *ovl_lookup_index(struct dentry *dentry,
 
 	inode = d_inode(index);
 	if (d_is_negative(index)) {
-		if (upper && d_inode(origin)->i_nlink > 1) {
+		if (!is_dir && upper && d_inode(origin)->i_nlink > 1) {
 			pr_warn_ratelimited("overlayfs: hard link with origin but no index (ino=%lu).\n",
 					    d_inode(origin)->i_ino);
 			goto fail;
@@ -544,10 +554,6 @@ static struct dentry *ovl_lookup_index(struct dentry *dentry,
 
 		dput(index);
 		index = NULL;
-	} else if (upper && d_inode(upper) != inode) {
-		pr_warn_ratelimited("overlayfs: wrong index found (index=%pd2, ino=%lu, upper ino=%lu).\n",
-				    index, inode->i_ino, d_inode(upper)->i_ino);
-		goto fail;
 	} else if (ovl_dentry_weird(index) || ovl_is_whiteout(index) ||
 		   ((inode->i_mode ^ d_inode(origin)->i_mode) & S_IFMT)) {
 		/*
@@ -561,8 +567,16 @@ static struct dentry *ovl_lookup_index(struct dentry *dentry,
 				    index, d_inode(index)->i_mode & S_IFMT,
 				    d_inode(origin)->i_mode & S_IFMT);
 		goto fail;
+	} else if (is_dir) {
+		/* Verify that dir index origin points to upper dir */
+		err = ovl_verify_origin(index, upper, true, false);
+		if (err)
+			goto fail;
+	} else if (upper && d_inode(upper) != inode) {
+		pr_warn_ratelimited("overlayfs: wrong index found (index=%pd2, ino=%lu, upper ino=%lu).\n",
+				    index, inode->i_ino, d_inode(upper)->i_ino);
+		goto fail;
 	}
-
 out:
 	kfree(name.name);
 	return index;
@@ -735,7 +749,7 @@ struct dentry *ovl_lookup(struct inode *dir, struct dentry *dentry,
 	}
 
 	/* Lookup index by lower inode and verify it matches upper inode */
-	if (ctr && !d.is_dir && ovl_indexdir(dentry->d_sb)) {
+	if (ctr && ovl_indexdir(dentry->d_sb)) {
 		struct dentry *origin = stack[0].dentry;
 
 		index = ovl_lookup_index(dentry, upperdentry, origin);

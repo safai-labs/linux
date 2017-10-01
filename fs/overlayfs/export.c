@@ -42,22 +42,27 @@ static bool ovl_is_pure_upper(struct dentry *dentry, int connectable)
 static int ovl_dentry_to_fh(struct dentry *dentry, struct fid *fid,
 			    int *max_len, int connectable)
 {
-	int type;
+	const struct ovl_fh *fh;
+	int len = *max_len << 2;
 
 	/* TODO: handle encoding of non pure upper */
 	if (!ovl_is_pure_upper(dentry, connectable))
 		return FILEID_INVALID;
 
-	/*
-	 * Ask real fs to encode the inode of the real upper dentry.
-	 * When decoding we ask real fs for the upper dentry and use
-	 * the real inode to get the overlay inode.
-	 */
-	type = exportfs_encode_fh(ovl_dentry_upper(dentry), fid, max_len,
-				  connectable);
+	fh = ovl_encode_fh(ovl_dentry_upper(dentry), true, connectable);
+	if (IS_ERR(fh))
+		return FILEID_INVALID;
 
-	/* TODO: encode an ovl_fh struct and return OVL file handle type */
-	return type;
+	if (fh->len > len) {
+		kfree(fh);
+		return FILEID_INVALID;
+	}
+
+	memcpy((char *)fid, (char *)fh, len);
+	*max_len = len >> 2;
+	kfree(fh);
+
+	return OVL_FILEID_WITHOUT_PARENT;
 }
 
 static int ovl_encode_inode_fh(struct inode *inode, u32 *fh, int *max_len,
@@ -69,7 +74,12 @@ static int ovl_encode_inode_fh(struct inode *inode, u32 *fh, int *max_len,
 	if (!dentry)
 		return FILEID_INVALID;
 
-	/* TODO: handle encoding of non-dir connectable file handle */
+	/*
+	 * Parent and child may not be on the same layer.
+	 *
+	 * TODO: encode connectable file handle as an array of self ovl_fh
+	 *       and parent ovl_fh (type OVL_FILEID_WITH_PARENT).
+	 */
 	if (parent)
 		return FILEID_INVALID;
 
@@ -129,16 +139,22 @@ static struct dentry *ovl_fh_to_dentry(struct super_block *sb, struct fid *fid,
 {
 	struct ovl_fs *ofs = sb->s_fs_info;
 	struct vfsmount *mnt = ofs->upper_mnt;
-	const struct export_operations *real_op;
 	struct dentry *upper;
+	struct ovl_fh *fh = (struct ovl_fh *) fid;
+	int err;
+
+	if (fh_type != OVL_FILEID_WITHOUT_PARENT)
+		return ERR_PTR(-EINVAL);
+
+	err = ovl_check_fh_len(fh, fh_len << 2);
+	if (err)
+		return ERR_PTR(err);
 
 	/* TODO: handle decoding of non pure upper */
-	if (!mnt)
+	if (!mnt || !(fh->flags & OVL_FH_FLAG_PATH_UPPER))
 		return NULL;
 
-	real_op = mnt->mnt_sb->s_export_op;
-	/* TODO: decode ovl_fh format file handle */
-	upper = real_op->fh_to_dentry(mnt->mnt_sb, fid, fh_len, fh_type);
+	upper = ovl_decode_fh(fh, mnt);
 	if (IS_ERR_OR_NULL(upper))
 		return upper;
 

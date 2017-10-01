@@ -128,6 +128,10 @@ static struct dentry *ovl_obtain_alias(struct super_block *sb,
 		return ERR_PTR(-ENOMEM);
 	}
 
+	/*
+	 * This may be a diconnected dentry. We must not allow it to get passed
+	 * ovl_dentry_has_upper_alias() check in ovl_copy_up().
+	 */
 	oe->has_upper = true;
 	dentry->d_fsdata = oe;
 	return dentry;
@@ -138,10 +142,11 @@ static struct dentry *ovl_fh_to_dentry(struct super_block *sb, struct fid *fid,
 				       int fh_len, int fh_type)
 {
 	struct ovl_fs *ofs = sb->s_fs_info;
-	struct vfsmount *mnt = ofs->upper_mnt;
 	struct dentry *upper;
+	struct dentry *index = NULL;
+	struct dentry *origin = NULL;
 	struct ovl_fh *fh = (struct ovl_fh *) fid;
-	int err;
+	int err, i;
 
 	if (fh_type != OVL_FILEID_WITHOUT_PARENT)
 		return ERR_PTR(-EINVAL);
@@ -150,16 +155,45 @@ static struct dentry *ovl_fh_to_dentry(struct super_block *sb, struct fid *fid,
 	if (err)
 		return ERR_PTR(err);
 
-	/* TODO: handle decoding of non pure upper */
-	if (!mnt || !(fh->flags & OVL_FH_FLAG_PATH_UPPER))
+	if (fh->flags & OVL_FH_FLAG_PATH_UPPER) {
+		if (!ofs->upper_mnt)
+			return NULL;
+
+		upper = ovl_decode_fh(fh, ofs->upper_mnt);
+		if (IS_ERR_OR_NULL(upper))
+			return upper;
+
+		/* Find or instantiate a pure upper dentry */
+		return ovl_obtain_alias(sb, upper, NULL);
+	}
+
+	/* Find lower layer by UUID and decode */
+	for (i = 0; i < ofs->numlower; i++) {
+		origin = ovl_decode_fh(fh, ofs->lower_mnt[i]);
+		if (origin)
+			break;
+	}
+
+	if (IS_ERR_OR_NULL(origin))
+		return origin;
+
+	/* TODO: check if index exists to instantiate overlay dentry */
+	if (index)
+		return ovl_obtain_alias(sb, index, origin);
+
+	if (origin->d_flags & DCACHE_DISCONNECTED) {
+		/* With no lower path and no index we are lost */
+		dput(origin);
 		return NULL;
+	}
 
-	upper = ovl_decode_fh(fh, mnt);
-	if (IS_ERR_OR_NULL(upper))
-		return upper;
-
-	/* Find or instantiate a pure upper dentry */
-	return ovl_obtain_alias(sb, upper, NULL);
+	/*
+	 * TODO: walk back parent chain to lower mnt root and check if
+	 * parents are indexed. When reaching indexed or root, lookup
+	 * relative path from upper dir, while instantiating and connecting
+	 * the overlay dentries on the way to the dentry we are decoding.
+	 */
+	return NULL;
 }
 
 static struct dentry *ovl_get_parent(struct dentry *dentry)

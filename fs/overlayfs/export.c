@@ -42,6 +42,8 @@ static bool ovl_is_pure_upper(struct dentry *dentry, int connectable)
 static int ovl_dentry_to_fh(struct dentry *dentry, struct fid *fid,
 			    int *max_len, int connectable)
 {
+	struct dentry *lower = ovl_dentry_lower(dentry);
+	struct dentry *stable;
 	const struct ovl_fh *fh;
 	int len = *max_len << 2;
 
@@ -49,7 +51,54 @@ static int ovl_dentry_to_fh(struct dentry *dentry, struct fid *fid,
 	if (!ovl_is_pure_upper(dentry, connectable))
 		return FILEID_INVALID;
 
-	fh = ovl_encode_fh(ovl_dentry_upper(dentry), true, connectable);
+	/*
+	 * Choose a stable dentry to export to NFS.
+	 * The stable dentry should persist across copy up and should point
+	 * to the same inode after mount cycle, so for merge dir and non-dir
+	 * with origin, use the origin dentry, otherwise, for pure upper,
+	 * use the upper dentry.
+	 */
+	stable = lower ?: ovl_dentry_upper(dentry);
+	if (!stable)
+		return FILEID_INVALID;
+
+	/*
+	 * When we decode a file handle obtained from a lower dentry, that
+	 * lower may have already been copied up. If that lower is not a
+	 * hardlink, then it may not be indexed on copy up. In that case,
+	 * the way we get to the upper inode when decoding is by looking up
+	 * the overlay using the same path as lower dentry, but to do that,
+	 * we need a connected lower dentry, so we encode a conneccted lower
+	 * file handle even if we were asked for a non-connecctable file
+	 * handle. The problem with connectable file handles is that they
+	 * may not be unique, because they contain the parent inode encoding
+	 * and dentry can change its parent. We rely on the assumption that
+	 * lower layer is not expected to be changed and therefore the
+	 * connectable lower file handle is "likely unique". If lower layer
+	 * is changed, then the new encoded file handle will apear to nfsd
+	 * as a new file and the old file handle may become stale.
+	 * We cannot assume uniqeness of connectable file handle for a lower
+	 * hardlink, so instead, we copy up the lower hardlink before encoding
+	 * the file handle, so we can use the index on decode.
+	 */
+	if (lower && !d_is_dir(lower)) {
+		if (d_inode(lower)->i_nlink == 1) {
+			connectable = 1;
+		} else if (stable == lower) {
+			int err;
+
+			if (ovl_want_write(dentry))
+				return FILEID_INVALID;
+
+			err = ovl_copy_up(dentry);
+
+			ovl_drop_write(dentry);
+			if (err)
+				return FILEID_INVALID;
+		}
+	}
+
+	fh = ovl_encode_fh(stable, !lower, connectable);
 	if (IS_ERR(fh))
 		return FILEID_INVALID;
 
